@@ -13,7 +13,7 @@ import { exigerPreparation3D, exigerParcelle3D } from './preparation3D';
 import { draftBrief, studioCommand, studioComposition, studioSegmentedVolume, type JarvisDraft } from './jarvisDraft';
 import { listJarvisTransferFiles, type JarvisStoredFile } from './jarvisFiles';
 import type { ConfirmedTerrain } from './terrainCadastre';
-import { construireProjetChat, etudeDuChat, prochaineRevision, signatureFiche, type IssueProjetChat, type StockageCle, type VolumeBatimentsStudio } from './projetChat';
+import { construireProjetChat, etudeDuChat, prochaineRevision, signatureFiche, transportParBatiments, type IssueProjetChat, type StockageCle, type VolumeBatimentsStudio } from './projetChat';
 import { getActiveStudyId } from '@/spaces/promoteur/shared/promoteurSnapshot.store';
 import { memoriserRelief, reliefEnCache } from './reliefCache';
 import { parcelId } from './parcelFromGps';
@@ -69,7 +69,8 @@ export async function preparerChargeVoirEn3D(
     : [];
   const composition = studioComposition(fiche);
   // Volume multi-bâtiments du Dossier 3D : seulement pour la fiche tirée de ce volume (sinon bâtiment unique historique).
-  const volume = retenue.volumeBatiments && retenue.volumeBatiments.batiments.length >= 2
+  // Lot formes-batiment : un seul bâtiment à ailes (L, U, cour, redans) part aussi par `batiments`.
+  const volume = retenue.volumeBatiments && transportParBatiments(retenue.volumeBatiments.batiments)
     && retenue.volumeBatiments.signatureFiche === signatureFiche(fiche) ? retenue.volumeBatiments : null;
   const sessionId = crypto.randomUUID();
   const pageSansAncre = new URL(window.location.href);

@@ -29,6 +29,9 @@ import { devisAAfficher, estAppelDevis } from '../agent/agentLogique';
 import { CarteSuiviRendu } from '../studio3d/CarteSuiviRendu';
 import { cartesSuivi } from '../studio3d/suiviRenduChat';
 import { CarteBriefCreatif } from '../studio3d/CarteBriefCreatif';
+// Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
+import { LigneHabillage } from '../studio3d/LigneHabillage';
+import type { DemandeBrief } from '../studio3d/briefCreatif';
 import { lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
 import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
 import { lireBlocChoix, situationChoix } from '../utils/choixCliquables';
@@ -50,6 +53,8 @@ type MessageProps = {
   message: ChatMessage; question?: string | null; conversationId?: string | null; onSend?: (text: string) => void;
   /** LOT CHOIX-CLIQUABLES : écrit dans le champ de saisie du chat (sans envoyer). */
   onRemplirSaisie?: RemplirSaisie;
+  /** Lot brief-unifié : ouvre l'habillage dans le panneau Espace 3D (absent : carte complète dans le fil, comme avant). */
+  onOuvrirHabillage?: (demande: DemandeBrief) => void;
 };
 
 export function CopilotMessage(props: MessageProps) {
@@ -60,7 +65,7 @@ export function CopilotMessage(props: MessageProps) {
   </div>}><CopilotMessageContent {...props} /></CopilotRenderBoundary>;
 }
 
-function CopilotMessageContent({ message, question, conversationId, onSend, onVisualiserMission, onRemplirSaisie }: MessageProps) {
+function CopilotMessageContent({ message, question, conversationId, onSend, onVisualiserMission, onRemplirSaisie, onOuvrirHabillage }: MessageProps) {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
   const messages = useCopilotStore((s) => s.messages);
@@ -152,9 +157,13 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} /> : null; }
             { const suivi = suivisRendu.get(tc.id); if (suivi) return <CarteSuiviRendu indice={suivi} />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
-            { const demande = lireDemandeBrief(tc); if (demande) return demande.origine === 'demande'
-              ? <CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} />
-              : <><CopilotApiResultCard call={tc} /><CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} /></>; }
+            // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
+            { const demande = lireDemandeBrief(tc); if (demande) {
+              const brief = onOuvrirHabillage
+                ? <LigneHabillage demande={demande} messageId={message.id} onOuvrir={onOuvrirHabillage} />
+                : <CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} />;
+              return demande.origine === 'demande' ? brief : <><CopilotApiResultCard call={tc} />{brief}</>;
+            } }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de

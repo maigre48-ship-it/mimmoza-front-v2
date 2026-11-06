@@ -6,7 +6,8 @@
 // Toute la géométrie vient de briefCreatif.ts::sceneApercu (pure, testée) ; ce
 // composant ne fait que poser des boîtes (une InstancedMesh par matière) et la
 // lumière de l'ambiance. Sans WebGL : `onIndisponible` (la carte garde la vignette).
-// Pas d'acrotère ni de couverture dessinés (le toit est plat, comme le volume).
+// Pas d'acrotère dessiné. Lot brief-unifié : toiture végétalisée (tapis vert), toit à
+// deux pans (prisme de la couleur de la couverture), soubassement et menuiseries.
 // =============================================================================
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
@@ -15,7 +16,20 @@ import { couleurs, lumiere, sceneApercu, type ApercuVolume, type ChoixBrief, typ
 
 interface Props { apercu: ApercuVolume; choix: ChoixBrief; limites: LimitesBrief; onIndisponible?: () => void }
 
-const RUGOSITE: Record<Matiere, number> = { mur: 0.9, vitrage: 0.15, vitrageAllume: 0.4, vitrine: 0.15, dalle: 0.85, gardeCorps: 0.4, fondLoggia: 0.95, allege: 0.6 };
+const RUGOSITE: Record<Matiere, number> = { mur: 0.9, vitrage: 0.15, vitrageAllume: 0.4, vitrine: 0.15, dalle: 0.85, gardeCorps: 0.4, fondLoggia: 0.95, allege: 0.6, menuiserie: 0.45, soubassement: 0.9, toiture: 0.85 };
+
+/** Toit à deux pans : prisme triangulaire (faîtage le long de l'axe u), en mètres locaux. */
+function geometrieToit(l: number, p: number, h: number): THREE.BufferGeometry {
+  const u = l / 2, v = p / 2;
+  const s = [[-u, 0, -v], [u, 0, -v], [u, 0, v], [-u, 0, v], [-u, h, 0], [u, h, 0]];
+  const f = [[0, 1, 5], [0, 5, 4], [3, 4, 5], [3, 5, 2], [0, 4, 3], [1, 2, 5], [0, 3, 2], [0, 2, 1]];
+  const pos: number[] = [];
+  for (const t of f) for (const i of t) pos.push(...(s[i] as [number, number, number]));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
 
 export default function ApercuBrief3D({ apercu, choix, limites, onIndisponible }: Props) {
   const hote = useRef<HTMLDivElement | null>(null);
@@ -159,9 +173,18 @@ export default function ApercuBrief3D({ apercu, choix, limites, onIndisponible }
         p.set(...b.p); s.set(...b.s); q.setFromEuler(e.set(0, b.r, 0));
         inst.setMatrixAt(i, mat4.compose(p, q, s));
       });
-      inst.castShadow = matiere === 'mur' || matiere === 'dalle';
+      inst.castShadow = matiere === 'mur' || matiere === 'dalle' || matiere === 'soubassement';
       inst.receiveShadow = true;
       m.groupe.add(inst);
+    }
+    // Toits à deux pans (lot brief-unifié).
+    for (const t of sc.toits) {
+      const toit = new THREE.Mesh(geometrieToit(t.l, t.h > 0 ? t.p : 1, t.h), new THREE.MeshStandardMaterial({ color: new THREE.Color(col.toiture), roughness: RUGOSITE.toiture, side: THREE.DoubleSide }));
+      toit.position.set(t.cx, t.base, -t.cy);
+      toit.rotation.y = (t.a * Math.PI) / 180;
+      toit.castShadow = true;
+      toit.receiveShadow = true;
+      m.groupe.add(toit);
     }
     // Lumière de l'ambiance (indicative).
     m.scene.background = new THREE.Color(lum.ciel);

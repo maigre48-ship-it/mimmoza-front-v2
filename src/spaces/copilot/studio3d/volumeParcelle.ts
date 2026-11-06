@@ -120,6 +120,41 @@ export interface BatimentPropose {
   /** Angle du grand côté (largeur), en degrés depuis l'est, sens trigonométrique (comme emprise.angleDeg). */
   angleDeg: number;
   coins: PointLocal[];
+  /**
+   * Lot formes-batiment : bâtiment collectif À AILES (en L, en U, cour fermée, redans) calculé par
+   * formesBatiment.ts. Absent pour un rectangle (barre, plot, maisons…). Avec des ailes, largeurM /
+   * profondeurM / centre / angleDeg / coins sont ceux de l'ENVELOPPE (rectangle englobant) ; l'emprise
+   * réelle est la réunion des ailes (surfaceM2, sdpM2 et les vérifications portent sur elles).
+   */
+  ailes?: AilePropose[];
+  formeAiles?: FormeAiles;
+  /** Redans : décalage (m) de chaque segment par rapport au précédent. */
+  decalageM?: number;
+}
+
+/** Lot formes-batiment : formes à ailes d'un immeuble collectif. */
+export type FormeAiles = 'l' | 'u' | 'cour' | 'redans';
+export const NOMS_FORME_AILES: Record<FormeAiles, string> = { l: 'en L', u: 'en U', cour: 'à cour fermée', redans: 'à redans' };
+
+/**
+ * Lot formes-batiment : une aile (rectangle sans recouvrement avec les autres ailes du bâtiment).
+ * Repère du bâtiment : u le long du grand côté (angleDeg), v perpendiculaire, vers la gauche (nord pour 0°).
+ */
+export interface AilePropose {
+  nom: string;
+  /** Paramètres saisis : longueur hors tout et épaisseur de l'aile (m). */
+  longueurM: number;
+  epaisseurM: number;
+  niveaux: number;
+  /** Rectangle construit : centre (du, dv) dans le repère du bâtiment, côté lu le long de u, lv le long de v. */
+  du: number;
+  dv: number;
+  lu: number;
+  lv: number;
+  /** Coins dans le repère local de la parcelle (x est, y nord). */
+  coins: PointLocal[];
+  surfaceM2: number;
+  sdpM2: number;
 }
 
 /** Voie de desserte interne (aplat au sol, non bâti). */
@@ -581,16 +616,25 @@ export interface CorpsAffiche {
   hauteurM: number;
   /** Bâtiment principal (le plus grand) : celui qui porte les cotes L / P / H. */
   principal: boolean;
+  /** Lot formes-batiment : ailes du bâtiment (L, U, cour, redans) ; absent pour un rectangle. */
+  ailes?: AilePropose[];
+  formeAiles?: FormeAiles;
+  decalageM?: number;
 }
+
+/** Lot formes-batiment : le volume part à Studio bâtiment par bâtiment (plusieurs, ou un seul à ailes). */
+export const volumeParBatiments = (v: Pick<VolumePropose, 'batiments'>): boolean =>
+  !!v.batiments && (v.batiments.length > 1 || v.batiments.some(b => (b.ailes?.length ?? 0) >= 2));
 
 /** Corps à dessiner : tous les bâtiments d'une implantation multiple, sinon le volume unique. */
 export function corpsAffiches(v: Pick<VolumePropose, 'emprise' | 'niveaux' | 'hauteurM' | 'batiments'>): CorpsAffiche[] {
   const e = v.emprise;
   if (!e) return [];
-  if (v.batiments && v.batiments.length > 1) {
+  if (v.batiments && volumeParBatiments(v)) {
     const principal = v.batiments.find(b => Math.abs(b.centre.x - e.centre.x) < 1e-6 && Math.abs(b.centre.y - e.centre.y) < 1e-6) ?? v.batiments[0];
     return v.batiments.map(b => ({ id: b.id, nom: b.nom, coins: b.coins, centre: b.centre, largeurM: b.largeurM, profondeurM: b.profondeurM,
-      angleDeg: b.angleDeg, niveaux: b.niveaux, hauteurM: b.hauteurM, principal: b === principal }));
+      angleDeg: b.angleDeg, niveaux: b.niveaux, hauteurM: b.hauteurM, principal: b === principal,
+      ...(b.ailes && b.ailes.length >= 2 ? { ailes: b.ailes, formeAiles: b.formeAiles, ...(b.decalageM !== undefined ? { decalageM: b.decalageM } : {}) } : {}) }));
   }
   return [{ id: 'volume', nom: null, coins: e.coins, centre: e.centre, largeurM: e.largeurM, profondeurM: e.profondeurM,
     angleDeg: e.angleDeg, niveaux: v.niveaux, hauteurM: v.hauteurM, principal: true }];
@@ -609,7 +653,7 @@ export function ficheStudioDepuisVolume(v: VolumePropose, contexte: { adresse?: 
   // Plusieurs bâtiments : la fiche décrit le bâtiment PRINCIPAL (dimensions, R+N uniques, exigés par
   // diagnostiquerPreparation3D) ; l'ensemble part à Studio dans `batiments` du projet v2. Le mot
   // « bâtiments » précédé d'un nombre est évité : il déclencherait la composition nommée A à H.
-  const principal = v.batiments && v.batiments.length > 1
+  const principal = v.batiments && volumeParBatiments(v)
     ? v.batiments.find(b => Math.abs(b.largeurM - e.largeurM) < 1e-6 && Math.abs(b.profondeurM - e.profondeurM) < 1e-6) ?? v.batiments[0]
     : null;
   const niveaux = principal?.niveaux ?? v.niveaux;
@@ -618,7 +662,11 @@ export function ficheStudioDepuisVolume(v: VolumePropose, contexte: { adresse?: 
     ? (principal.forme.startsWith('maison') ? (principal.forme === 'maisons-en-bande' ? 'Bâtiment de maisons en bande' : principal.forme === 'maisons-jumelees' ? 'Bâtiment de maisons jumelées' : 'Maison')
       : principal.forme === 'residence' ? 'Résidence' : 'Immeuble de logements')
     : logements !== null ? 'Immeuble de logements' : 'Bâtiment';
-  const ensemble = principal ? ` (ensemble de ${v.batiments!.length} volumes${v.kpi ? `, ${v.kpi.unites} unités` : ''} transmis à Studio)` : '';
+  // Lot formes-batiment : un seul bâtiment à ailes part aussi dans `batiments` (avec ses ailes).
+  const formeAiles = principal?.formeAiles ? NOMS_FORME_AILES[principal.formeAiles] : null;
+  const ensemble = !principal ? ''
+    : v.batiments!.length > 1 ? ` (ensemble de ${v.batiments!.length} volumes${v.kpi ? `, ${v.kpi.unites} unités` : ''} transmis à Studio)`
+    : ` (bâtiment ${formeAiles ?? 'à ailes'} transmis à Studio aile par aile)`;
   return {
     version: 1,
     objectif: `${usage} en ${libelleNiveaux(niveaux)}, volume d’étude proposé par Mimmo sur la parcelle${contexte.reference ? ' ' + contexte.reference : ''}${ensemble}`,

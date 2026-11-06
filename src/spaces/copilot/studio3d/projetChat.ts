@@ -64,7 +64,13 @@ export interface EntreeProjetChat {
   programmeVolume?: { logementsVises: number | null; logementsModelises: number | null; sdpM2: number | null } | null;
 }
 
-const multiBatiments = (e: EntreeProjetChat) => (e.batiments?.length ?? 0) >= 2;
+/**
+ * Lot formes-batiment : la liste `batiments` part au Studio dès DEUX bâtiments, ou pour UN bâtiment à ailes
+ * (en L, en U, cour fermée, redans : contrat v2 `ailes`, archétype multi_wing du Studio).
+ */
+export const transportParBatiments = (b: readonly Pick<BatimentV2, 'ailes'>[] | null | undefined): boolean =>
+  (b?.length ?? 0) >= 2 || ((b?.length ?? 0) === 1 && b![0].ailes.length >= 2);
+const multiBatiments = (e: EntreeProjetChat) => transportParBatiments(e.batiments);
 
 /**
  * Bâtiments du Dossier 3D transportés avec le terrain confirmé jusqu'à la charge Studio

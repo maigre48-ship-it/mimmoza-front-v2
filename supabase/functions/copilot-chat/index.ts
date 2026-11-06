@@ -66,6 +66,7 @@ import { briefingPourMissionVeille } from './agent/briefing.ts';
 import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUTILS_STUDIO } from './agent/outils.ts';
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
 import { briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
+import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 // Lot choix-cliquables : questions à choix fermés → bloc ```mimmoza-choix (puces cliquables du front).
 import { CONSIGNE_CHOIX } from './agent/choix.ts';
 import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mission.ts';
@@ -4644,6 +4645,8 @@ function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
     origine: Deno.env.get('MIMMOZA_ORIGINE') ?? ORIGINE_MIMMOZA_DEFAUT,
     // Brief créatif : relu dans le message REÇU de l'utilisateur (posé par le handler), jamais par le modèle.
     briefCarte: (brut.brief_carte ?? null) as EnvStudio['briefCarte'],
+    // Lot formes-batiment : forme choisie dans la fiche « Espace 3D », relue dans le message REÇU (jamais par le modèle).
+    formeCarte: (brut.forme_carte ?? null) as EnvStudio['formeCarte'],
   };
 }
 
@@ -10563,7 +10566,8 @@ async function runOrchestrator(params: {
   // doctrine, et ne doit pas s'interposer entre les règles et leur contexte.
   // Brief créatif validé dans la carte du chat (bloc du message reçu) : consigne de rappel de l'outil.
   const briefCarte = (ctx as unknown as Record<string, unknown>).brief_carte as EnvStudio['briefCarte'];
-  const consigneCarte = consigneBriefCarte(briefCarte ?? null);
+  const formeCarte = (ctx as unknown as Record<string, unknown>).forme_carte as EnvStudio['formeCarte'];
+  const consigneCarte = [consigneBriefCarte(briefCarte ?? null), consigneFormeCarte(formeCarte ?? null)].filter(Boolean).join('\n\n');
   const systemBase = params.priorToolResults
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
     : buildSystemPrompt(ctx, mode);
@@ -10575,7 +10579,7 @@ async function runOrchestrator(params: {
   // Lot E1 : outils Studio proposés quand le tour (ou la réponse précédente : devis à confirmer) parle de 3D / rendu.
   const lastAssistantMessage = [...params.messages].reverse().find((message) => message.role === 'assistant');
   const studioAuTour = agentDisponible(ctx.vertical)
-    && (Boolean(briefCarte) || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
+    && (Boolean(briefCarte) || Boolean(formeCarte) || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
   const selectedNames = new Set([
     ...selection.toolNames,
@@ -11395,6 +11399,8 @@ async function traiterRequete(req: Request): Promise<Response> {
     // Brief créatif : posé APRÈS l'instantané (jamais persisté ni fusionné dans une requête suivante),
     // et à chaque requête (null sans bloc) pour qu'un ancien brief ne puisse pas resservir.
     (effectiveContext as unknown as Record<string,unknown>).brief_carte = briefDuMessage(payload.message);
+    // Lot formes-batiment : même principe pour la forme choisie dans la fiche (bloc ```mimmoza-forme```).
+    (effectiveContext as unknown as Record<string,unknown>).forme_carte = formeDuMessage(payload.message);
 
     plan = planLu;
     mode = PLAN_POLICY[plan].mode;

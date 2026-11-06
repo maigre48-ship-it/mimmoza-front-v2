@@ -88,11 +88,12 @@ test('modification : barre trop longue → déborde, recul au-delà de la règle
   assert.ok(bas.alertes.some((a) => /Programme non atteint : 13 logements possibles pour 40 visés/.test(a)), bas.alertes.join(' | '));
 });
 
-test('formes : seules barre, barres parallèles et plot sont choisissables ; L, U, cour « bientôt »', () => {
-  assert.deepEqual(FORMES.filter((f) => f.disponible).map((f) => f.valeur), ['barre', 'barres', 'plot']);
+test('formes : barre, barres parallèles, plot (lot fiche-3d) + plots, L, U, cour, redans (lot formes-batiment) choisissables', () => {
+  // Lot formes-batiment : L, U et cour ne sont plus « bientôt » (calculées, vérifiées, transmises aile par aile).
+  assert.deepEqual(FORMES.filter((f) => f.disponible).map((f) => f.valeur), ['barre', 'barres', 'plot', 'plots', 'l', 'u', 'cour', 'redans']);
   const s = saisieDepuisVolume(P.volume);
-  for (const f of ['l', 'u', 'cour'] as const) assert.equal(raisonFormeIndisponible(f, s), 'Bientôt disponible.');
-  assert.equal(appliquerForme(P, s, 'l'), s);
+  for (const f of ['l', 'u', 'cour', 'redans', 'plots'] as const) assert.equal(raisonFormeIndisponible(f, s), null);
+  assert.equal(appliquerForme(P, s, 'l').forme, 'l');
   const une = appliquerForme(P, s, 'barre');
   assert.deepEqual(une.corps.map((c) => [c.longueurM, c.largeurM, c.niveaux]), [[29.5, 16, 3]]);
   const ev1 = evaluerSaisie(P, une);

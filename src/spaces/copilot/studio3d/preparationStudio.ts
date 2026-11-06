@@ -100,6 +100,8 @@ export interface PreparationStockee {
   volume: VolumePropose;
   /** Lot fiche-3d : règles PLU de la conception (entree.regles), relues sans confiance ; [] si absentes. */
   regles: RegleLue[];
+  /** Lot formes-batiment : gabarit du programme (entree.gabarit_niveaux, 1 à 30) ; null si absent. */
+  gabaritNiveaux: number | null;
 }
 
 /** Ligne `studio_preparations` relue sans confiance ; null si inexploitable. */
@@ -117,6 +119,7 @@ export function lirePreparationStockee(ligne: unknown): PreparationStockee | nul
     id: ligne.id, idu, commune: txt(entree.commune, 120), geometrie: g as unknown as GeometrieParcelle,
     programme: estObj(entree.programme_volume) ? entree.programme_volume as unknown as ProgrammeVolume : undefined, volume: v,
     regles: lireRegles(entree.regles),
+    gabaritNiveaux: fini(entree.gabarit_niveaux) && Number.isInteger(entree.gabarit_niveaux) && entree.gabarit_niveaux >= 1 && entree.gabarit_niveaux <= 30 ? entree.gabarit_niveaux : null,
   };
 }
 

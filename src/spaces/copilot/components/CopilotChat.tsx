@@ -13,6 +13,9 @@ import { COPILOT_THEME as T } from './copilotTheme';
 import type { CopilotMode } from '../types/copilot.types';
 import { FollowupPanel } from '../followup/FollowupPanel';
 import { JarvisDraftPanel, type IssueOuvertureStudio } from '../studio3d/JarvisDraftPanel';
+// Lot brief-unifié : l'habillage se choisit dans l'Espace 3D ; le chat l'y ouvre (et Mimmo aussi, quand il le demande).
+import { demandeEnCours, type DemandeBrief } from '../studio3d/briefCreatif';
+import type { EtatHabillage } from '../studio3d/FicheProjet3D';
 import type { ConfirmedTerrain } from '../studio3d/terrainCadastre';
 import { is3DPreparationRequest, readJarvisDraft, withoutJarvisDraft, type JarvisDraft } from '../studio3d/jarvisDraft';
 import { Box, Plus, Volume2, VolumeX } from 'lucide-react';
@@ -86,10 +89,42 @@ export function CopilotChat({
   const remplirSaisie = useCallback<RemplirSaisie>((transformer) => {
     setRemplissage((precedent) => ({ jeton: (precedent?.jeton ?? 0) + 1, transformer }));
   }, []);
+  // Lot brief-unifié : section habillage du panneau (ouverte, demande du chat, jeton = une ouverture par demande),
+  // propre à la conversation (une autre conversation repart fermée).
+  const [habillage, setHabillage] = useState<EtatHabillage & { conversation: string | null }>({ ouverte: false, demande: null, jeton: 0, conversation: null });
   const changerFenetre3D = (etat: EtatFenetre3D) => {
     setFenetre3D(etat);
     try { window.localStorage.setItem(CLE_FENETRE_3D, etat); } catch { /* stockage indisponible : l'état reste en mémoire */ }
   };
+  /**
+   * Lot brief-unifié : ouvre le panneau Espace 3D sur l'habillage. Fermé, réduit ou à sa largeur normale sur un
+   * grand écran : il est agrandi (la carte d'habillage y est plus confortable) ; petit écran : simplement ouvert.
+   */
+  const ouvrirHabillage = useCallback((demande: DemandeBrief | null) => {
+    const large = typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1200px)').matches;
+    setFenetre3D((etat) => {
+      const suivant: EtatFenetre3D = large ? 'large' : etat === 'large' ? 'large' : 'ouvert';
+      try { window.localStorage.setItem(CLE_FENETRE_3D, suivant); } catch { /* stockage indisponible */ }
+      return suivant;
+    });
+    setPleinEcran(false);
+    setHabillage((p) => ({ ouverte: true, demande, jeton: p.jeton + 1, conversation: currentConversationId ?? null }));
+  }, [currentConversationId]);
+  const habillageConversation = habillage.conversation === (currentConversationId ?? null) ? habillage : { ...habillage, ouverte: false, demande: null };
+  const changerHabillage = useCallback((ouverte: boolean) => {
+    setHabillage((p) => ({ ...p, ouverte, demande: ouverte ? p.demande : null, conversation: currentConversationId ?? null }));
+  }, [currentConversationId]);
+  // Quand Mimmo demande le brief (sortie partial + brief_requis de studio_lancer_rendu), le panneau s'ouvre de lui-même,
+  // une fois par demande (message), y compris au rechargement d'une conversation où la demande est encore en suspens.
+  const demandeOuverteRef = useRef<string | null>(null);
+  const enCoursHabillage = showStudioDraft ? demandeEnCours(messages) : null;
+  const cleDemande = enCoursHabillage ? `${currentConversationId ?? 'new'}:${enCoursHabillage.messageId}` : null;
+  useEffect(() => {
+    if (!cleDemande || !enCoursHabillage || demandeOuverteRef.current === cleDemande) return;
+    demandeOuverteRef.current = cleDemande;
+    ouvrirHabillage(enCoursHabillage.demande);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleDemande, ouvrirHabillage]);
 
   // Échap quitte le plein écran (comme une fenêtre agrandie qu'on restaure).
   useEffect(() => {
@@ -236,7 +271,7 @@ export function CopilotChat({
             </div>
           </header>
           <div className="mzia-fen3d__contenu">
-            <JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} onSend={(texte) => handleSend(texte)} />
+            <JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} onSend={(texte) => handleSend(texte)} habillage={habillageConversation} onHabillage={changerHabillage} />
           </div>
         </section>
       </div>}
@@ -272,7 +307,7 @@ export function CopilotChat({
                 <details><summary>Voir la réponse erronée</summary><div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div></details>
               </div>;
             }
-            return <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} onRemplirSaisie={remplirSaisie} />;
+            return <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} onRemplirSaisie={remplirSaisie} onOuvrirHabillage={showStudioDraft ? ouvrirHabillage : undefined} />;
           })
         )}
       </div>

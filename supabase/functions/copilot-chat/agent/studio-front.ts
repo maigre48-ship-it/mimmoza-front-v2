@@ -37,7 +37,15 @@ export {
 export { exigerPreparation3D } from '../../../../src/spaces/copilot/studio3d/preparation3D.ts';
 // Lot fiche-3d : vérifications PLU du volume, partagées avec la fiche « Espace 3D » du chat.
 export {
-  controlerVolume, formuleRecul, libelleRegle, lireRegles, regleCitee,
+  controlerVolume, formuleRecul, libelleRegle, lireRegles, niveauxDuGabarit, regleCitee, reglesVolume,
   type ControleVolume, type RegleLue, type Verdict,
 } from '../../../../src/spaces/copilot/studio3d/controlesVolume.ts';
 export type { ProjetMimmozaV2 } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
+// Lot formes-batiment : formes à ailes (L, U, cour fermée, redans) et plots multiples, placées et comparées par le
+// moteur ; aperçu 3D d'un bâtiment à ailes (une boîte par aile) partagé avec la fiche.
+export { boitesApercu, placerForme, type FormeCalculee } from '../../../../src/spaces/copilot/studio3d/formesBatiment.ts';
+export {
+  appliquerFormeDetail, blocForme, comparerFormes, evaluerSaisie, FORME_BLOC_LANGUE, FORMES, phraseSuggestion, saisieDepuisBloc, saisieDepuisVolume,
+  type CorpsSaisi, type Forme, type PreparationFiche, type SaisieDimensions,
+} from '../../../../src/spaces/copilot/studio3d/ficheDimensions.ts';
+export { NOMS_FORME_AILES } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';

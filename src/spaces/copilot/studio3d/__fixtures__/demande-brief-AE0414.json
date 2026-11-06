@@ -66,12 +66,83 @@
         ],
         "defaut": "jour"
       },
+      "toiture": {
+        "valeurs": [
+          "terrasse",
+          "vegetalisee",
+          "deux_pans_tuiles",
+          "deux_pans_ardoise",
+          "deux_pans_zinc"
+        ],
+        "defaut": "terrasse"
+      },
+      "teinte": {
+        "valeurs": [
+          "naturelle",
+          "claire",
+          "foncee"
+        ],
+        "defaut": "naturelle",
+        "par_facade": {
+          "enduit_clair": [
+            "naturelle"
+          ],
+          "enduit_blanc": [
+            "naturelle"
+          ],
+          "brique": [
+            "naturelle",
+            "claire"
+          ],
+          "pierre": [
+            "naturelle"
+          ],
+          "beton": [
+            "naturelle",
+            "claire"
+          ],
+          "bardage_bois": [
+            "naturelle",
+            "foncee"
+          ],
+          "verre": [
+            "naturelle"
+          ]
+        }
+      },
+      "garde_corps": {
+        "valeurs": [
+          "metal",
+          "verre",
+          "plein"
+        ],
+        "defaut": "metal"
+      },
+      "menuiseries": {
+        "valeurs": [
+          "gris",
+          "anthracite",
+          "blanc",
+          "bronze"
+        ],
+        "defaut": "gris"
+      },
+      "soubassement": {
+        "valeurs": [
+          "aucun",
+          "pierre",
+          "beton",
+          "brique"
+        ],
+        "defaut": "aucun"
+      },
       "precisions": "texte libre facultatif, 100 caractères au plus (informatif)"
     },
-    "question": "Avant d’établir le devis, quelques choix pour habiller le bâtiment (je propose une valeur pour chacun) :\n- Style architectural : contemporain (haussmannien et Art déco : pas encore disponibles dans le Studio)\n- Façade et matériaux : enduit clair, fenêtres verticales (ou enduit blanc, brique, pierre, béton, bardage bois, verre ; baies vitrées, fenêtres en bandeaux)\n- Balcons / loggias : balcons (ou balcons filants, loggias, aucun)\n- Attique : non (oui = un niveau en retrait AU-DESSUS du volume d’étude)\n- Rez-de-chaussée : logements (ou commerces, hall d’entrée)\n- Ambiance : journée (journée, fin de journée ou nuit)\nRépondez point par point, ou « à toi de choisir » et je prends ces valeurs.",
+    "question": "Avant d’établir le devis, quelques choix pour habiller le bâtiment (je propose une valeur pour chacun) :\n- Style architectural : contemporain (haussmannien et Art déco : pas encore disponibles dans le Studio)\n- Façade et matériaux : enduit clair, fenêtres verticales (ou enduit blanc, brique, pierre, béton, bardage bois, verre ; baies vitrées, fenêtres en bandeaux)\n- Balcons / loggias : balcons (ou balcons filants, loggias, aucun)\n- Attique : non (oui = un niveau en retrait AU-DESSUS du volume d’étude)\n- Rez-de-chaussée : logements (ou commerces, hall d’entrée)\n- Ambiance : journée (journée, fin de journée ou nuit)\n- Détails (facultatif) : toit-terrasse (ou toiture végétalisée, toit à deux pans en tuiles, ardoise ou zinc) ; teinte (brique rouge ou claire, béton brut ou blanc, bois brun ou noirci) ; garde-corps métal (ou verre, plein) ; menuiseries alu gris (ou anthracite, blanc, bronze) ; sans soubassement (ou pierre, béton, brique)\nRépondez point par point, ou « à toi de choisir » et je prends ces valeurs.",
     "limites": {
       "batiments": 2,
-      "balcons": true
+      "balcons": true,
+      "ailes": false
     },
     "apercu": {
       "corps": [
@@ -168,5 +239,5 @@
       ]
     }
   },
-  "message": "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Une carte « Brief créatif » s'affiche sous ton message : l'utilisateur y choisit façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée et ambiance, avec un aperçu de son volume. Écris UN SEUL message court : invite-le à faire ses choix dans la carte (ou à répondre en texte, ou « à toi de choisir ») ; ne recopie pas la liste des choix, ne pose aucune autre question. Quand il valide la carte, son message contient un bloc « mimmoza-brief » : rappelle alors studio_lancer_rendu (même type), le serveur lit ce brief lui-même. S'il répond en texte, rappelle studio_lancer_rendu avec `brief` : ses choix (les points non précisés prennent la valeur proposée) ; « à toi de choisir » ou équivalent → brief: { a_toi_de_choisir: true }. Ne repose JAMAIS cette question."
+  "message": "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Le panneau « Espace 3D » (à droite du chat) s'ouvre de lui-même sur l'habillage du projet (carte « Brief créatif ») : l'utilisateur y choisit façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, ambiance et, s'il le souhaite, les détails (toiture, teinte, garde-corps, menuiseries, soubassement), avec un aperçu de son volume. Écris UN SEUL message court : invite-le à faire ses choix dans l'Espace 3D, section habillage (ou à répondre en texte, ou « à toi de choisir ») ; ne recopie pas la liste des choix, ne pose aucune autre question. Quand il valide l'habillage, son message contient un bloc « mimmoza-brief » : rappelle alors studio_lancer_rendu (même type), le serveur lit ce brief lui-même. S'il répond en texte, rappelle studio_lancer_rendu avec `brief` : ses choix (les points non précisés prennent la valeur proposée) ; « à toi de choisir » ou équivalent → brief: { a_toi_de_choisir: true }. Ne repose JAMAIS cette question."
 }

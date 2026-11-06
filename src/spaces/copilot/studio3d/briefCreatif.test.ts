@@ -9,12 +9,14 @@ import { readFileSync } from 'node:fs';
 import {
   BRIEF_AMBIANCES, BRIEF_BALCONS, BRIEF_BLOC_LANGUE as LANGUE_SERVEUR, BRIEF_BLOC_VERSION as VERSION_SERVEUR, BRIEF_DEFAUT,
   BRIEF_FACADES, BRIEF_OUVERTURES, BRIEF_RDC, BRIEF_STYLES, briefDuMessage, libelleBrief,
+  BRIEF_TOITURES, BRIEF_TEINTES, BRIEF_GARDE_CORPS, BRIEF_MENUISERIES, BRIEF_SOUBASSEMENTS, TEINTES_PAR_FACADE as TEINTES_SERVEUR, detailsHabillage, habillageBatiments,
 } from '../../../../supabase/functions/copilot-chat/agent/studio.ts';
 import {
   AMBIANCES, ATTIQUES, BALCONS, BRIEF_BLOC_LANGUE, BRIEF_BLOC_VERSION, CHAMPS_CARTE, CHOIX_DEFAUT, ECRANS, FACADES, OUVERTURES, RDCS, STYLES,
   briefAEnvoyer, briefEnvoyeApres, choisir, demandeDepassee, couleurs, dessinTravee, dimsFenetre, etatInitial, hauteurCorps, lireBlocBrief, lireDemandeBrief,
   messageBrief, raisonIndisponible, recapitulatif, sceneApercu, travees,
   briefCourant, briefDuBloc, demandeFiche, dessinStyle,
+  TOITURES, TEINTES, GARDE_CORPS, MENUISERIES, SOUBASSEMENTS, TEINTES_PAR_FACADE, CHAMPS_DETAILS, BIENTOT, demandeEnCours, demandePanneau, hauteurToitPente, libelleTeinte,
   type ChoixBrief, type DemandeBrief, type EtatBrief,
 } from './briefCreatif.ts';
 
@@ -44,8 +46,11 @@ test('parité stricte : listes fermées, ordre, valeurs par défaut et bloc iden
   }
 });
 
-test('3 écrans au plus, chaque champ de la carte sur un seul écran', () => {
-  assert.ok(ECRANS.length <= 3);
+test('3 écrans principaux + « Détails » facultatif ; chaque champ de la carte sur un seul écran', () => {
+  // Lot brief-unifié : les nouveaux choix vont dans un 4ᵉ écran FACULTATIF (on peut valider dès le 3ᵉ).
+  assert.equal(ECRANS.length, 4);
+  assert.deepEqual(ECRANS.filter((e) => !e.facultatif).length, 3);
+  assert.deepEqual(ECRANS[3].champs, [...CHAMPS_DETAILS]);
   assert.deepEqual(ECRANS.flatMap((e) => e.champs).sort(), [...CHAMPS_CARTE].sort());
 });
 
@@ -56,7 +61,7 @@ test('aller-retour serveur : TOUTES les combinaisons cliquables, relues par brie
       if (!rdc.disponible) continue;
       for (const type of ['film', 'visite360', 'image'] as const) {
         if (type === 'image' && ambiance.valeur === 'nuit') continue;
-        const choix: ChoixBrief = { facade: facade.valeur, ouvertures: ouvertures.valeur, balcons: balcons.valeur, attique: attique.valeur, rdc: rdc.valeur, ambiance: ambiance.valeur };
+        const choix: ChoixBrief = { ...CHOIX_DEFAUT, facade: facade.valeur, ouvertures: ouvertures.valeur, balcons: balcons.valeur, attique: attique.valeur, rdc: rdc.valeur, ambiance: ambiance.valeur };
         const etat: EtatBrief = { choix, touches: [...CHAMPS_CARTE] };
         const msg = messageBrief(etat, { type, limites: { batiments: 1, balcons: true } });
         assert.ok(msg.length < 8000);
@@ -78,13 +83,13 @@ test('« Laisser Mimmo choisir » et champs non touchés : `a_toi_de_choisir`, l
   assert.deepEqual(briefAEnvoyer(vide, true), { a_toi_de_choisir: true });
   const lu = briefDuMessage(messageBrief(vide, DEMANDE, true));
   assert.ok(lu?.ok);
-  if (lu?.ok) assert.deepEqual(lu.valeur.brief.defauts, ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance']);
+  if (lu?.ok) assert.deepEqual(lu.valeur.brief.defauts, ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance', 'toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement']);
   const e = choisir(choisir(vide, 'facade', 'brique', DEMANDE), 'balcons', 'loggias', DEMANDE);
   assert.deepEqual(briefAEnvoyer(e), { facade: 'brique', balcons: 'loggias', a_toi_de_choisir: true });
   const lu2 = briefDuMessage(messageBrief(e, DEMANDE));
   assert.ok(lu2?.ok);
   if (lu2?.ok) {
-    assert.deepEqual(lu2.valeur.brief.defauts, ['style', 'ouvertures', 'attique', 'rdc', 'ambiance']);
+    assert.deepEqual(lu2.valeur.brief.defauts, ['style', 'ouvertures', 'attique', 'rdc', 'ambiance', 'toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement']);
     assert.match(libelleBrief(lu2.valeur.brief), /façade brique · fenêtres verticales \(par défaut\) · loggias ·/);
   }
   // Ligne lisible du message = ce qui sera appliqué.
@@ -108,8 +113,10 @@ test('options non cliquables : styles et hall « bientôt », nuit pour une imag
 });
 
 test('état initial d’une modification : brief connu, « hall » et nuit d’image ramenés à ce que le Studio rend', () => {
-  const e = etatInitial({ actuel: { facade: 'pierre', ouvertures: 'baies_vitrees', balcons: 'balcons_filants', attique: true, rdc: 'hall', ambiance: 'nuit', defauts: ['style', 'ouvertures'] }, ambiances: ['jour', 'fin_de_journee'] });
-  assert.deepEqual(e.choix, { facade: 'pierre', ouvertures: 'baies_vitrees', balcons: 'balcons_filants', attique: true, rdc: 'logements', ambiance: 'jour' });
+  // actuel sans détails (sortie d'avant le lot brief-unifié) : la carte s'ouvre quand même, détails proposés.
+  const actuel = { facade: 'pierre', ouvertures: 'baies_vitrees', balcons: 'balcons_filants', attique: true, rdc: 'hall', ambiance: 'nuit', defauts: ['style', 'ouvertures', ...CHAMPS_DETAILS] } as unknown as NonNullable<DemandeBrief['actuel']>;
+  const e = etatInitial({ actuel: { ...CHOIX_DEFAUT, ...actuel }, ambiances: ['jour', 'fin_de_journee'] });
+  assert.deepEqual(e.choix, { ...CHOIX_DEFAUT, facade: 'pierre', ouvertures: 'baies_vitrees', balcons: 'balcons_filants', attique: true, rdc: 'logements', ambiance: 'jour' });
   assert.deepEqual(e.touches, ['facade', 'balcons', 'attique']);
 });
 
@@ -117,7 +124,7 @@ test('lireDemandeBrief : garde réelle (fixture AE0414), devis avec brief_actuel
   assert.equal(DEMANDE.origine, 'demande');
   assert.equal(DEMANDE.type, 'film');
   assert.deepEqual(DEMANDE.ambiances, ['jour', 'fin_de_journee', 'nuit']);
-  assert.deepEqual(DEMANDE.limites, { batiments: 2, balcons: true });
+  assert.deepEqual(DEMANDE.limites, { batiments: 2, balcons: true, ailes: false });
   assert.deepEqual(DEMANDE.apercu?.corps.map((k) => [k.l, k.p, k.n]), [[29.5, 16, 3], [29, 16, 3]]);
   assert.equal(DEMANDE.actuel, null);
   // Ancienne sortie (fonction non redéployée) : carte quand même, sans aperçu 3D.
@@ -125,7 +132,7 @@ test('lireDemandeBrief : garde réelle (fixture AE0414), devis avec brief_actuel
   delete ancienne.data.apercu; delete ancienne.data.limites; delete ancienne.data.carte;
   ancienne.data.type = 'image'; ancienne.data.champs.ambiance.valeurs = ['jour', 'fin_de_journee'];
   const d2 = lireDemandeBrief(appel(ancienne));
-  assert.deepEqual([d2?.apercu, d2?.limites, d2?.ambiances], [null, { batiments: 1, balcons: true }, ['jour', 'fin_de_journee']]);
+  assert.deepEqual([d2?.apercu, d2?.limites, d2?.ambiances], [null, { batiments: 1, balcons: true, ailes: false }, ['jour', 'fin_de_journee']]);
   // Devis portant le brief : « Modifier l'habillage ».
   const devis = { status: 'confirmation_requise', data: { jeton_devis: 'x', type: 'image', devis: {}, brief_actuel: { style: 'contemporain', facade: 'brique', ouvertures: 'fenetres_verticales', balcons: 'loggias', attique: true, rdc: 'commerces', ambiance: 'jour', precisions: null, defauts: ['style'] }, apercu: SORTIE.data.apercu, limites: { batiments: 2, balcons: true } } };
   const d3 = lireDemandeBrief(appel(devis));
@@ -242,7 +249,7 @@ test('fiche : brief courant = le PLUS RÉCENT (fiche, carte ou devis), relu sans
   assert.equal(briefCourant([]), null);
   assert.deepEqual([briefCourant([devis])?.facade, briefCourant([devis])?.origine], ['pierre', 'devis']);
   const apres = briefCourant([devis, fiche]);
-  assert.deepEqual([apres?.facade, apres?.origine, apres?.defauts], ['bardage_bois', 'message', ['ouvertures', 'balcons', 'attique', 'rdc', 'ambiance']]);
+  assert.deepEqual([apres?.facade, apres?.origine, apres?.defauts], ['bardage_bois', 'message', ['ouvertures', 'balcons', 'attique', 'rdc', 'ambiance', 'toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement']]);
   assert.equal(briefCourant([fiche, devis])?.facade, 'pierre');
   // Bloc refusé par les listes du serveur : ignoré (jamais deviné).
   assert.equal(briefDuBloc('```mimmoza-brief\n{"v":1,"brief":{"facade":"marbre"}}\n```'), null);
@@ -267,4 +274,111 @@ test('fiche : styles — descriptif court pour chacun, vignette contemporaine = 
   const a = dessinStyle('art_deco')!;
   assert.ok(a.polys.length === 0 && a.rects.length > 20 && a.hauteur > 10);
   for (const d of [h, a]) for (const r of d.rects) assert.ok([r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0);
+});
+
+// ═══ Lot brief-unifié (06/11/2026) : un seul lieu (Espace 3D) et détails réellement rendus par le Studio ═══
+
+test('parité stricte des DÉTAILS : listes, ordre, défauts et teintes par matière identiques à studio.ts ; « bientôt » jamais envoyés', () => {
+  assert.deepEqual(TOITURES.map((o) => o.valeur), [...BRIEF_TOITURES]);
+  assert.deepEqual(TEINTES.map((o) => o.valeur), [...BRIEF_TEINTES]);
+  assert.deepEqual(GARDE_CORPS.map((o) => o.valeur), [...BRIEF_GARDE_CORPS]);
+  assert.deepEqual(MENUISERIES.map((o) => o.valeur), [...BRIEF_MENUISERIES]);
+  assert.deepEqual(SOUBASSEMENTS.map((o) => o.valeur), [...BRIEF_SOUBASSEMENTS]);
+  assert.deepEqual(TEINTES_PAR_FACADE, TEINTES_SERVEUR);
+  for (const o of [...TOITURES, ...TEINTES, ...GARDE_CORPS, ...MENUISERIES, ...SOUBASSEMENTS]) {
+    assert.ok(o.disponible, o.libelle);
+    assert.ok(!/\bav-|flat-green|gable|railing|joinery|basement|tuile-rouge|aluminium-noir/.test(`${o.libelle} ${o.detail}`), `${o.libelle} ${o.detail}`);
+  }
+  // Volets, brise-soleil, entrée : montrés « bientôt », absents des listes envoyées et refusés par le serveur.
+  assert.deepEqual(BIENTOT.map((b) => b.titre), ['Volets ou brise-soleil', 'Entrée de l’immeuble']);
+  for (const champ of ['occultations', 'entree', 'volets']) assert.equal(briefDuMessage('```mimmoza-brief\n' + JSON.stringify({ v: 1, brief: { [champ]: 'porche' } }) + '\n```')?.ok, false);
+});
+
+test('aller-retour serveur des DÉTAILS : chaque combinaison cliquable relue par briefDuMessage, valeurs exactes, traduite pour le Studio', () => {
+  const d = { ambiances: DEMANDE.ambiances, limites: DEMANDE.limites };
+  let n = 0;
+  for (const facade of FACADES) for (const teinte of TEINTES) for (const toiture of TOITURES) for (const garde_corps of GARDE_CORPS) for (const menuiseries of MENUISERIES) for (const soubassement of SOUBASSEMENTS) {
+    let e: EtatBrief = { choix: { ...CHOIX_DEFAUT }, touches: [] };
+    e = choisir(e, 'facade', facade.valeur, d);
+    for (const [c, v] of [['teinte', teinte.valeur], ['toiture', toiture.valeur], ['garde_corps', garde_corps.valeur], ['menuiseries', menuiseries.valeur], ['soubassement', soubassement.valeur]] as const) {
+      e = choisir(e, c, v, d);
+    }
+    if (e.choix.teinte !== teinte.valeur) { assert.ok(!TEINTES_PAR_FACADE[facade.valeur].includes(teinte.valeur)); continue; }
+    const lu = briefDuMessage(messageBrief(e, { type: 'film', limites: DEMANDE.limites }));
+    assert.ok(lu?.ok, JSON.stringify(lu));
+    if (!lu?.ok) return;
+    for (const c of ['facade', 'teinte', 'toiture', 'garde_corps', 'menuiseries', 'soubassement'] as const) assert.equal(lu.valeur.brief[c], e.choix[c], c);
+    const h = habillageBatiments(lu.valeur.brief);
+    if (e.choix.soubassement !== 'aucun') assert.ok(h.details?.soubassement, 'soubassement transmis au worker');
+    if (e.choix.menuiseries !== 'gris') assert.ok(h.details?.menuiseries?.startsWith('av-aluminium-'));
+    n++;
+  }
+  assert.equal(n, 10 * 5 * 3 * 4 * 4); // 10 couples matière/teinte réels × toitures × garde-corps × menuiseries × soubassements
+  assert.equal(detailsHabillage({ ...lu0(), balcons: 'aucun' }), null);
+  function lu0() { const v = briefDuMessage('```mimmoza-brief\n{"v":1,"brief":{"a_toi_de_choisir":true}}\n```'); assert.ok(v?.ok); return (v as { ok: true; valeur: { brief: Parameters<typeof detailsHabillage>[0] } }).valeur.brief; }
+});
+
+test('combinaisons que le Studio ne rend pas : jamais proposées (teinte d’une autre matière, attique sous deux pans, soubassement sous vitrines, garde-corps sans balcon)', () => {
+  const d = { ambiances: DEMANDE.ambiances, limites: DEMANDE.limites };
+  let e: EtatBrief = { choix: { ...CHOIX_DEFAUT }, touches: [] };
+  assert.equal(raisonIndisponible('teinte', 'claire', e.choix, d), 'Une seule teinte pour cette matière.');
+  e = choisir(choisir(e, 'facade', 'brique', d), 'teinte', 'claire', d);
+  assert.equal(recapitulatif(e.choix), 'Brique claire · fenêtres verticales · balcons · toit plat · logements en rez-de-chaussée · journée');
+  e = choisir(e, 'facade', 'pierre', d);
+  assert.deepEqual([e.choix.teinte, e.touches.includes('teinte')], ['naturelle', false], 'teinte remise quand la matière change');
+  e = choisir(choisir(e, 'attique', true, d), 'toiture', 'deux_pans_tuiles', d);
+  assert.deepEqual([e.choix.attique, e.choix.toiture], [false, 'deux_pans_tuiles']);
+  assert.match(String(raisonIndisponible('attique', true, e.choix, d)), /deux pans/);
+  assert.match(recapitulatif(e.choix), /toit à deux pans en tuiles/);
+  e = choisir(choisir(e, 'soubassement', 'pierre', d), 'rdc', 'commerces', d);
+  assert.deepEqual([e.choix.soubassement, e.touches.includes('soubassement')], ['aucun', false]);
+  assert.match(String(raisonIndisponible('soubassement', 'beton', e.choix, d)), /vitrines/);
+  e = choisir(e, 'balcons', 'aucun', d);
+  assert.match(String(raisonIndisponible('garde_corps', 'verre', e.choix, d)), /Sans balcon/);
+  // Le message envoyé est accepté par le serveur.
+  assert.ok(briefDuMessage(messageBrief(e, { type: 'image', limites: d.limites }))?.ok);
+  assert.equal(libelleTeinte('bardage_bois', 'foncee'), 'Bois noirci');
+});
+
+test('aperçu : toit à deux pans (prisme au-dessus du dernier niveau, sans attique), toiture végétalisée, soubassement, menuiseries et garde-corps du brief', () => {
+  const ap = DEMANDE.apercu!;
+  const pente = sceneApercu(ap, { ...CHOIX_DEFAUT, toiture: 'deux_pans_ardoise', attique: true }, DEMANDE.limites);
+  assert.equal(pente.toits.length, 2);
+  assert.equal(pente.boites.filter((b) => b.m === 'mur').length, 2, 'pas d’attique sous un toit à deux pans');
+  assert.equal(hauteurToitPente(29.5, 16), 5.88, 'hauteur mesurée sur le Studio le 06/11 (5,88 m)');
+  assert.ok(Math.abs(pente.toits[0].base - 9.34) < 1e-9 && Math.abs(pente.hauteurMax - (9.34 + 5.88)) < 1e-9);
+  const vert = sceneApercu(ap, { ...CHOIX_DEFAUT, toiture: 'vegetalisee', soubassement: 'pierre', menuiseries: 'anthracite', garde_corps: 'verre' }, DEMANDE.limites);
+  assert.equal(vert.boites.filter((b) => b.m === 'toiture').length, 2);
+  assert.equal(vert.boites.filter((b) => b.m === 'soubassement').length, 2);
+  assert.ok(vert.boites.filter((b) => b.m === 'soubassement').every((b) => Math.abs(b.s[1] - 0.6) < 1e-9));
+  assert.ok(vert.boites.filter((b) => b.m === 'menuiserie').length > 50);
+  assert.ok(vert.boites.filter((b) => b.m === 'gardeCorps').every((b) => b.opacite === 0.45));
+  const c = couleurs({ ...CHOIX_DEFAUT, menuiseries: 'anthracite', soubassement: 'pierre', toiture: 'deux_pans_tuiles', facade: 'beton', teinte: 'claire', garde_corps: 'plein' });
+  assert.deepEqual([c.menuiserie, c.soubassement, c.toiture, c.mur], ['#383e42', '#cbc2ae', '#9c4c2e', '#cfcdc8']);
+  const v = dessinTravee({ ...CHOIX_DEFAUT, toiture: 'deux_pans_zinc', soubassement: 'brique' });
+  assert.ok(v.rects.some((r) => r.fill === '#4a4e53') && v.rects.some((r) => r.fill === '#8e4b38' && Math.abs(r.h - 0.6) < 1e-9));
+  for (const r of v.rects) assert.ok([r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0);
+});
+
+test('un seul lieu : demande EN SUSPENS → le panneau s’ouvre et « Valider » envoie un bloc typé ; dépassée → habillage du projet sans rendu', () => {
+  const garde = { id: 'a1', role: 'assistant', text: '', toolCalls: [appel(SORTIE)] };
+  const fil = [{ id: 'u0', role: 'user', text: 'Fais-moi un film' }, garde];
+  const enc = demandeEnCours(fil);
+  assert.equal(enc?.messageId, 'a1');
+  assert.equal(enc?.demande.type, 'film');
+  const dp = demandePanneau(enc!.demande, null, null, { batiments: 2, balcons: true });
+  assert.equal(dp.type, 'film');
+  assert.match(messageBrief(etatInitial(dp), dp), /```mimmoza-brief\n\{"v":1,"type":"film"/);
+  // Brief envoyé (bloc) ou devis plus loin : plus rien en suspens, le panneau revient à l'habillage du projet (type null).
+  const envoye = [...fil, { id: 'u1', role: 'user', text: messageBrief(etatInitial(dp), dp) }];
+  assert.equal(demandeEnCours(envoye), null);
+  const devis = [...fil, { id: 'a2', role: 'assistant', text: '', toolCalls: [appel({ status: 'confirmation_requise', data: { type: 'film', devis: {} } })] }];
+  assert.equal(demandeEnCours(devis), null);
+  assert.equal(demandeEnCours([]), null);
+  const fiche = demandePanneau(null, briefCourant(envoye), DEMANDE.apercu, DEMANDE.limites);
+  assert.deepEqual([fiche.origine, fiche.type], ['fiche', null]);
+  // Demande sans aperçu (ancienne sortie) : l'aperçu du dossier (moteur) la complète.
+  const ancienne = structuredClone(SORTIE); delete ancienne.data.apercu;
+  const d2 = demandePanneau(lireDemandeBrief(appel(ancienne)), null, DEMANDE.apercu, DEMANDE.limites);
+  assert.deepEqual([d2.type, d2.apercu?.corps.length, d2.limites.batiments], ['film', 2, 2]);
 });

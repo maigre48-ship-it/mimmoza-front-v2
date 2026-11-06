@@ -24,13 +24,16 @@ import { messageErreur } from "@/components/ui/messageErreur";
 import { DimensionsFiche, ProgrammeFiche, StyleFiche } from './FicheProjet3D';
 import { useFiche3D } from './useFiche3D';
 import { apercuDepuisEvaluation } from './ficheDimensions';
+import type { EtatHabillage } from './FicheProjet3D';
+// Lot brief-formes : limites du dossier (bâtiment à ailes → pas de toit à deux pans).
+import { limitesDossier } from './briefCreatif';
 
 const LABELS = {
   objectif: 'Objectif',
   localisation: 'Lieu',
   programme: 'Programme',
-  dimensions: 'Dimensions',
-  style: 'Style',
+  dimensions: 'Forme et dimensions',
+  style: 'Style et habillage',
   contraintes: 'Contraintes',
 } as const;
 type Field = keyof typeof LABELS;
@@ -38,9 +41,15 @@ type Field = keyof typeof LABELS;
 /** R2 — résultat de l'ouverture : `parcelle-requise` = poser la question minimale dans le dossier. */
 export type IssueOuvertureStudio = void | 'parcelle-requise';
 
-export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend }: {
+export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage }: {
   messages: readonly ChatMessage[];
   conversationId: string | null;
+  /**
+   * Lot brief-unifié : section habillage ouverte ou non (tenu par CopilotChat : ligne « Choisir l'habillage → » du chat,
+   * demande de brief de Mimmo) ; `demande` porte le type du rendu attendu, `jeton` change à chaque ouverture demandée.
+   */
+  habillage?: EtatHabillage | null;
+  onHabillage?: (ouverte: boolean) => void;
   /** Lot fiche-3d : envoi d'un message au chat (habillage choisi dans la fiche, même brief que la carte). */
   onSend?: (texte: string) => void;
   onOpenStudio?: (draft: JarvisDraft, conversationId: string, terrain?: ConfirmedTerrain & { adresse?: string | null }) => Promise<IssueOuvertureStudio>;
@@ -116,14 +125,19 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   const fiche3d = useFiche3D(messages);
   const ficheOk = fiche3d.etat === 'ok' ? fiche3d : null;
   const styleFiche = <StyleFiche messages={messages} apercu={ficheOk ? apercuDepuisEvaluation(ficheOk.ev) : null}
-    limites={{ batiments: ficheOk?.ev.corps.length ?? 1, balcons: true }} onSend={onSend} />;
+    limites={limitesDossier(ficheOk?.ev.corps)} onSend={onSend} habillage={habillage ?? null} onHabillage={onHabillage} />;
+  // Lot brief-unifié : sans fiche du moteur, la section habillage reste disponible si le chat ou Mimmo l'ouvre.
+  const habillageSansFiche = !ficheOk && !!habillage?.ouverte;
   const parcelleConnue = volume.contexte.parcelle.type !== 'aucune';
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
     <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus />
     {ficheOk && <dl className="jarvis-dossier__fields">
-      <div className="jarvis-dossier__field"><dt>Programme</dt><dd><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
-      <div className="jarvis-dossier__field"><dt>Dimensions</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} /></dd></div>
-      <div className="jarvis-dossier__field"><dt>Style</dt><dd>{styleFiche}</dd></div>
+      <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>Programme</dt><dd><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
+      <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.dimensions}</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} onSend={onSend} /></dd></div>
+      <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.style}</dt><dd>{styleFiche}</dd></div>
+    </dl>}
+    {habillageSansFiche && <dl className="jarvis-dossier__fields">
+      <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.style}</dt><dd>{styleFiche}</dd></div>
     </dl>}
     {parcelleConnue ? <>
       <h2>Parcelle et volume d’étude</h2>
@@ -297,10 +311,11 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
       ) : (
         <>
           <dl className="jarvis-dossier__fields">
-            {(Object.entries(LABELS) as [Field, string][]).map(([key, label], index) => <div key={key} className="jarvis-dossier__field">
+            {(Object.entries(LABELS) as [Field, string][]).map(([key, label], index) => <div key={key}
+              className={`jarvis-dossier__field${(key === 'style' || ((key === 'programme' || key === 'dimensions') && ficheOk)) ? ' jarvis-dossier__field--large' : ''}`}>
               <dt><span>{String(index + 1).padStart(2, '0')}</span> {label}</dt>
               {key === 'programme' && ficheOk ? <dd><ProgrammeFiche fiche={ficheOk} texteModele={draft.programme} /></dd>
-                : key === 'dimensions' && ficheOk ? <dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={draft.dimensions} /></dd>
+                : key === 'dimensions' && ficheOk ? <dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={draft.dimensions} onSend={onSend} /></dd>
                 : key === 'style' ? <dd>{styleFiche}</dd>
                 : <dd className={draft[key] ? '' : 'is-missing'}>{draft[key] ?? 'À préciser'}{key === 'dimensions' && fiche3d.etat === 'chargement' ? ' · lecture du volume calculé…' : ''}</dd>}
             </div>)}

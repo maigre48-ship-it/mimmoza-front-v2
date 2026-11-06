@@ -16,7 +16,7 @@
 // Aucune I/O ici.
 // =============================================================================
 
-import { HYPOTHESES_VOLUME, libelleNiveaux, type VolumePropose } from './volumeParcelle.ts';
+import { HYPOTHESES_VOLUME, libelleNiveaux, regleValide, type ReglePlu, type ReglesPluVolume, type VolumePropose } from './volumeParcelle.ts';
 
 type Obj = Record<string, unknown>;
 const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -123,18 +123,22 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
     out.push(nonControle('emprise_sol_max_pct', `Emprise maximale inconnue : plafond par défaut de ${fr(HYPOTHESES_VOLUME.cesDefaut * 100)} % appliqué au volume (hypothèse).`));
   }
   // Reculs : le volume tient à ≥ reculM de TOUTES les limites (côté voie non identifié).
+  // Lot formes-batiment : bâtiment à ailes (L, U, cour, redans) → reculM est la plus petite distance de ses
+  // AILES (rectangles réels) aux limites, emprise = réunion des ailes : on le dit dans l'explication.
   const recul = v.reculM;
+  const ailes = (v.batiments ?? []).some((b) => (b.ailes?.length ?? 0) >= 2);
+  const surContour = ailes ? ' Mesuré aile par aile sur le contour réel du bâtiment (pas sur son rectangle englobant).' : '';
   const rv = r('recul_voie_m');
-  if (rv && fini(rv.valeur)) out.push(juger(rv, recul + 0.01 >= rv.valeur, `${fr(recul, 1)} m de toutes les limites`, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m', ' Côté voie non identifié sur le cadastre : recul uniforme.'));
+  if (rv && fini(rv.valeur)) out.push(juger(rv, recul + 0.01 >= rv.valeur, `${fr(recul, 1)} m de toutes les limites`, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m', ` Côté voie non identifié sur le cadastre : recul uniforme.${surContour}`));
   else out.push(nonControle('recul_voie_m', 'Recul à la voie inconnu : non contrôlé.'));
   const rl = r('recul_limites_m');
-  if (rl && fini(rl.valeur)) out.push(juger(rl, recul + 0.01 >= rl.valeur, `${fr(recul, 1)} m de toutes les limites`, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m'));
+  if (rl && fini(rl.valeur)) out.push(juger(rl, recul + 0.01 >= rl.valeur, `${fr(recul, 1)} m de toutes les limites`, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m', surContour));
   else {
     const rf = r('recul_limites_formule');
     const f = rf && typeof rf.valeur === 'string' ? formuleRecul(rf.valeur) : null;
     if (rf && f) {
       const exige = Math.max(f.minimumM ?? 0, v.hauteurM / f.diviseur);
-      out.push(juger(rf, recul + 0.01 >= exige, `${fr(recul, 1)} m de toutes les limites`, `${String(rf.valeur)} soit ${fr(exige, 1)} m pour ≈ ${fr(v.hauteurM, 1)} m`, 'recul_limites_m'));
+      out.push(juger(rf, recul + 0.01 >= exige, `${fr(recul, 1)} m de toutes les limites`, `${String(rf.valeur)} soit ${fr(exige, 1)} m pour ≈ ${fr(v.hauteurM, 1)} m`, 'recul_limites_m', surContour));
     } else out.push(nonControle('recul_limites_m', 'Recul aux limites inconnu : non contrôlé.'));
   }
   // Pleine terre : jamais affirmée (voirie, stationnement, dalles non déduits).
@@ -153,4 +157,72 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
       explication: `${places !== null ? `${places} places requises pour ${logements} logements` : 'Nombre de places à déterminer'} : stationnement non modélisé dans le volume d’étude.` });
   }
   return out;
+}
+
+// ── Règles de conception → règles du volume ─────────────────────────────────
+// Lot formes-batiment : déplacés TELS QUELS de supabase/functions/copilot-chat/agent/studio.ts (réexportés
+// par studio-front.ts et studio.ts : API du serveur inchangée). La fiche « Espace 3D » en a besoin pour placer
+// les formes du bâtiment (formesBatiment.ts) avec les MÊMES contraintes que le moteur (contraintesPlu).
+
+const CLES_VOLUME: Record<string, ReglePlu['cle']> = {
+  hauteur_max_m: 'hauteur_max_m', niveaux_max: 'niveaux_max', emprise_sol_max_pct: 'emprise_max_ratio',
+  recul_voie_m: 'recul_voie_m', recul_limites_m: 'recul_limites_m', recul_limites_formule: 'recul_limites_formule',
+  pleine_terre_min_pct: 'pleine_terre_min_ratio',
+};
+
+/**
+ * Règles de conception → règles du volume (ReglesPluVolume du Dossier 3D).
+ * Même conversion que reglesPlu.ts (reglesConception) : statut confirme → « lue », sinon « estimée » ;
+ * pourcentages → ratios ; formule « H/k min m ». Ajout E1 : une emprise « non réglementée » CITÉE
+ * devient un plafond de 100 % (aucun plafond ; la pleine terre borne l'emprise), au lieu du 40 % par défaut.
+ * Le gabarit du programme (R+n), s'il est fixé, plafonne les niveaux (choix du projet, pas une règle PLU).
+ */
+export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null): ReglesPluVolume {
+  const out: ReglePlu[] = [];
+  const non: string[] = [];
+  for (const r of regles) {
+    const cle = CLES_VOLUME[r.cle];
+    if (!cle) {
+      if (r.cle === 'stationnement_par_logement' || r.cle === 'mixite_sociale_pct') {
+        non.push(r.statut === 'manquant' ? `${r.cle === 'mixite_sociale_pct' ? 'Mixité sociale' : 'Stationnement'} : règle inconnue`
+          : `${r.cle === 'mixite_sociale_pct' ? 'Mixité sociale' : 'Stationnement'} : ${String(r.valeur)} ${r.cle === 'mixite_sociale_pct' ? '%' : 'place(s)/logement'} (${libelleRegle(r)}) — non modélisé dans le volume`);
+      }
+      continue;
+    }
+    const statut: ReglePlu['statut'] = r.statut === 'confirme' ? 'lue' : 'estimee';
+    const base = { source: r.source, reference: r.article, statut };
+    if (r.cle === 'emprise_sol_max_pct' && r.nature === 'non_reglementee' && r.article && r.statut !== 'manquant') {
+      out.push({ cle, valeur: 1, ...base, source: `${r.source} — emprise non réglementée` });
+      continue;
+    }
+    if (r.statut === 'manquant') {
+      non.push(`${r.cle} : ${r.nature === 'par_secteur' ? 'valeur selon le secteur, à préciser' : 'règle inconnue'}`);
+      continue;
+    }
+    if (cle === 'recul_limites_formule') {
+      const f = typeof r.valeur === 'string' ? formuleRecul(r.valeur) : null;
+      if (f) out.push({ cle, valeur: f.diviseur, minimumM: f.minimumM, ...base });
+      else non.push(`Recul aux limites (formule « ${String(r.valeur)} ») : non chiffrable par le volume`);
+      continue;
+    }
+    const v = fini(r.valeur) ? r.valeur : null;
+    if (v === null) { non.push(`${r.cle} : valeur non chiffrée`); continue; }
+    const regle: ReglePlu = { cle, valeur: cle === 'emprise_max_ratio' || cle === 'pleine_terre_min_ratio' ? v / 100 : v, ...base };
+    if (regleValide(regle)) out.push(regle);
+    else if (v === 0 && cle.startsWith('recul')) non.push(`${r.cle} : 0 m (implantation à l’alignement autorisée) — le volume garde le recul des limites séparatives`);
+    else non.push(`${r.cle} : ${String(r.valeur)} hors bornes, ignorée`);
+  }
+  if (gabaritNiveaux !== null) {
+    out.push({ cle: 'niveaux_max', valeur: gabaritNiveaux, source: `Programme de la conception (gabarit ${libelleNiveaux(gabaritNiveaux)}) — choix du projet, pas une règle PLU`, reference: null, statut: 'estimee' });
+  }
+  return { source: out.some((r) => !r.source.startsWith('Programme de la conception')) ? 'plu-chiffre' : 'aucune', regles: out, nonAppliquees: non };
+}
+
+/** « R+4 » → 5 niveaux ; « RDC » / « R+0 » → 1 ; sinon null. */
+export function niveauxDuGabarit(g: unknown): number | null {
+  const s = txt(g, 40);
+  if (!s) return null;
+  const m = /\bR\s*\+\s*(\d{1,2})\b/i.exec(s);
+  if (m) { const n = Number(m[1]) + 1; return n >= 1 && n <= 30 ? n : null; }
+  return /\b(rdc|rez[\s-]de[\s-]chauss[ée]e|plain[\s-]pied)\b/i.test(s) ? 1 : null;
 }

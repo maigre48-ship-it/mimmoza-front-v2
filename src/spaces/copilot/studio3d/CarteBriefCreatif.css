@@ -69,3 +69,34 @@
   .mz-brief__nav .mz-brief__btn { flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) { .mz-brief__option { transition: none; } }
+
+/* LOT BRIEF-UNIFIÉ — écran « Détails », bandeau, et mise en page selon la largeur RÉELLE de la carte
+ * (panneau Espace 3D ≈ 450–500 px, ou agrandi) : requêtes de conteneur, plus seulement d'écran. */
+.mz-brief { container-type: inline-size; container-name: mzbrief; }
+.mz-brief__bandeau { margin: 0; padding: 8px 14px; background: #eef2ff; color: #3730a3; font-size: 12.5px; font-weight: 600; border-bottom: 1px solid #e0e7ff; }
+.mz-brief__options--toiture, .mz-brief__options--garde_corps, .mz-brief__options--menuiseries, .mz-brief__options--soubassement, .mz-brief__options--teinte { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+.mz-brief__champ--bientot { opacity: .75; }
+.mz-brief__puces { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.mz-brief__puces span { padding: 3px 10px; border-radius: 999px; border: 1px dashed #cbd5e1; background: #f8fafc; color: #94a3b8; font-size: 12px; }
+.mz-brief__note--douce { background: #f8fafc; color: #64748b; }
+.mz-brief, .mz-brief * { overflow-wrap: normal; word-break: normal; hyphens: manual; }
+.mz-brief__detail { overflow-wrap: break-word; }
+@container mzbrief (max-width: 620px) {
+  .mz-brief__corps { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px 12px; }
+  .mz-brief__apercu3d, .mz-brief__grande-vignette { height: 210px; }
+  .mz-brief__etapes { margin-left: 0; width: 100%; }
+  .mz-brief__etapes button:not(.is-actif) .mz-brief__etape-nom { display: none; }
+  .mz-brief__options { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+  .mz-brief__actions { flex-direction: column-reverse; align-items: stretch; }
+  .mz-brief__nav { margin-left: 0; flex-wrap: wrap; }
+  .mz-brief__nav .mz-brief__btn { flex: 1 1 auto; }
+}
+
+/* Ligne compacte du chat (LigneHabillage.tsx) : le brief se fait dans l'Espace 3D. */
+.mz-ligne-habillage { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0; padding: 8px 12px; border: 1px solid #ddd6fe; border-radius: 12px; background: #fbfaff; color: #4c1d95; font-size: 13px; line-height: 1.4; }
+.mz-ligne-habillage svg { flex: none; }
+.mz-ligne-habillage p { flex: 1 1 200px; min-width: 0; margin: 0; color: #334155; }
+.mz-ligne-habillage strong { color: #1e1b4b; }
+.mz-ligne-habillage button { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 12px; border-radius: 9px; border: 1px solid #6d5dfc; background: #6d5dfc; color: #fff; font: 600 12.5px/1.2 inherit; cursor: pointer; white-space: nowrap; }
+.mz-ligne-habillage button.is-leger { background: #fff; color: #4c1d95; border-color: #c4b5fd; }
+.mz-ligne-habillage button:disabled { opacity: .5; cursor: not-allowed; }

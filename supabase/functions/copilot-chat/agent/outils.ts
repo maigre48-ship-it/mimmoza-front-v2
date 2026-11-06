@@ -261,6 +261,13 @@ export const OUTIL_STUDIO_PREPARER_3D: OutilDef = {
     properties: {
       conception_id: { type: 'string', description: 'Identifiant (uuid) de la conception, si connu.' },
       idu: { type: 'string', description: 'Identifiant cadastral (14 caractères) : la conception la plus récente de cette parcelle.' },
+      // Lot formes-batiment.
+      forme: {
+        type: 'string', enum: ['barre', 'barres', 'plot', 'plots', 'l', 'u', 'cour', 'redans', 'auto'],
+        description: "Forme du bâtiment SEULEMENT si l'utilisateur la demande en texte (« en L », « en U », « cour fermée », « redans », " +
+          "« plusieurs plots »…) ; « auto » = la forme que le moteur classe en tête. Le moteur la place et la dimensionne. Omettre sinon " +
+          "(et toujours quand le message porte un bloc mimmoza-forme : le serveur le lit lui-même).",
+      },
     },
   },
   available_in_modes: TOUS_MODES,
@@ -279,11 +286,11 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
     "HABILLAGE : ne pose JAMAIS toi-même la question d'habillage (façade, balcons, attique, RDC, ambiance), ni en texte ni en " +
     "bloc mimmoza-choix — appelle cet outil sans `brief`, c'est lui qui la pose. " +
     "BRIEF : pour une 3D préparée, aucun devis sans `brief` d'habillage ; sans brief connu, l'outil renvoie la demande de " +
-    "brief : une carte « Brief créatif » s'affiche dans le chat (choix en un clic, aperçu du volume) — invite l'utilisateur à " +
-    "la remplir, sans recopier les choix ; réponse en texte → `brief` ; « à toi de choisir » → brief: { a_toi_de_choisir: true }. " +
-    "Brief validé dans la carte : le serveur le lit dans le message de l'utilisateur, rappelle simplement l'outil. " +
-    "L'utilisateur veut changer l'habillage (façade, balcons, attique…) sans donner tous ses choix → `ouvrir_brief: true` " +
-    "(la carte se rouvre, préremplie). N'annonce " +
+    "brief : le panneau « Espace 3D » (à droite du chat) s'ouvre sur l'habillage du projet (choix en un clic, aperçu du volume) — " +
+    "invite l'utilisateur à y faire ses choix, sans recopier les choix ; réponse en texte → `brief` ; « à toi de choisir » → brief: { a_toi_de_choisir: true }. " +
+    "Habillage validé dans l'Espace 3D : le serveur le lit dans le message de l'utilisateur, rappelle simplement l'outil. " +
+    "L'utilisateur veut changer l'habillage (façade, balcons, attique, toiture…) sans donner tous ses choix → `ouvrir_brief: true` " +
+    "(l'habillage se rouvre dans l'Espace 3D, prérempli). N'annonce " +
     "jamais un rendu lancé sans statut ok ; si la machine de rendu ne donne pas signe de vie, dis que le rendu restera en attente.",
   input_schema: {
     type: 'object',
@@ -310,12 +317,17 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
           attique: { type: 'boolean' },
           rdc: { type: 'string', enum: ['logements', 'commerces', 'hall'] },
           ambiance: { type: 'string', enum: ['jour', 'fin_de_journee', 'nuit'] },
+          toiture: { type: 'string', enum: ['terrasse', 'vegetalisee', 'deux_pans_tuiles', 'deux_pans_ardoise', 'deux_pans_zinc'], description: 'Toit à deux pans : pas avec un attique.' },
+          teinte: { type: 'string', enum: ['naturelle', 'claire', 'foncee'], description: 'claire : brique claire ou béton blanc ; foncee : bardage bois noirci ; autres façades : naturelle seulement.' },
+          garde_corps: { type: 'string', enum: ['metal', 'verre', 'plein'] },
+          menuiseries: { type: 'string', enum: ['gris', 'anthracite', 'blanc', 'bronze'] },
+          soubassement: { type: 'string', enum: ['aucun', 'pierre', 'beton', 'brique'], description: 'Pas avec des commerces en rez-de-chaussée.' },
           precisions: { type: 'string', description: 'Autre souhait, 100 caractères au plus (informatif).' },
           a_toi_de_choisir: { type: 'boolean', description: "true si l'utilisateur laisse Mimmo choisir : valeurs proposées." },
         },
         additionalProperties: false,
       },
-      ouvrir_brief: { type: 'boolean', description: "true pour rouvrir la carte « Brief créatif » (modifier l'habillage) ; rien n'est chiffré ni lancé." },
+      ouvrir_brief: { type: 'boolean', description: "true pour rouvrir l'habillage dans l'Espace 3D (modifier l'habillage) ; rien n'est chiffré ni lancé." },
       confirmer: { type: 'boolean', description: "true UNIQUEMENT après accord explicite de l'utilisateur sur le devis, dans un tour suivant." },
       jeton_devis: { type: 'string', description: 'Jeton renvoyé par le premier appel (devis). Facultatif : sans lui, le serveur reprend le dernier devis présenté dans la conversation.' },
     },

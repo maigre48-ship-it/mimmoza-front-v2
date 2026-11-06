@@ -14,7 +14,7 @@
 /* Formes */
 .mz-fiche3d__formes { margin: 0; padding: 0; border: 0; min-width: 0; }
 .jarvis-dossier .mz-fiche3d__formes legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: var(--f3-encre) !important; }
-.mz-fiche3d__formes > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mz-fiche3d__formes > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; } /* lot formes-batiment : 8 formes */
 .jarvis-dossier button.mz-fiche3d__forme { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; min-height: 58px;
   border: 1.5px solid var(--f3-bord); border-radius: 10px; background: #fff; color: var(--f3-encre) !important; }
 .jarvis-dossier button.mz-fiche3d__forme.is-actif { border-color: var(--f3-accent); box-shadow: 0 0 0 3px #ede9fe; background: var(--f3-fond); }
@@ -102,3 +102,68 @@
   .mz-fiche3d__chiffres { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .mz-fiche3d__schema { height: 170px; }
 }
+
+/* LOT FORMES-BATIMENT — ailes, plan du contour réel, comparaison des formes (section Dimensions). */
+.mz-fiche3d__aile-txt { fill: #4a33b8; font-weight: 600; paint-order: stroke; stroke: #d9d2fb; stroke-width: .3px; }
+.mz-fiche3d__ailes { display: grid; gap: 6px; }
+.mz-fiche3d__aile { border-top: 1px dashed var(--f3-bord); padding-top: 6px; }
+.mz-fiche3d__aile:first-child { border-top: 0; padding-top: 0; }
+.jarvis-dossier .mz-fiche3d__titre-aile { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11.5px; font-weight: 600; margin-bottom: 4px; }
+.jarvis-dossier .mz-fiche3d__titre-aile span { display: inline-grid; place-items: center; min-width: 22px; height: 18px; padding: 0 3px; border-radius: 5px; background: #ede9fe; color: #4a33b8 !important; font-size: 10.5px; }
+.jarvis-dossier .mz-fiche3d__titre-aile small { margin-left: auto; font-weight: 500; font-size: 10.5px; color: var(--f3-doux) !important; }
+.jarvis-dossier button.mz-fiche3d__suggerer { justify-self: start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.mz-fiche3d__suggestion { display: grid; gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--f3-fond); border: 1px solid #ddd6fe; min-width: 0; overflow-x: auto; }
+.jarvis-dossier .mz-fiche3d__suggestion > p:first-child { font-size: 12px; line-height: 1.45; }
+.mz-fiche3d__suggestion table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.jarvis-dossier .mz-fiche3d__suggestion th { text-align: left; font-weight: 700; color: var(--f3-doux) !important; padding: 2px 3px; border-bottom: 1px solid var(--f3-bord); }
+.jarvis-dossier .mz-fiche3d__suggestion td { padding: 3px; border-bottom: 1px solid #efedf7; white-space: nowrap; }
+.jarvis-dossier .mz-fiche3d__suggestion tr.is-tete td { font-weight: 700; background: #ede9fe; }
+.jarvis-dossier .mz-fiche3d__suggestion tr.is-ko td { color: #9a3412 !important; }
+.jarvis-dossier .mz-fiche3d__suggestion td button { padding: 2px 7px; font-size: 10.5px; }
+.jarvis-dossier .mz-fiche3d__suggestion td em { font-style: normal; color: var(--f3-accent) !important; font-weight: 700; }
+.jarvis-dossier .mz-fiche3d__raison { white-space: normal !important; color: var(--f3-doux) !important; }
+/* ── LOT BRIEF-UNIFIÉ (06/11/2026) — mise en page à la largeur RÉELLE du panneau ─────────────────────────────
+ * Constat (capture d'Albé, panneau ≈ 480 px) : « Longu eur », « Large ur », « Nivea ux », tuiles « Surface de
+ * planche r ». Causes : (1) le panneau range chaque champ en deux colonnes (`.mzia-fen3d .jarvis-dossier__field
+ * { grid-template-columns: 96px 1fr }`), la fiche n'avait donc que ≈ 300 px ; (2) `.jarvis-dossier__field dd
+ * { overflow-wrap: anywhere }` coupe les mots au milieu dès qu'une colonne est étroite ; (3) les colonnes
+ * suivaient la largeur de l'ÉCRAN (@media), pas celle du panneau. Correctifs : champs riches sur toute la
+ * largeur (libellé au-dessus), plus aucune coupure de mot dans la fiche, colonnes par requêtes de conteneur. */
+.mzia-fen3d .jarvis-dossier__field.jarvis-dossier__field--large,
+.jarvis-dossier .jarvis-dossier__field.jarvis-dossier__field--large { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.jarvis-dossier .jarvis-dossier__field--large > dd { overflow-wrap: normal; min-width: 0; }
+.mz-fiche3d { container-type: inline-size; container-name: fiche3d; }
+.jarvis-dossier .mz-fiche3d, .jarvis-dossier .mz-fiche3d * { overflow-wrap: normal; word-break: normal; hyphens: manual; }
+.jarvis-dossier .mz-fiche3d__desc, .jarvis-dossier .mz-fiche3d__source, .jarvis-dossier .mz-fiche3d__note,
+.jarvis-dossier .mz-fiche3d__ecart, .jarvis-dossier .mz-fiche3d__valeur, .jarvis-dossier .mz-fiche3d__habillage p { overflow-wrap: break-word; }
+.jarvis-dossier .mz-fiche3d__champ > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jarvis-dossier .mz-fiche3d__titre-bat { display: flex; align-items: center; gap: 8px; }
+.jarvis-dossier .mz-fiche3d__titre-bat > span { margin: 0; }
+.jarvis-dossier .mz-fiche3d__chiffres dt { letter-spacing: .02em; line-height: 1.25; }
+.jarvis-dossier .mz-fiche3d__habillage.is-attente { background: #eef2ff; box-shadow: inset 3px 0 0 #6d5dfc; }
+.jarvis-dossier .mz-fiche3d__habillage em { font-style: normal; color: #3730a3 !important; font-weight: 600; }
+/* Panneau ≈ 450–500 px (fiche ≈ 410–440 px) : 4 champs par bâtiment encore lisibles ; en dessous, 2 par ligne. */
+.mz-fiche3d__grille { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container fiche3d (max-width: 400px) {
+  .mz-fiche3d__grille { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mz-fiche3d__chiffres { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .mz-fiche3d__styles { grid-template-columns: minmax(0, 1fr); }
+  .jarvis-dossier button.mz-fiche3d__style { display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 8px; }
+  .mz-fiche3d__style .mz-fiche3d__vignette { grid-row: 1 / span 2; height: 74px; }
+}
+@container fiche3d (max-width: 300px) {
+  .mz-fiche3d__chiffres, .mz-fiche3d__formes > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+/* Panneau agrandi : plus d'air, schéma et vignettes plus grands. */
+@container fiche3d (min-width: 560px) {
+  .mz-fiche3d__schema { height: 240px; }
+  .mz-fiche3d__vignette { height: 110px; }
+  .mz-fiche3d__formes > div { grid-template-columns: repeat(4, minmax(0, 1fr)); } /* lot brief-formes : 8 formes = 2 lignes de 4 */
+}
+/* La carte d'habillage dans la fiche : deux colonnes quand le panneau est agrandi (aperçu à gauche). */
+@container fiche3d (min-width: 640px) {
+  .jarvis-dossier .mz-fiche3d .mz-brief__corps { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
+  .jarvis-dossier .mz-fiche3d .mz-brief__apercu3d, .jarvis-dossier .mz-fiche3d .mz-brief__grande-vignette { height: 300px; }
+  .jarvis-dossier .mz-fiche3d .mz-brief__etapes .mz-brief__etape-nom { display: inline; }
+}
+.jarvis-dossier .mz-fiche3d .mz-brief__bandeau { color: #3730a3 !important; }

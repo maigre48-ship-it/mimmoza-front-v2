@@ -36,15 +36,23 @@
 
 import {
   calculerVolumeProgramme, construireProjetChat, corpsAffiches, draftBrief, exigerPreparation3D, ficheStudioDepuisVolume,
-  HYPOTHESES_VOLUME, libelleNiveaux, programmeBatiDepuisTexte, regleValide, rotationContrat, studioCommand,
+  HYPOTHESES_VOLUME, libelleNiveaux, programmeBatiDepuisTexte, rotationContrat, studioCommand,
   studioComposition, studioSegmentedVolume, volumeBatimentsStudio,
-  type GeometrieParcelle, type JarvisDraft, type ProgrammeVolume, type ReglePlu, type ReglesPluVolume, type VolumePropose,
+  type GeometrieParcelle, type JarvisDraft, type ProgrammeVolume, type VolumePropose,
 } from './studio-front.ts';
-import { controlerVolume, formuleRecul, libelleRegle, lireRegles, type ControleVolume, type RegleLue } from './studio-front.ts';
+import { controlerVolume, lireRegles, niveauxDuGabarit, reglesVolume, type ControleVolume, type RegleLue } from './studio-front.ts';
+import { boitesApercu } from './studio-front.ts';
+// Lot formes-batiment : formes du bâtiment (L, U, cour, redans, plots) calculées, vérifiées et comparées par le moteur.
+import {
+  appliquerFormeDetail, comparerFormes, evaluerSaisie, FORMES, NOMS_FORME_AILES, saisieDepuisBloc, saisieDepuisVolume,
+  FORME_BLOC_LANGUE, blocForme, type Forme, type PreparationFiche, type SaisieDimensions,
+} from './studio-front.ts';
 import type { ResultatOutil } from './types.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
+// Lot formes-batiment : conversion règles de conception → règles du volume, partagée avec la fiche.
+export { niveauxDuGabarit, reglesVolume } from './studio-front.ts';
 
 export const SOURCE_STUDIO = 'MimmozIA · Studio 3D';
 /** Version du calcul (entre dans l'empreinte) : à incrémenter si la conversion conception → volume change. */
@@ -86,69 +94,9 @@ const fr = (v: number, d = 0) => v.toLocaleString('fr-FR', { maximumFractionDigi
 // (src/spaces/copilot/studio3d/controlesVolume.ts, via studio-front.ts) pour que la fiche « Espace 3D »
 // recalcule les vérifications avec EXACTEMENT les mêmes fonctions. Réexportés plus haut (imports).
 
-const CLES_VOLUME: Record<string, ReglePlu['cle']> = {
-  hauteur_max_m: 'hauteur_max_m', niveaux_max: 'niveaux_max', emprise_sol_max_pct: 'emprise_max_ratio',
-  recul_voie_m: 'recul_voie_m', recul_limites_m: 'recul_limites_m', recul_limites_formule: 'recul_limites_formule',
-  pleine_terre_min_pct: 'pleine_terre_min_ratio',
-};
-
-
-/**
- * Règles de conception → règles du volume (ReglesPluVolume du Dossier 3D).
- * Même conversion que reglesPlu.ts (reglesConception) : statut confirme → « lue », sinon « estimée » ;
- * pourcentages → ratios ; formule « H/k min m ». Ajout E1 : une emprise « non réglementée » CITÉE
- * devient un plafond de 100 % (aucun plafond ; la pleine terre borne l'emprise), au lieu du 40 % par défaut.
- * Le gabarit du programme (R+n), s'il est fixé, plafonne les niveaux (choix du projet, pas une règle PLU).
- */
-export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null): ReglesPluVolume {
-  const out: ReglePlu[] = [];
-  const non: string[] = [];
-  for (const r of regles) {
-    const cle = CLES_VOLUME[r.cle];
-    if (!cle) {
-      if (r.cle === 'stationnement_par_logement' || r.cle === 'mixite_sociale_pct') {
-        non.push(r.statut === 'manquant' ? `${r.cle === 'mixite_sociale_pct' ? 'Mixité sociale' : 'Stationnement'} : règle inconnue`
-          : `${r.cle === 'mixite_sociale_pct' ? 'Mixité sociale' : 'Stationnement'} : ${String(r.valeur)} ${r.cle === 'mixite_sociale_pct' ? '%' : 'place(s)/logement'} (${libelleRegle(r)}) — non modélisé dans le volume`);
-      }
-      continue;
-    }
-    const statut: ReglePlu['statut'] = r.statut === 'confirme' ? 'lue' : 'estimee';
-    const base = { source: r.source, reference: r.article, statut };
-    if (r.cle === 'emprise_sol_max_pct' && r.nature === 'non_reglementee' && r.article && r.statut !== 'manquant') {
-      out.push({ cle, valeur: 1, ...base, source: `${r.source} — emprise non réglementée` });
-      continue;
-    }
-    if (r.statut === 'manquant') {
-      non.push(`${r.cle} : ${r.nature === 'par_secteur' ? 'valeur selon le secteur, à préciser' : 'règle inconnue'}`);
-      continue;
-    }
-    if (cle === 'recul_limites_formule') {
-      const f = typeof r.valeur === 'string' ? formuleRecul(r.valeur) : null;
-      if (f) out.push({ cle, valeur: f.diviseur, minimumM: f.minimumM, ...base });
-      else non.push(`Recul aux limites (formule « ${String(r.valeur)} ») : non chiffrable par le volume`);
-      continue;
-    }
-    const v = fini(r.valeur) ? r.valeur : null;
-    if (v === null) { non.push(`${r.cle} : valeur non chiffrée`); continue; }
-    const regle: ReglePlu = { cle, valeur: cle === 'emprise_max_ratio' || cle === 'pleine_terre_min_ratio' ? v / 100 : v, ...base };
-    if (regleValide(regle)) out.push(regle);
-    else if (v === 0 && cle.startsWith('recul')) non.push(`${r.cle} : 0 m (implantation à l’alignement autorisée) — le volume garde le recul des limites séparatives`);
-    else non.push(`${r.cle} : ${String(r.valeur)} hors bornes, ignorée`);
-  }
-  if (gabaritNiveaux !== null) {
-    out.push({ cle: 'niveaux_max', valeur: gabaritNiveaux, source: `Programme de la conception (gabarit ${libelleNiveaux(gabaritNiveaux)}) — choix du projet, pas une règle PLU`, reference: null, statut: 'estimee' });
-  }
-  return { source: out.some((r) => !r.source.startsWith('Programme de la conception')) ? 'plu-chiffre' : 'aucune', regles: out, nonAppliquees: non };
-}
-
-/** « R+4 » → 5 niveaux ; « RDC » / « R+0 » → 1 ; sinon null. */
-export function niveauxDuGabarit(g: unknown): number | null {
-  const s = txt(g, 40);
-  if (!s) return null;
-  const m = /\bR\s*\+\s*(\d{1,2})\b/i.exec(s);
-  if (m) { const n = Number(m[1]) + 1; return n >= 1 && n <= 30 ? n : null; }
-  return /\b(rdc|rez[\s-]de[\s-]chauss[ée]e|plain[\s-]pied)\b/i.test(s) ? 1 : null;
-}
+// Lot formes-batiment : CLES_VOLUME, reglesVolume et niveauxDuGabarit déplacés TELS QUELS dans
+// src/spaces/copilot/studio3d/controlesVolume.ts (la fiche « Espace 3D » en a besoin pour placer les
+// formes du bâtiment avec les mêmes contraintes que le moteur). Réexportés plus haut (imports).
 
 /** Programme de conception → programme du volume (lu par programmeBati.ts, le même lecteur que le chat). */
 export function programmeVolume(p: unknown): ProgrammeVolume {
@@ -216,7 +164,19 @@ export interface ResumePreparation {
   regles_appliquees: string[];
   regles_non_appliquees: string[];
   controles: ControleVolume[];
+  /** Lot formes-batiment : forme retenue (moteur, ou choisie dans la fiche / demandée) et comparaison du moteur. */
+  forme?: ResumeForme;
 }
+
+/** Lot formes-batiment : forme du volume préparé et classement des formes par le moteur (suggestion). */
+export interface ResumeForme {
+  retenue: string;
+  origine: 'moteur' | 'fiche' | 'demande' | 'suggestion';
+  comparaison: { forme: string; libelle: string; dans_les_regles: boolean; logements: number; niveaux: number; sdp_m2: number; emprise_m2: number; facade_m: number; raison: string | null }[];
+}
+
+/** Lot formes-batiment : choix de forme transmis à la préparation (bloc de la fiche, ou paramètre `forme` de l'outil). */
+export interface ChoixForme { saisie?: SaisieDimensions | null; forme?: Forme | 'auto' | null }
 
 export type IssuePreparation =
   | { ok: true; entree: EntreePreparation; volume: VolumePropose; resume: ResumePreparation; empreinte: string }
@@ -235,7 +195,8 @@ export async function sha256Hex(s: string): Promise<string> {
 export function resumerVolume(v: VolumePropose, controles: ControleVolume[], programme: ProgrammeVolume): ResumePreparation {
   const emprise = v.kpi?.empriseTotaleM2 ?? v.emprise?.surfaceM2 ?? 0;
   const batiments = v.batiments?.length ?? (v.emprise ? 1 : 0);
-  const formes = v.batiments?.length ? [...new Set(v.batiments.map((b) => b.forme))] : v.emprise ? ['volume unique'] : [];
+  // Lot formes-batiment : un bâtiment à ailes est nommé par sa forme (« immeuble en L »…).
+  const formes = v.batiments?.length ? [...new Set(v.batiments.map((b) => (b.formeAiles ? `immeuble ${NOMS_FORME_AILES[b.formeAiles]}` : b.forme)))] : v.emprise ? ['volume unique'] : [];
   return {
     statut: v.statut,
     surface_parcelle_m2: Math.round(v.surfaceParcelleM2),
@@ -268,21 +229,75 @@ export function resumeCompact(r: ResumePreparation): Obj {
 }
 
 /** Fiche de conception → volume d'étude (code du Dossier 3D), contrôles et empreinte. Aucune I/O. */
-export async function preparerVolume(c: ConceptionLue): Promise<IssuePreparation> {
+export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): Promise<IssuePreparation> {
   const parcelle = lireParcelle(c.parcelle, c.idu);
   if (!parcelle) return { ok: false, raison: 'Le contour cadastral de la parcelle manque dans la conception : relancez l’étape « parcelle » de la mission de conception (recuperer_parcelle).' };
   const regles = lireRegles(c.regles_plu);
   const pv = programmeVolume(c.programme);
   const gabarit = niveauxDuGabarit(estObj(c.programme) ? c.programme.gabarit : null);
   const rv = reglesVolume(regles, gabarit);
-  const volume = calculerVolumeProgramme(parcelle.geometrie, pv, rv);
-  if (!volume.emprise || volume.niveaux < 1) {
-    return { ok: false, raison: `Aucun volume ne tient sur la parcelle avec les règles connues : ${volume.alertes[0] ?? volume.mentionPlu ?? volume.statut}.` };
+  const moteur = calculerVolumeProgramme(parcelle.geometrie, pv, rv);
+  if (!moteur.emprise || moteur.niveaux < 1) {
+    return { ok: false, raison: `Aucun volume ne tient sur la parcelle avec les règles connues : ${moteur.alertes[0] ?? moteur.mentionPlu ?? moteur.statut}.` };
   }
+  // Lot formes-batiment : forme choisie dans la fiche (saisie relue et RÉÉVALUÉE ici) ou demandée (placée par le moteur).
+  const pf: PreparationFiche = { idu: c.idu, commune: c.commune, volume: moteur, regles, programme: pv, gabaritNiveaux: gabarit };
+  const f = appliquerChoixForme(pf, choix);
+  if (!f.ok) return { ok: false, raison: f.raison };
+  const volume = f.volume;
   const controles = controlerVolume(volume, regles, volume.logementsEstimes ?? pv.logements);
   const entree: EntreePreparation = { parcelle, commune: c.commune, regles, programme: c.programme ?? null, programme_volume: pv, gabarit_niveaux: gabarit };
-  const empreinte = await sha256Hex(jsonCanonique({ version: VERSION_CALCUL, conception_id: c.id, entree }));
-  return { ok: true, entree, volume, resume: resumerVolume(volume, controles, pv), empreinte };
+  // Sans choix de forme, empreinte inchangée (mêmes lignes qu'avant ce lot) ; avec, la forme saisie y entre.
+  const empreinte = await sha256Hex(jsonCanonique({ version: VERSION_CALCUL, conception_id: c.id, entree, ...(f.cle ? { forme: f.cle } : {}) }));
+  return { ok: true, entree, volume, resume: { ...resumerVolume(volume, controles, pv), forme: f.resume }, empreinte };
+}
+
+/** Lot formes-batiment : applique le choix de forme au volume du moteur (code PUR de la fiche, aucune seconde implémentation). */
+export function appliquerChoixForme(pf: PreparationFiche, choix: ChoixForme):
+  { ok: true; volume: VolumePropose; resume: ResumeForme; cle: unknown } | { ok: false; raison: string } {
+  const comparees = comparerFormes(pf);
+  const comparaison = comparees.map((x) => ({ forme: x.forme, libelle: x.libelle, dans_les_regles: x.dansLesRegles, logements: x.logements, niveaux: x.niveaux,
+    sdp_m2: x.sdpM2, emprise_m2: x.empriseM2, facade_m: x.facadeM, raison: x.raison }));
+  const base = saisieDepuisVolume(pf.volume);
+  const libelle = (f: string) => FORMES.find((x) => x.valeur === f)?.libelle ?? (f === 'moteur' ? 'forme du moteur' : f);
+  let saisie: SaisieDimensions | null = null;
+  let origine: ResumeForme['origine'] = 'moteur';
+  if (choix.saisie) { saisie = choix.saisie; origine = 'fiche'; }
+  else if (choix.forme) {
+    const voulue = choix.forme === 'auto' ? comparees.find((x) => x.ev)?.forme ?? null : choix.forme;
+    if (!voulue) return { ok: false, raison: 'Aucune forme calculable sur cette parcelle.' };
+    const r = appliquerFormeDetail(pf, base, voulue);
+    if (r.raison) return { ok: false, raison: `${libelle(voulue)} : ${r.raison}` };
+    saisie = r.saisie; origine = choix.forme === 'auto' ? 'suggestion' : 'demande';
+  }
+  if (!saisie) return { ok: true, volume: pf.volume, resume: { retenue: libelle(base.forme), origine, comparaison }, cle: null };
+  const ev = evaluerSaisie(pf, saisie);
+  const bloquante = ev.alertes.find((a) => /déborde|chevauchent/.test(a));
+  if (bloquante) return { ok: false, raison: `La forme choisie ne tient pas dans la parcelle : ${bloquante}` };
+  return { ok: true, volume: ev.volume, resume: { retenue: libelle(saisie.forme), origine, comparaison }, cle: ev.modifie ? blocForme(saisie) : null };
+}
+
+/**
+ * Lot formes-batiment : bloc ```mimmoza-forme``` d'un message utilisateur (fiche « Espace 3D ») → saisie
+ * validée. null : pas de bloc. Présent mais refusé : `ok: false` (dit à l'utilisateur, jamais deviné).
+ */
+export function formeDuMessage(texte: unknown): Validation<SaisieDimensions> | null {
+  if (typeof texte !== 'string') return null;
+  const m = new RegExp('```' + FORME_BLOC_LANGUE + '[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n?```').exec(texte);
+  if (!m) return null;
+  let brut: unknown;
+  try { brut = JSON.parse(m[1]); } catch { return { ok: false, erreur: 'Bloc de forme illisible (JSON invalide).' }; }
+  const r = saisieDepuisBloc(brut);
+  return r.ok ? { ok: true, valeur: r.saisie } : { ok: false, erreur: r.erreur };
+}
+
+/** Lot formes-batiment : consigne ajoutée au système quand le message porte un bloc de forme (index.ts). */
+export function consigneFormeCarte(c: Validation<SaisieDimensions> | null): string {
+  if (!c) return '';
+  if (!c.ok) return `FORME DU BÂTIMENT : le dernier message contient un bloc de forme REFUSÉ par le serveur (${c.erreur}). Dis-le simplement ; ne devine aucune dimension.`;
+  return 'FORME DU BÂTIMENT CHOISIE dans la fiche du projet (dernier message de l’utilisateur) : appelle MAINTENANT studio_preparer_3d ' +
+    '(sans `forme` : le serveur lit lui-même la forme et les dimensions dans le message et les recalcule avec le moteur). ' +
+    'Reprends ensuite les chiffres et les vérifications renvoyés tels quels ; ne recalcule rien de tête ; jamais « conforme ».';
 }
 
 // =============================================================
@@ -363,7 +378,27 @@ export const BRIEF_OUVERTURES = ['fenetres_verticales', 'baies_vitrees', 'fenetr
 export const BRIEF_BALCONS = ['balcons', 'balcons_filants', 'loggias', 'aucun'] as const;
 export const BRIEF_RDC = ['logements', 'commerces', 'hall'] as const;
 export const BRIEF_AMBIANCES = ['jour', 'fin_de_journee', 'nuit'] as const;
-const CHAMPS_BRIEF = ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance'] as const;
+// Lot brief-unifié (06/11/2026) — détails du brief, tous vérifiés sur le Studio (CHOIX.md du lot) :
+//   - toiture : clause de création lue par `roofOf` / `lireMatieresDeCreation` (nl.ts) → flat-green +
+//     toiture-vegetalisee, gable 35° + tuile-rouge / ardoise / zinc ; décor Unreal R1 (image_photo.toiture_decor) ;
+//   - teinte : matériau distinct du Studio (LEGACY_TO_ARCHVIZ) — brique claire, béton blanc, bois brûlé (noirci) ;
+//   - garde-corps, menuiseries, soubassement : posés par le worker APRÈS la création (`habillage_batiments.details`,
+//     worker/src/batimentsScene.ts::habillerDetails), le lecteur de phrases du Studio ne sachant pas les lire.
+// Non proposés (montrés « bientôt » par le front) : volets / brise-soleil (non dessinés par le Studio),
+// entrée porche / renfoncée / auvent (scène refusée, mesuré le 06/11), enduit ocre (absent du catalogue).
+export const BRIEF_TOITURES = ['terrasse', 'vegetalisee', 'deux_pans_tuiles', 'deux_pans_ardoise', 'deux_pans_zinc'] as const;
+export const BRIEF_TEINTES = ['naturelle', 'claire', 'foncee'] as const;
+export const BRIEF_GARDE_CORPS = ['metal', 'verre', 'plein'] as const;
+export const BRIEF_MENUISERIES = ['gris', 'anthracite', 'blanc', 'bronze'] as const;
+export const BRIEF_SOUBASSEMENTS = ['aucun', 'pierre', 'beton', 'brique'] as const;
+/** Teintes réellement distinctes dans le Studio, par matière (une seule = pas de choix). */
+export const TEINTES_PAR_FACADE: Record<typeof BRIEF_FACADES[number], readonly typeof BRIEF_TEINTES[number][]> = {
+  enduit_clair: ['naturelle'], enduit_blanc: ['naturelle'], brique: ['naturelle', 'claire'], pierre: ['naturelle'],
+  beton: ['naturelle', 'claire'], bardage_bois: ['naturelle', 'foncee'], verre: ['naturelle'],
+};
+/** Toits à deux pans (35°, au-dessus du dernier niveau) : pas d'attique avec eux. */
+export const toitEnPente = (t: string): boolean => t.startsWith('deux_pans_');
+const CHAMPS_BRIEF = ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance', 'toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement'] as const;
 type ChampBrief = typeof CHAMPS_BRIEF[number];
 /** Longueur maximale des précisions libres (informatives : le Studio ne les interprète pas). */
 export const BRIEF_PRECISIONS_MAX = 100;
@@ -376,6 +411,11 @@ export interface BriefRendu {
   attique: boolean;
   rdc: typeof BRIEF_RDC[number];
   ambiance: typeof BRIEF_AMBIANCES[number];
+  toiture: typeof BRIEF_TOITURES[number];
+  teinte: typeof BRIEF_TEINTES[number];
+  garde_corps: typeof BRIEF_GARDE_CORPS[number];
+  menuiseries: typeof BRIEF_MENUISERIES[number];
+  soubassement: typeof BRIEF_SOUBASSEMENTS[number];
   precisions: string | null;
   /** Champs pris par défaut (non précisés par l'utilisateur ou « à toi de choisir »), dans l'ordre de CHAMPS_BRIEF. */
   defauts: ChampBrief[];
@@ -385,6 +425,7 @@ export interface BriefRendu {
 export const BRIEF_DEFAUT: Omit<BriefRendu, 'precisions' | 'defauts'> = {
   style: 'contemporain', facade: 'enduit_clair', ouvertures: 'fenetres_verticales', balcons: 'balcons',
   attique: false, rdc: 'logements', ambiance: 'jour',
+  toiture: 'terrasse', teinte: 'naturelle', garde_corps: 'metal', menuiseries: 'gris', soubassement: 'aucun',
 };
 
 const LIB_BRIEF = {
@@ -394,12 +435,36 @@ const LIB_BRIEF = {
   balcons: { balcons: 'balcons', balcons_filants: 'balcons filants', loggias: 'loggias', aucun: 'aucun balcon' },
   rdc: { logements: 'logements', commerces: 'commerces', hall: 'hall d’entrée' },
   ambiance: { jour: 'lumière de journée', fin_de_journee: 'fin de journée', nuit: 'nuit' },
+  toiture: { terrasse: 'toit-terrasse', vegetalisee: 'toiture végétalisée', deux_pans_tuiles: 'toit à deux pans en tuiles', deux_pans_ardoise: 'toit à deux pans en ardoise', deux_pans_zinc: 'toit à deux pans en zinc' },
+  garde_corps: { metal: 'garde-corps métal', verre: 'garde-corps en verre', plein: 'garde-corps pleins' },
+  menuiseries: { gris: 'menuiseries alu gris', anthracite: 'menuiseries anthracite', blanc: 'menuiseries blanches', bronze: 'menuiseries bronze' },
+  soubassement: { aucun: 'sans soubassement', pierre: 'soubassement en pierre', beton: 'soubassement en béton', brique: 'soubassement en brique' },
 } as const;
+
+/** Façade et teinte → libellé (« brique claire », « béton blanc », « bardage bois noirci »). */
+function libelleFacade(b: Pick<BriefRendu, 'facade' | 'teinte'>): string {
+  if (b.facade === 'brique' && b.teinte === 'claire') return 'brique claire';
+  if (b.facade === 'beton' && b.teinte === 'claire') return 'béton blanc';
+  if (b.facade === 'bardage_bois' && b.teinte === 'foncee') return 'bardage bois noirci';
+  return LIB_BRIEF.facade[b.facade];
+}
 
 /** Clauses ajoutées à la commande du Studio — formulations vérifiées sur parseArchitectureRequest. */
 const CLAUSE_FACADE: Record<BriefRendu['facade'], string> = {
   enduit_clair: 'façade en enduit', enduit_blanc: 'façade en enduit blanc', brique: 'façade en brique', pierre: 'façade en pierre',
   beton: 'façade en béton', bardage_bois: 'façade en bardage bois', verre: 'façade en verre',
+};
+/** Teinte : formulations vérifiées sur le lexique du Studio (intentionMaterielle.ts LEXIQUE_MATIERES, essai du 06/11). */
+function clauseFacade(b: Pick<BriefRendu, 'facade' | 'teinte'>): string {
+  if (b.facade === 'brique' && b.teinte === 'claire') return 'façade en brique claire';
+  if (b.facade === 'beton' && b.teinte === 'claire') return 'façade en béton blanc';
+  if (b.facade === 'bardage_bois' && b.teinte === 'foncee') return 'façade en bois brûlé';
+  return CLAUSE_FACADE[b.facade];
+}
+/** Toiture : `roofOf` (nl.ts) → flat-green / gable 35° ; la matière suit le rôle « toiture » (lireMatieresDeCreation). */
+const CLAUSE_TOITURE: Record<BriefRendu['toiture'], string | null> = {
+  terrasse: null, vegetalisee: 'toiture végétalisée', deux_pans_tuiles: 'toiture à deux pans en tuiles',
+  deux_pans_ardoise: 'toiture à deux pans en ardoise', deux_pans_zinc: 'toiture à deux pans en zinc',
 };
 const CLAUSE_OUVERTURES: Record<BriefRendu['ouvertures'], string> = {
   fenetres_verticales: 'fenêtres verticales', baies_vitrees: 'baies vitrées', fenetres_horizontales: 'fenêtres horizontales',
@@ -416,6 +481,7 @@ export function questionBrief(type: TypeRendu): string {
     '- Attique : non (oui = un niveau en retrait AU-DESSUS du volume d’étude)',
     '- Rez-de-chaussée : logements (ou commerces, hall d’entrée)',
     `- Ambiance : journée (${amb})`,
+    '- Détails (facultatif) : toit-terrasse (ou toiture végétalisée, toit à deux pans en tuiles, ardoise ou zinc) ; teinte (brique rouge ou claire, béton brut ou blanc, bois brun ou noirci) ; garde-corps métal (ou verre, plein) ; menuiseries alu gris (ou anthracite, blanc, bronze) ; sans soubassement (ou pierre, béton, brique)',
     'Répondez point par point, ou « à toi de choisir » et je prends ces valeurs.',
   ].join('\n');
 }
@@ -423,6 +489,7 @@ export function questionBrief(type: TypeRendu): string {
 const ENUMS_BRIEF: Record<ChampBrief, readonly (string | boolean)[]> = {
   style: BRIEF_STYLES, facade: BRIEF_FACADES, ouvertures: BRIEF_OUVERTURES, balcons: BRIEF_BALCONS,
   attique: [false, true], rdc: BRIEF_RDC, ambiance: BRIEF_AMBIANCES,
+  toiture: BRIEF_TOITURES, teinte: BRIEF_TEINTES, garde_corps: BRIEF_GARDE_CORPS, menuiseries: BRIEF_MENUISERIES, soubassement: BRIEF_SOUBASSEMENTS,
 };
 
 /**
@@ -430,7 +497,7 @@ const ENUMS_BRIEF: Record<ChampBrief, readonly (string | boolean)[]> = {
  * Un objet vide n'est accepté qu'avec `a_toi_de_choisir: true`. Valeurs fermées ; texte libre borné.
  */
 export function validerBrief(brut: unknown): Validation<BriefRendu> {
-  if (!estObj(brut)) return { ok: false, erreur: 'Brief illisible : objet attendu (style, facade, ouvertures, balcons, attique, rdc, ambiance, precisions, a_toi_de_choisir).' };
+  if (!estObj(brut)) return { ok: false, erreur: 'Brief illisible : objet attendu (style, facade, ouvertures, balcons, attique, rdc, ambiance, toiture, teinte, garde_corps, menuiseries, soubassement, precisions, a_toi_de_choisir).' };
   const permises = [...CHAMPS_BRIEF, 'precisions', 'a_toi_de_choisir'];
   const inconnue = Object.keys(brut).find((k) => !permises.includes(k));
   if (inconnue) return { ok: false, erreur: `Champ de brief inconnu : ${inconnue}.` };
@@ -447,6 +514,19 @@ export function validerBrief(brut: unknown): Validation<BriefRendu> {
     }
     b[c] = v;
   }
+  // Lot brief-unifié : combinaisons que le Studio ne rend pas (jamais devinées : refusées et dites).
+  if (!(TEINTES_PAR_FACADE[b.facade as BriefRendu['facade']] as readonly unknown[]).includes(b.teinte)) {
+    if (fournis.includes('teinte')) return { ok: false, erreur: `teinte « ${String(b.teinte)} » indisponible pour la façade ${String(b.facade)} (teintes : ${TEINTES_PAR_FACADE[b.facade as BriefRendu['facade']].join(', ')}).` };
+    b.teinte = 'naturelle';
+  }
+  if (b.attique === true && toitEnPente(String(b.toiture))) {
+    if (fournis.includes('attique') && fournis.includes('toiture')) return { ok: false, erreur: 'Un toit à deux pans ne se combine pas avec un attique : choisissez l’un ou l’autre.' };
+    if (fournis.includes('toiture')) b.attique = false; else b.toiture = 'terrasse';
+  }
+  if (b.rdc === 'commerces' && b.soubassement !== 'aucun') {
+    if (fournis.includes('soubassement') && fournis.includes('rdc')) return { ok: false, erreur: 'Pas de soubassement avec des commerces en rez-de-chaussée (il couperait les vitrines).' };
+    if (fournis.includes('soubassement')) b.rdc = 'logements'; else b.soubassement = 'aucun';
+  }
   let precisions: string | null = null;
   if (brut.precisions !== undefined && brut.precisions !== null) {
     if (typeof brut.precisions !== 'string') return { ok: false, erreur: 'precisions doit être un texte court.' };
@@ -460,38 +540,42 @@ export function validerBrief(brut: unknown): Validation<BriefRendu> {
 
 /**
  * Forme compacte du brief dans le jeton de devis (le jeton doit rester lisible dans les 900 premiers
- * caractères du rappel des résultats) : un chiffre par champ (rang dans sa liste fermée), « . »,
- * champs pris par défaut (masque hexadécimal), puis « . » et les précisions s'il y en a.
- * Ex. « 0100000.7f » = tout par défaut sauf la façade en enduit blanc… (masque 0x7f = 7 champs par défaut).
+ * caractères du rappel des résultats). Lot brief-unifié : forme « 2: » — un caractère base 36 par champ
+ * (rang dans sa liste fermée, 12 champs), « . », champs pris par défaut (masque hexadécimal), puis « . » et
+ * les précisions s'il y en a. Ex. « 2:010000000000.fff » … L'ancienne forme (7 chiffres, devis émis avant
+ * ce lot, valables 2 h) reste relue : les 5 nouveaux champs y prennent leur valeur par défaut.
  */
 export function encoderBrief(b: BriefRendu): string {
-  const rangs = CHAMPS_BRIEF.map((c) => String(ENUMS_BRIEF[c].indexOf(b[c]))).join('');
+  const rangs = CHAMPS_BRIEF.map((c) => ENUMS_BRIEF[c].indexOf(b[c]).toString(36)).join('');
   const masque = CHAMPS_BRIEF.reduce((m, c, i) => (b.defauts.includes(c) ? m | (1 << i) : m), 0).toString(16);
-  return `${rangs}.${masque}${b.precisions ? `.${b.precisions}` : ''}`;
+  return `2:${rangs}.${masque}${b.precisions ? `.${b.precisions}` : ''}`;
 }
 
-/** Relit le brief compact d'un jeton signé ; null si absent ou d'une forme inattendue. */
+/** Relit le brief compact d'un jeton signé (forme « 2: » ou ancienne) ; null si absent ou d'une forme inattendue. */
 export function briefDuJeton(b: unknown): BriefRendu | null {
   if (typeof b !== 'string') return null;
-  const m = /^(\d{7})\.([0-9a-f]{1,2})(?:\.([\s\S]+))?$/.exec(b);
+  const m2 = /^2:([0-9a-z]{12})\.([0-9a-f]{1,3})(?:\.([\s\S]+))?$/.exec(b);
+  const m1 = m2 ? null : /^(\d{7})\.([0-9a-f]{1,2})(?:\.([\s\S]+))?$/.exec(b);
+  const m = m2 ?? m1;
   if (!m) return null;
+  const champs = m2 ? CHAMPS_BRIEF : CHAMPS_BRIEF.slice(0, 7);
   const brut: Obj = {};
-  for (const [i, c] of CHAMPS_BRIEF.entries()) {
-    const v = ENUMS_BRIEF[c][Number(m[1][i])];
+  for (const [i, c] of champs.entries()) {
+    const v = ENUMS_BRIEF[c][parseInt(m[1][i], 36)];
     if (v === undefined) return null;
     brut[c] = v;
   }
   if (m[3] !== undefined) brut.precisions = m[3];
   const v = validerBrief(brut);
   if (!v.ok) return null;
-  const masque = parseInt(m[2], 16);
+  const masque = parseInt(m[2], 16) | (m1 ? 0xf80 : 0);
   return { ...v.valeur, defauts: CHAMPS_BRIEF.filter((_, i) => (masque & (1 << i)) !== 0) };
 }
 
 /** Clauses de la commande de création du Studio. `plusieurs` : composition de bâtiments nommés. */
 export function clausesBrief(b: BriefRendu, plusieurs = false): string[] {
   return [
-    CLAUSE_FACADE[b.facade],
+    clauseFacade(b),
     // Façade vitrée : le Studio pose déjà de grandes baies ; une ouverture nommée les remplacerait.
     b.facade === 'verre' ? null : CLAUSE_OUVERTURES[b.ouvertures],
     // archAddBalconies et archSetStylePack visent le PREMIER bâtiment de la scène (commands.ts,
@@ -500,6 +584,8 @@ export function clausesBrief(b: BriefRendu, plusieurs = false): string[] {
     // Jamais « sans attique » : le lecteur du Studio voit le mot « attique » et en crée un.
     b.attique ? 'avec attique' : null,
     b.rdc === 'commerces' ? 'commerces en rez-de-chaussée' : null,
+    // Lot brief-unifié : toiture (terrasse = dessin par défaut du Studio, aucune clause).
+    CLAUSE_TOITURE[b.toiture],
     // E1-rendu : JAMAIS de clause de style. Les packs haussmannien et Art déco du Studio sont au stade
     // « manifest » (registry.ts) : archSetStylePack est BLOQUÉ et, dans une commande de création, le
     // Studio ne crée RIEN et attend un « oui » (mesuré par submitPrompt sur le vrai magasin, 05/11) —
@@ -518,13 +604,35 @@ export function clausesBrief(b: BriefRendu, plusieurs = false): string[] {
  *     phrase : `archAddBalconies` viserait le premier bâtiment de la scène).
  * Pas de style : voir clausesBrief (packs non disponibles dans le Studio).
  */
-export function habillageBatiments(b: BriefRendu): { clauses: string[]; balcons: 'individual' | 'running' | 'loggia' | null } {
+export function habillageBatiments(b: BriefRendu): { clauses: string[]; balcons: 'individual' | 'running' | 'loggia' | null; details?: DetailsHabillage } {
+  const details = detailsHabillage(b);
   return {
     // Sans balcons ni style (`plusieurs`) : seulement ce que le Studio lit dans la demande de création
-    // du bâtiment (materials, windowType, attic, programType/retailArea d'archCreateBuilding, nl.ts).
+    // du bâtiment (materials, windowType, attic, programType/retailArea, roofType d'archCreateBuilding, nl.ts).
     clauses: clausesBrief(b, true),
     balcons: b.balcons === 'balcons' ? 'individual' : b.balcons === 'balcons_filants' ? 'running' : b.balcons === 'loggias' ? 'loggia' : null,
+    ...(details ? { details } : {}),
   };
+}
+
+/** Détails posés par le worker après la création (valeurs du Studio ; worker/src/fiche.ts::lireDetails, listes fermées). */
+export interface DetailsHabillage {
+  gardeCorps?: 'metal' | 'glass' | 'solid';
+  menuiseries?: 'av-aluminium-noir' | 'av-aluminium-blanc' | 'av-aluminium-bronze';
+  soubassement?: 'pierre-claire-contemp' | 'beton-brut' | 'brique-rouge';
+}
+
+/**
+ * Lot brief-unifié — détails du brief traduits pour le Studio ; null s'il n'y a rien à poser.
+ * Garde-corps : TOUJOURS envoyé quand il y a des balcons (même « métal ») : pour un bâtiment seul, le lecteur
+ * du Studio rendait des garde-corps vitrés dès que la phrase contenait « vitrées » (baies vitrées).
+ */
+export function detailsHabillage(b: BriefRendu): DetailsHabillage | null {
+  const d: DetailsHabillage = {};
+  if (b.balcons !== 'aucun') d.gardeCorps = ({ metal: 'metal', verre: 'glass', plein: 'solid' } as const)[b.garde_corps];
+  if (b.menuiseries !== 'gris') d.menuiseries = ({ anthracite: 'av-aluminium-noir', blanc: 'av-aluminium-blanc', bronze: 'av-aluminium-bronze' } as const)[b.menuiseries];
+  if (b.soubassement !== 'aucun') d.soubassement = ({ pierre: 'pierre-claire-contemp', beton: 'beton-brut', brique: 'brique-rouge' } as const)[b.soubassement];
+  return Object.keys(d).length ? d : null;
 }
 
 /** « Crée un immeuble R+4 de 30 m sur 14 m. » + brief → « Crée un immeuble R+4 de 30 m sur 14 m, façade en brique, … . » */
@@ -539,13 +647,18 @@ export function libelleBrief(b: BriefRendu): string {
   const d = (c: ChampBrief) => (b.defauts.includes(c) ? ' (par défaut)' : '');
   return [
     `style ${LIB_BRIEF.style[b.style]}${d('style')}`,
-    `façade ${LIB_BRIEF.facade[b.facade]}${d('facade')}`,
+    `façade ${libelleFacade(b)}${d('facade')}`,
     `${LIB_BRIEF.ouvertures[b.ouvertures]}${d('ouvertures')}`,
     `${LIB_BRIEF.balcons[b.balcons]}${d('balcons')}`,
     `${b.attique ? 'avec attique' : 'sans attique'}${d('attique')}`,
     `rez-de-chaussée : ${LIB_BRIEF.rdc[b.rdc]}${d('rdc')}`,
     `${LIB_BRIEF.ambiance[b.ambiance]}${d('ambiance')}`,
-  ].join(' · ') + (b.precisions ? ` · précisions : « ${b.precisions} »` : '');
+    // Lot brief-unifié : les détails ne sont écrits que s'ils changent le dessin par défaut du Studio.
+    b.toiture !== 'terrasse' ? `${LIB_BRIEF.toiture[b.toiture]}${d('toiture')}` : null,
+    b.balcons !== 'aucun' && b.garde_corps !== 'metal' ? `${LIB_BRIEF.garde_corps[b.garde_corps]}${d('garde_corps')}` : null,
+    b.menuiseries !== 'gris' ? `${LIB_BRIEF.menuiseries[b.menuiseries]}${d('menuiseries')}` : null,
+    b.soubassement !== 'aucun' ? `${LIB_BRIEF.soubassement[b.soubassement]}${d('soubassement')}` : null,
+  ].filter((x): x is string => !!x).join(' · ') + (b.precisions ? ` · précisions : « ${b.precisions} »` : '');
 }
 
 /**
@@ -558,7 +671,7 @@ export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', 
     return ['Habillage : la version enregistrée dans l’Atelier 3D est rendue TELLE QUELLE ; style, façade, balcons, attique et rez-de-chaussée du brief ne la modifient pas (seule l’ambiance de lumière s’applique).'];
   }
   const r: string[] = [];
-  if (batiments >= 2) r.push(`Ensemble de ${String(batiments)} bâtiments : l’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée) est appliqué à chacun des ${String(batiments)} bâtiments, sans changer leur position, leurs dimensions ni leurs niveaux.`);
+  if (batiments >= 2) r.push(`Ensemble de ${String(batiments)} bâtiments : l’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, toiture, garde-corps, menuiseries, soubassement) est appliqué à chacun des ${String(batiments)} bâtiments, sans changer leur position, leurs dimensions ni leurs niveaux.`);
   if (b.style === 'contemporain') r.push('Style contemporain : pas de jeu de style dédié dans le Studio, c’est son dessin par défaut (seuls façade, ouvertures, balcons, attique et rez-de-chaussée le personnalisent).');
   else r.push(`Style ${LIB_BRIEF.style[b.style]} : prévu dans le Studio mais pas encore disponible (aucun décor régional) — NON appliqué : le bâtiment est rendu dans le dessin contemporain par défaut, avec la façade, les ouvertures, les balcons, l’attique et le rez-de-chaussée demandés.`);
   if (plusieurs && b.balcons !== 'aucun') r.push('Ensemble de plusieurs bâtiments : balcons non pris en compte par le Studio pour l’instant (il les poserait sur le seul premier bâtiment).');
@@ -566,6 +679,9 @@ export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', 
   if (b.rdc === 'hall') r.push('Rez-de-chaussée « hall d’entrée » : non pris en compte par le Studio pour l’instant (il dessine son entrée par défaut, rez-de-chaussée traité comme les étages).');
   if (b.rdc === 'commerces') r.push('Commerces en rez-de-chaussée : le Studio transforme le rez en surface commerciale avec vitrines ; le nombre de logements du volume d’étude n’est pas recalculé.');
   if (b.attique) r.push(`Attique : le Studio l’ajoute AU-DESSUS des niveaux du volume d’étude (retrait de 2 m)${batiments >= 2 ? ', sur chaque bâtiment' : ''} — la hauteur totale dépasse celle du volume calculé, à vérifier au regard du PLU.`);
+  if (toitEnPente(b.toiture)) r.push(`Toit à deux pans (pente de 35°) : le Studio l’ajoute AU-DESSUS du dernier niveau (≈ 5,9 m au faîtage pour 16 m de profondeur)${batiments >= 2 ? ', sur chaque bâtiment' : ''} — la hauteur totale dépasse celle du volume calculé, à vérifier au regard du PLU.`);
+  if (b.soubassement !== 'aucun') r.push('Soubassement : bandeau de 60 cm au pied des façades (matière demandée), interrompu devant les portes.');
+  if (b.facade === 'brique' && b.teinte === 'claire') r.push('Brique claire : matière dessinée par le Studio (sans texture photographique, contrairement à la brique rouge).');
   if (b.precisions) r.push('Précisions libres : transmises au Studio à titre informatif, non interprétées pour l’instant.');
   return r;
 }
@@ -626,23 +742,24 @@ export function consigneBriefCarte(c: Validation<BriefCarte> | null): string {
   if (!c) return '';
   if (!c.ok) {
     return `BRIEF CRÉATIF : le dernier message contient un bloc de brief REFUSÉ par le serveur (${c.erreur}). ` +
-      'Dis-le simplement et propose de refaire les choix dans la carte ; ne devine aucune valeur.';
+      'Dis-le simplement et propose de refaire les choix dans l’Espace 3D (section habillage) ; ne devine aucune valeur.';
   }
   // Lot fiche-3d : brief choisi dans la fiche « Espace 3D » (bloc SANS type de rendu) — aucun rendu demandé.
   if (!c.valeur.type) {
-    return 'HABILLAGE CHOISI dans la fiche du projet (dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
+    return 'HABILLAGE CHOISI dans la fiche du projet (Espace 3D ; dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
       'Il est enregistré dans la conversation : le serveur le reprendra lui-même au prochain rendu (inutile de le recopier). ' +
       'N’appelle PAS studio_lancer_rendu et ne propose aucun devis, sauf si ce même message demande un rendu ; ' +
       'réponds en une phrase courte qui confirme l’habillage, sans reposer de question d’habillage.';
   }
-  return 'BRIEF CRÉATIF VALIDÉ dans la carte du chat (dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
+  return 'BRIEF CRÉATIF VALIDÉ dans l’Espace 3D (section habillage ; dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
     `Rappelle IMMÉDIATEMENT studio_lancer_rendu${c.valeur.type ? ` (type « ${c.valeur.type} »)` : ''} pour établir le devis : ` +
     'le serveur lit ce brief lui-même dans le message (inutile de le recopier dans `brief`, ne le reformule pas) ; ' +
     'ne repose aucune question d’habillage.';
 }
 
 /** Corps de bâtiment de l'aperçu (mètres locaux, x vers l'est, y vers le nord ; angle du grand côté depuis l'est). */
-export interface CorpsApercu { cx: number; cy: number; l: number; p: number; a: number; n: number }
+export interface CorpsApercu { cx: number; cy: number; l: number; p: number; a: number; n: number; /** Lot formes-batiment : côtés accolés d'une aile. */ int?: number[] }
+const FORMES_AILES: readonly string[] = ['l', 'u', 'cour', 'redans'];
 export interface ApercuVolume { corps: CorpsApercu[]; contour: [number, number][] | null }
 /** Points du contour de parcelle transmis au plus (aperçu seulement). */
 export const APERCU_CONTOUR_MAX = 48;
@@ -659,9 +776,14 @@ export function apercuVolume(volume: unknown): ApercuVolume | null {
   let corps: ReturnType<typeof corpsAffiches>;
   try { corps = corpsAffiches(volume as unknown as VolumePropose); } catch { return null; }
   const r1 = (x: number) => Math.round(x * 10) / 10;
-  const liste = corps.slice(0, APERCU_CORPS_MAX)
+  // Lot formes-batiment : un bâtiment à ailes (L, U, cour, redans) → une boîte par aile (boitesApercu, même code que la fiche).
+  const ailesLisibles = (c: (typeof corps)[number]) => Array.isArray(c.ailes) && c.ailes.length >= 2 && FORMES_AILES.includes(c.formeAiles as string)
+    && c.ailes.every((a) => estObj(a) && fini(a.du) && fini(a.dv) && fini(a.lu) && fini(a.lv) && fini(a.niveaux) && a.lu > 0 && a.lv > 0);
+  const liste = corps
     .filter((c) => fini(c.centre?.x) && fini(c.centre?.y) && fini(c.largeurM) && fini(c.profondeurM) && fini(c.angleDeg) && fini(c.niveaux) && c.largeurM > 0 && c.profondeurM > 0)
-    .map((c) => ({ cx: r1(c.centre.x), cy: r1(c.centre.y), l: r1(c.largeurM), p: r1(c.profondeurM), a: r1(c.angleDeg), n: Math.max(1, Math.min(60, Math.round(c.niveaux))) }));
+    .flatMap((c) => boitesApercu({ centre: c.centre, angleDeg: c.angleDeg, largeurM: c.largeurM, profondeurM: c.profondeurM, niveaux: c.niveaux,
+      ...(ailesLisibles(c) ? { ailes: c.ailes, formeAiles: c.formeAiles } : {}) }))
+    .slice(0, APERCU_CORPS_MAX);
   if (!liste.length) return null;
   const brut = Array.isArray(volume.contour) ? (volume.contour as unknown[]).filter((q): q is { x: number; y: number } => estObj(q) && fini(q.x) && fini(q.y)) : [];
   const pas = Math.max(1, Math.ceil(brut.length / APERCU_CONTOUR_MAX));
@@ -675,14 +797,29 @@ export interface LimitesBrief {
   batiments: number;
   /** Faux pour une composition de bâtiments nommés A à H : le Studio ne poserait les balcons que sur le premier. */
   balcons: boolean;
+  /**
+   * Lot brief-formes : vrai si un bâtiment a des ailes (en L, en U, cour fermée, redans). Le Studio couvre
+   * alors chaque aile d'un toit à deux pans SÉPARÉ (pas de noue, pignons à la jonction des ailes, faîtages
+   * de hauteurs différentes sur une cour — mesuré le 06/11 sur AE0414) : le toit à deux pans n'est pas proposé.
+   */
+  ailes: boolean;
 }
+
+/** Lot brief-formes : un des bâtiments du contrat v2 a-t-il au moins deux ailes ? PUR. */
+export function batimentsAAiles(charge: unknown): boolean {
+  const bats = estObj(charge) && Array.isArray(charge.batiments) ? charge.batiments : [];
+  return bats.some((b) => estObj(b) && Array.isArray(b.ailes) && b.ailes.length >= 2);
+}
+
+/** Lot brief-formes : raison du refus du toit à deux pans pour un bâtiment à ailes (même phrase que la carte). */
+export const RAISON_PENTE_AILES = 'Toit à deux pans : pas encore disponible pour un bâtiment à ailes (en L, en U, cour fermée, redans) — le Studio couvrirait chaque aile d’un toit séparé, sans noue entre les ailes.';
 
 function limitesPreparation(p: PreparationLue, conversationId: string, origine: string): LimitesBrief {
   const f = ficheDepuisPreparation(p, conversationId, new Date(0).toISOString(), crypto.randomUUID(), origine, null);
-  if (!f.ok) return { batiments: 1, balcons: true };
+  if (!f.ok) return { batiments: 1, balcons: true, ailes: false };
   const charge = f.valeur.charge as { compositionArchitecture?: unknown[]; batiments?: unknown[] };
   const nb = charge.batiments?.length ?? 0;
-  return { batiments: Math.max(1, nb), balcons: (charge.compositionArchitecture?.length ?? 0) < 2 };
+  return { batiments: Math.max(1, nb), balcons: (charge.compositionArchitecture?.length ?? 0) < 2, ailes: batimentsAAiles(charge) };
 }
 
 /** Statistiques GLOBALES et anonymes de la file (aucune donnée d'un autre utilisateur n'est renvoyée). */
@@ -818,6 +955,9 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
     version: 1, charge: construit.projet, draft, titre: titreRendu(draft), conversation_id: conversationId, origine: 'mimmo', preparation_id: p.id,
     ...(brief ? { brief_rendu: brief } : {}),
     ...(brief && multi ? { habillage_batiments: habillageBatiments(brief) } : {}),
+    // Lot brief-unifié : bâtiment seul ou composition nommée — clauses et balcons sont déjà dans la commande ;
+    // seuls les DÉTAILS (garde-corps, menuiseries, soubassement) voyagent à part, posés par le worker (scene.mts).
+    ...(brief && !multi && detailsHabillage(brief) ? { habillage_batiments: { clauses: [], balcons: null, details: detailsHabillage(brief) } } : {}),
   } };
 }
 
@@ -899,6 +1039,11 @@ export interface EnvStudio {
    * l'utilisateur (briefDuMessage), jamais fourni par le modèle. Prioritaire sur `input.brief`.
    */
   briefCarte?: Validation<BriefCarte> | null;
+  /**
+   * Lot formes-batiment : forme choisie dans la fiche « Espace 3D » (bloc ```mimmoza-forme``` du message REÇU,
+   * relu par index.ts avec formeDuMessage), jamais fournie par le modèle. Prioritaire sur `input.forme`.
+   */
+  formeCarte?: Validation<SaisieDimensions> | null;
 }
 
 /** Identifiant stable de la requête : le même objet de contexte est passé à chaque outil d'une requête. */
@@ -920,7 +1065,7 @@ export const CONSIGNE_RENDU_STUDIO =
   'RENDUS STUDIO — HABILLAGE : ne pose JAMAIS toi-même la question d’habillage (façade, ouvertures, balcons ou loggias, attique, ' +
   'rez-de-chaussée, ambiance), ni en texte ni en bloc mimmoza-choix. Dès que l’utilisateur demande un rendu (film, visite 360°, image), ' +
   'appelle studio_lancer_rendu dans le même tour (après studio_preparer_3d si la 3D n’est pas encore préparée), sans `brief` sauf si ' +
-  'ses choix d’habillage sont déjà écrits dans son message : c’est l’outil qui affiche la carte « Brief créatif » (ou reprend l’habillage ' +
+  'ses choix d’habillage sont déjà écrits dans son message : c’est l’outil qui ouvre la carte « Brief créatif » dans l’Espace 3D (ou reprend l’habillage ' +
   'déjà choisi) puis le devis. Seul le TYPE de rendu peut se demander, s’il n’est pas précisé (bloc mimmoza-choix : Film, Visite 360°, Image).';
 
 const RE_RENDU_TYPE = /(^|[^\p{L}])(films?|vid[ée]os?|visites?\s+(?:virtuelles?|immersives?|360|3\s?d)|360\s?°|image\s+photo|images\s+photo|photo-?r[ée]alis\p{L}*)(?![\p{L}])/iu;
@@ -992,7 +1137,11 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     return erreur('Aucune conception trouvée pour cet utilisateur' + (input.idu ? ` sur ${String(input.idu)}` : '') +
       ". Une conception (parcelle, règles PLU, programme) se prépare par une mission de conception (proposer_mission, type « conception »).", 'not_found');
   }
-  const p = await preparerVolume(c);
+  // Lot formes-batiment : forme choisie dans la fiche (bloc du message, relu par index.ts) ou paramètre `forme`.
+  const carte = env.formeCarte ?? null;
+  if (carte && !carte.ok) return erreur(`Forme choisie dans la fiche refusée : ${carte.erreur}`, 'partial');
+  const formeVoulue = typeof input.forme === 'string' && (input.forme === 'auto' || FORMES.some((f) => f.valeur === input.forme)) ? input.forme as Forme | 'auto' : null;
+  const p = await preparerVolume(c, carte?.ok ? { saisie: carte.valeur } : { forme: formeVoulue });
   if (!p.ok) return erreur(p.raison, 'partial');
   const id = await env.depot.enregistrerPreparation(env.userId!, {
     conception_id: c.id, conversation_id: env.conversationId, idu: c.idu, empreinte: p.empreinte,
@@ -1004,6 +1153,11 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       preparation_id: id, conception_id: c.id, idu: c.idu, commune: c.commune, empreinte: p.empreinte,
       calcul: 'déterministe — moteur du Dossier 3D (volumeParcelle + implantationProgramme), aucune IA',
       volume: env.mission ? resumeCompact(p.resume) : p.resume,
+      // Lot formes-batiment : forme retenue et classement des formes par le moteur (suggestion, l'utilisateur choisit).
+      // (Mission : résultat plafonné à 3 000 caractères → seulement la suggestion.)
+      ...(p.resume.forme ? { forme_retenue: p.resume.forme.retenue, origine_forme: p.resume.forme.origine,
+        ...(env.mission ? { forme_suggeree: p.resume.forme.comparaison.find((x) => !x.raison)?.libelle ?? null }
+          : { formes_comparees: p.resume.forme.comparaison.slice(0, 8) }) } : {}),
       ouverture: env.mission
         ? "Enregistrée : l'utilisateur l'ouvre depuis le chat (« ouvre la 3D préparée de ma conception »)."
         : "Bouton « Ouvrir la 3D préparée » dans le Dossier 3D, à droite du chat (un clic).",
@@ -1016,8 +1170,11 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       'n’y écris aucun autre chiffre (le gabarit du programme est un plafond, pas le volume ; aucune SHAB n’est calculée) — la fiche du chat affiche les chiffres du moteur. ' +
       'HABILLAGE : ne pose JAMAIS toi-même la question d’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, ambiance), ' +
       'ni en texte ni en bloc ```mimmoza-choix```. Si l’utilisateur a demandé un rendu (film, visite 360°, image), appelle MAINTENANT ' +
-      'studio_lancer_rendu (sans `brief`, sauf choix d’habillage déjà donnés en texte) : l’outil affiche la carte « Brief créatif » ou reprend ' +
-      'l’habillage déjà choisi, puis le devis. Sinon, propose un rendu en une phrase, sans détailler l’habillage.',
+      'studio_lancer_rendu (sans `brief`, sauf choix d’habillage déjà donnés en texte) : l’outil ouvre la carte « Brief créatif » dans l’Espace 3D ou reprend ' +
+      'l’habillage déjà choisi, puis le devis. Sinon, propose un rendu en une phrase, sans détailler l’habillage. ' +
+      'FORME : `forme_retenue` est la forme de CE volume ; `formes_comparees` est le classement du moteur (dans les règles, logements, niveaux, ' +
+      'façade, emprise) : présente la première comme une SUGGESTION en une phrase — l’utilisateur choisit dans la fiche (« Forme et dimensions ») ' +
+      'ou te le demande (paramètre `forme`). Les formes à ailes (L, U, cour, redans) partent au Studio aile par aile.',
   };
 }
 
@@ -1151,7 +1308,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // ── Temps 1 : devis, AUCUNE écriture ─────────────────────────
   // Brief créatif : bloc du message de l'utilisateur, relu par le serveur (prioritaire sur le modèle).
   const carte = env.briefCarte ?? null;
-  if (carte && !carte.ok) return erreur(`Le brief de la carte n’a pas été accepté (${carte.erreur}). RIEN N’A ÉTÉ LANCÉ. Propose à l’utilisateur de refaire ses choix dans la carte.`);
+  if (carte && !carte.ok) return erreur(`Le brief de la carte n’a pas été accepté (${carte.erreur}). RIEN N’A ÉTÉ LANCÉ. Propose à l’utilisateur de refaire ses choix dans la carte d’habillage de l’Espace 3D.`);
   const type = (input.type ?? (carte?.ok ? carte.valeur.type : undefined)) as TypeRendu;
   const opts0 = validerOptionsRendu(type, input.options);
   if (!opts0.ok) return erreur(opts0.erreur);
@@ -1212,11 +1369,19 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // Bâtiments du contrat v2 (≥ 2) : l'habillage est appliqué à chacun (habillageBatiments, E1-rendu).
   let plusieurs = false;
   let nbBatiments = 0;
+  let aAiles = false;
   if (src.source.genre === 'preparation') {
     const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief);
     if (!f.ok) return erreur(f.erreur);
     plusieurs = ((f.valeur.charge as { compositionArchitecture?: unknown[] }).compositionArchitecture?.length ?? 0) >= 2;
     nbBatiments = (f.valeur.charge as { batiments?: unknown[] }).batiments?.length ?? 0;
+    aAiles = batimentsAAiles(f.valeur.charge);
+    // Lot brief-formes : jamais de toit à deux pans promis sur un bâtiment à ailes (le Studio ne le rend pas proprement).
+    if (aAiles && brief && toitEnPente(brief.toiture)) {
+      const p = src.source.preparation;
+      if (origineBrief === 'fourni') return erreur(`${RAISON_PENTE_AILES} RIEN N’A ÉTÉ LANCÉ. Propose un toit-terrasse ou une toiture végétalisée (carte d’habillage de l’Espace 3D).`);
+      return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine) });
+    }
   }
   const actifs = await env.depot.travauxActifs(uid);
   if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
@@ -1258,10 +1423,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // Brief créatif : de quoi rouvrir la carte (« Modifier l'habillage ») sous le devis, APRÈS le jeton
   // (le rappel des résultats ne garde que les 900 premiers caractères).
   const carteDevis = brief && src.source.genre === 'preparation'
-    ? { brief_actuel: brief, apercu: apercuVolume(src.source.preparation.volume), limites: { batiments: Math.max(1, nbBatiments), balcons: !plusieurs } }
+    ? { brief_actuel: brief, apercu: apercuVolume(src.source.preparation.volume), limites: { batiments: Math.max(1, nbBatiments), balcons: !plusieurs, ailes: aAiles } }
     : {};
   const noteCarte = briefCarteLu
-    ? ' Le brief vient de la carte « Brief créatif » validée par l’utilisateur (lu par le serveur dans son message) : présente-le tel quel ; un bouton « Modifier l’habillage » s’affiche sous le devis.'
+    ? ' Le brief vient de la carte « Brief créatif » de l’Espace 3D, validée par l’utilisateur (lu par le serveur dans son message) : présente-le tel quel ; une ligne « Modifier l’habillage » s’affiche sous le devis.'
     : '';
   if (existant) {
     return {
@@ -1305,6 +1470,11 @@ function demandeBrief(type: TypeRendu, carte: { actuel: BriefRendu | null; aperc
         attique: { valeurs: [false, true], defaut: BRIEF_DEFAUT.attique },
         rdc: { valeurs: BRIEF_RDC, defaut: BRIEF_DEFAUT.rdc },
         ambiance: { valeurs: type === 'image' ? ['jour', 'fin_de_journee'] : BRIEF_AMBIANCES, defaut: BRIEF_DEFAUT.ambiance },
+        toiture: { valeurs: BRIEF_TOITURES, defaut: BRIEF_DEFAUT.toiture },
+        teinte: { valeurs: BRIEF_TEINTES, defaut: BRIEF_DEFAUT.teinte, par_facade: TEINTES_PAR_FACADE },
+        garde_corps: { valeurs: BRIEF_GARDE_CORPS, defaut: BRIEF_DEFAUT.garde_corps },
+        menuiseries: { valeurs: BRIEF_MENUISERIES, defaut: BRIEF_DEFAUT.menuiseries },
+        soubassement: { valeurs: BRIEF_SOUBASSEMENTS, defaut: BRIEF_DEFAUT.soubassement },
         precisions: `texte libre facultatif, ${BRIEF_PRECISIONS_MAX} caractères au plus (informatif)`,
       },
       question: questionBrief(type),
@@ -1313,11 +1483,11 @@ function demandeBrief(type: TypeRendu, carte: { actuel: BriefRendu | null; aperc
     },
     message:
       (modification
-        ? "RIEN N'A ÉTÉ LANCÉ. La carte « Brief créatif » s'affiche sous ton message, préremplie avec l'habillage actuel : "
-        : "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Une carte « Brief créatif » s'affiche sous ton message : ") +
-      "l'utilisateur y choisit façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée et ambiance, avec un aperçu de son volume. " +
-      "Écris UN SEUL message court : invite-le à faire ses choix dans la carte (ou à répondre en texte, ou « à toi de choisir ») ; " +
-      "ne recopie pas la liste des choix, ne pose aucune autre question. Quand il valide la carte, son message contient un bloc " +
+        ? "RIEN N'A ÉTÉ LANCÉ. Le panneau « Espace 3D » (à droite du chat) s'ouvre sur l'habillage du projet (carte « Brief créatif »), préremplie avec l'habillage actuel : "
+        : "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Le panneau « Espace 3D » (à droite du chat) s'ouvre de lui-même sur l'habillage du projet (carte « Brief créatif ») : ") +
+      "l'utilisateur y choisit façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, ambiance et, s'il le souhaite, les détails (toiture, teinte, garde-corps, menuiseries, soubassement), avec un aperçu de son volume. " +
+      "Écris UN SEUL message court : invite-le à faire ses choix dans l'Espace 3D, section habillage (ou à répondre en texte, ou « à toi de choisir ») ; " +
+      "ne recopie pas la liste des choix, ne pose aucune autre question. Quand il valide l'habillage, son message contient un bloc " +
       "« mimmoza-brief » : rappelle alors studio_lancer_rendu (même type), le serveur lit ce brief lui-même. S'il répond en texte, " +
       "rappelle studio_lancer_rendu avec `brief` : ses choix (les points non précisés prennent la valeur proposée) ; " +
       "« à toi de choisir » ou équivalent → brief: { a_toi_de_choisir: true }. Ne repose JAMAIS cette question.",

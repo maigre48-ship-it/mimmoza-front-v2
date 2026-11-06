@@ -5,7 +5,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { dernierePreparation, lirePreparationStockee, type MessageOutils, type PreparationStockee } from './preparationStudio';
-import { appliquerForme, evaluerSaisie, modifierCorps, saisieDepuisVolume, type EvaluationFiche, type Forme, type SaisieDimensions } from './ficheDimensions';
+import {
+  appliquerFormeDetail, comparerFormes, evaluerSaisie, modifierAile, modifierCorps, modifierDecalage, saisieDepuisVolume,
+  type EvaluationFiche, type Forme, type FormeComparee, type SaisieDimensions,
+} from './ficheDimensions';
 import { briefCourant } from './briefCreatif';
 
 type MessageFiche = MessageOutils & { role: string; text: string };
@@ -15,7 +18,13 @@ export type EtatFiche3D =
   | { etat: 'chargement' }
   | { etat: 'erreur'; message: string }
   | { etat: 'ok'; prep: PreparationStockee; saisie: SaisieDimensions; ev: EvaluationFiche; brief: ReturnType<typeof briefCourant>;
-    choisirForme: (f: Forme) => void; modifier: (i: number, champ: 'longueurM' | 'largeurM' | 'niveaux', v: string) => void; revenir: () => void };
+    choisirForme: (f: Forme) => void; modifier: (i: number, champ: 'longueurM' | 'largeurM' | 'niveaux', v: string) => void; revenir: () => void;
+    // Lot formes-batiment : ailes, décalage des redans, comparaison des formes (suggestion), forme impossible.
+    modifierAile: (i: number, aile: number, champ: 'longueurM' | 'largeurM' | 'niveaux', v: string) => void;
+    modifierDecalage: (i: number, v: string) => void;
+    choisirSaisie: (s: SaisieDimensions) => void;
+    comparer: () => FormeComparee[];
+    raisonForme: string | null };
 
 /** Volume préparé par Mimmo pour la conversation (relu en base), saisie de l'utilisateur et évaluation du moteur. */
 export function useFiche3D(messages: readonly MessageFiche[]): EtatFiche3D {
@@ -23,6 +32,7 @@ export function useFiche3D(messages: readonly MessageFiche[]): EtatFiche3D {
   const brief = useMemo(() => briefCourant(messages), [messages]);
   const [lu, setLu] = useState<{ id: string; prep: PreparationStockee | null; erreur: string | null } | null>(null);
   const [saisie, setSaisie] = useState<SaisieDimensions | null>(null);
+  const [raisonForme, setRaisonForme] = useState<string | null>(null);
   const id = ref?.preparationId ?? null;
   useEffect(() => {
     if (!id) return;
@@ -43,8 +53,17 @@ export function useFiche3D(messages: readonly MessageFiche[]): EtatFiche3D {
   if (!prep || !saisie || !ev) return { etat: 'erreur', message: lu.erreur ?? 'Volume indisponible.' };
   return {
     etat: 'ok', prep, saisie, ev, brief,
-    choisirForme: (f) => setSaisie((s) => (s ? appliquerForme(prep, s, f) : s)),
+    choisirForme: (f) => {
+      const r = appliquerFormeDetail(prep, saisie, f);
+      setRaisonForme(r.raison);
+      setSaisie(r.saisie);
+    },
     modifier: (i, champ, v) => setSaisie((s) => (s ? modifierCorps(s, i, champ, v) : s)),
-    revenir: () => setSaisie(saisieDepuisVolume(prep.volume)),
+    revenir: () => { setRaisonForme(null); setSaisie(saisieDepuisVolume(prep.volume)); },
+    modifierAile: (i, aile, champ, v) => setSaisie((s) => (s ? modifierAile(s, i, aile, champ, v) : s)),
+    modifierDecalage: (i, v) => setSaisie((s) => (s ? modifierDecalage(s, i, v) : s)),
+    choisirSaisie: (s) => { setRaisonForme(null); setSaisie(s); },
+    comparer: () => comparerFormes(prep, attique),
+    raisonForme,
   };
 }

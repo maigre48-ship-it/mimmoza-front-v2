@@ -15,6 +15,8 @@ import {
   idRequete, jsonCanonique, lireJeton, lireRegles, niveauxDuGabarit, preparerVolume, programmeVolume, reglesVolume, signerJeton,
   studioPertinent, validerOptionsRendu,
   apercuVolume, BRIEF_BLOC_LANGUE, briefDuMessage, consigneBriefCarte, briefDuFil,
+  BRIEF_TOITURES, BRIEF_TEINTES, BRIEF_GARDE_CORPS, BRIEF_MENUISERIES, BRIEF_SOUBASSEMENTS, BRIEF_FACADES, TEINTES_PAR_FACADE, detailsHabillage, libelleBrief,
+  batimentsAAiles, RAISON_PENTE_AILES,
   type ConceptionLue, type DepotStudio, type EnvStudio, type PreparationLue, type StatsFile, type TravailLu,
 } from './studio.ts';
 import { calculerVolumeProgramme } from './studio-front.ts';
@@ -521,7 +523,8 @@ Deno.test('E1-R1 : AE0414 réelle (2 bâtiments) + brief — habillage transmis 
   ok(/façade brique · fenêtres verticales \(par défaut\) · loggias · avec attique · rez-de-chaussée : commerces/.test(String(devis.habillage)), String(devis.habillage));
   const av = (devis.avertissements as string[]);
   const tout = av.join(' | ');
-  ok(av.some((a) => a.startsWith('Ensemble de 2 bâtiments : l’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée) est appliqué à chacun des 2 bâtiments')), tout);
+  // Lot brief-unifié : la liste de l'habillage appliqué à chaque bâtiment compte les détails.
+  ok(av.some((a) => a.startsWith('Ensemble de 2 bâtiments : l’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, toiture, garde-corps, menuiseries, soubassement) est appliqué à chacun des 2 bâtiments')), tout);
   ok(/AU-DESSUS des niveaux du volume d’étude \(retrait de 2 m\), sur chaque bâtiment/.test(tout), tout);
   ok(/chacun est reconstruit à sa place/.test(tout) && /est un plafond, pas une cible/.test(tout), tout);
   // Plus jamais « balcons et style non pris en compte » quand ils sont transmis à chaque bâtiment.
@@ -535,6 +538,8 @@ Deno.test('E1-R1 : AE0414 réelle (2 bâtiments) + brief — habillage transmis 
   eq(fiche.habillage_batiments, {
     clauses: ['façade en brique', 'fenêtres verticales', 'avec attique', 'commerces en rez-de-chaussée'],
     balcons: 'loggia',
+    // Lot brief-unifié : garde-corps toujours transmis avec des balcons (métal par défaut).
+    details: { gardeCorps: 'metal' },
   });
   // Géométrie du contrat inchangée par le brief : mêmes 2 barres R+2, même place.
   const charge = fiche.charge as { batiments: Array<{ nom: string; niveaux: number; largeurM: number; profondeurM: number; rotationDeg: number }> };
@@ -546,11 +551,15 @@ Deno.test('E1-R2 : habillage_batiments — seulement pour plusieurs bâtiments ;
   // Un bâtiment (rectangle synthétique) : le brief reste dans la commande, pas d'habillage à part.
   const d = depotAvecConception();
   await preparer(d);
+  // Lot brief-unifié : pour un bâtiment seul, seuls les DÉTAILS voyagent à part (clauses et balcons restent dans la commande).
   const f1 = ficheDepuisPreparation(d.preparations[0], CONV, '2026-11-05T12:00:00.000Z', crypto.randomUUID(), 'https://mimmoza.vercel.app', { ...BRIEF_DEFAUT, precisions: null, defauts: [] });
-  ok(f1.ok && f1.valeur.habillage_batiments === undefined);
+  ok(f1.ok);
+  if (f1.ok) eq(f1.valeur.habillage_batiments, { clauses: [], balcons: null, details: { gardeCorps: 'metal' } });
+  const f0 = ficheDepuisPreparation(d.preparations[0], CONV, '2026-11-05T12:00:00.000Z', crypto.randomUUID(), 'https://mimmoza.vercel.app', { ...BRIEF_DEFAUT, balcons: 'aucun', precisions: null, defauts: [] });
+  ok(f0.ok && f0.valeur.habillage_batiments === undefined, 'rien à poser : pas d’habillage à part');
   const b = { ...BRIEF_DEFAUT, precisions: null, defauts: [] };
   eq(habillageBatiments({ ...b, style: 'haussmannien', balcons: 'balcons_filants', facade: 'verre', ouvertures: 'baies_vitrees' }),
-    { clauses: ['façade en verre'], balcons: 'running' });
+    { clauses: ['façade en verre'], balcons: 'running', details: { gardeCorps: 'metal' } });
   eq(habillageBatiments({ ...b, style: 'art_deco', balcons: 'aucun' }), { clauses: ['façade en enduit', 'fenêtres verticales'], balcons: null });
   eq(habillageBatiments({ ...b }).balcons, 'individual');
   for (const st of BRIEF_STYLES) for (const bl of BRIEF_BALCONS) {
@@ -657,7 +666,7 @@ Deno.test('E1-B1 : 3D préparée sans brief → aucun devis, UNE question group�
   eq([r?.status, r?.data?.brief_requis, r?.data?.jeton_devis, d.inserts], ['partial', true, undefined, 0]);
   const q = String(r!.data!.question);
   const lignes = q.split('\n');
-  ok(lignes.filter((l) => l.startsWith('- ')).length === 6, q);
+  ok(lignes.filter((l) => l.startsWith('- ')).length === 7, q); // lot brief-unifié : + « Détails (facultatif) »
   for (const mot of ['Style architectural : contemporain', 'Façade et matériaux : enduit clair', 'Balcons / loggias : balcons', 'Attique : non', 'Rez-de-chaussée : logements', 'Ambiance : journée']) ok(q.includes(mot), mot);
   ok(!/\(1\)|\(2\)/.test(q), 'pas de liste (1)…(2)… en ligne');
   ok(/à toi de choisir/.test(q) && /UN SEUL message/.test(r!.message!) && /Ne repose JAMAIS/.test(r!.message!));
@@ -684,8 +693,8 @@ Deno.test('E1-B2 : « à toi de choisir » → valeurs par défaut, écrites dan
   ok((devis.avertissements as string[]).some((a) => /dessin par défaut/.test(a)), 'style contemporain : sans jeu de style dédié, dit');
   ok(/choisis par Mimmo/.test(r!.message!));
   const c = await lireJeton(r!.data!.jeton_devis, 'secret-de-test');
-  eq(c?.b, '0000000.7f');
-  eq(briefDuJeton(c?.b), { ...BRIEF_DEFAUT, precisions: null, defauts: ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance'] });
+  eq(c?.b, '2:000000000000.fff'); // lot brief-unifié : forme « 2: », 12 champs
+  eq(briefDuJeton(c?.b), { ...BRIEF_DEFAUT, precisions: null, defauts: ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance', 'toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement'] });
   // Jeton toujours lisible dans les 900 premiers caractères du rappel.
   const sortie = JSON.stringify(r);
   ok(sortie.indexOf(String(r!.data!.jeton_devis)) + String(r!.data!.jeton_devis).length < 900, String(sortie.indexOf(String(r!.data!.jeton_devis)) + String(r!.data!.jeton_devis).length));
@@ -810,9 +819,11 @@ Deno.test('BC-1 : garde du brief — carte « brief_creatif », aperçu = volume
   eq(ap.corps.map((k) => [k.l, k.p, k.n]), [[29.5, 16, 3], [29, 16, 3]]);
   ok(ap.corps.every((k) => Math.abs(k.a - 120.4) < 0.11 || Math.abs(k.a + 239.6) < 0.11), JSON.stringify(ap.corps));
   ok(Array.isArray(ap.contour) && ap.contour.length >= 3 && ap.contour.length <= 48);
-  eq(r!.data!.limites, { batiments: 2, balcons: true });
+  eq(r!.data!.limites, { batiments: 2, balcons: true, ailes: false });
   ok(/carte « Brief créatif »/.test(r!.message!) && /UN SEUL message/.test(r!.message!) && /Ne repose JAMAIS/.test(r!.message!) && /ne recopie pas la liste/.test(r!.message!));
   ok(typeof r!.data!.question === 'string', 'question texte conservée (repli)');
+  // Régénération (lot brief-unifié) : ECRIRE_FIXTURE=1 deno test … réécrit la fixture depuis la sortie réelle.
+  if (Deno.env.get('ECRIRE_FIXTURE') === '1') await Deno.writeTextFile(FIXTURE_DEMANDE, JSON.stringify(r, null, 2) + '\n');
   const fixture = JSON.parse(await Deno.readTextFile(FIXTURE_DEMANDE));
   eq(fixture, JSON.parse(JSON.stringify(r)), 'la fixture du front doit être la sortie réelle du serveur');
   eq(apercuVolume(null), null);
@@ -831,7 +842,7 @@ Deno.test('BC-2 : brief validé dans la carte — lu par le serveur dans le mess
   const devis = r!.data!.devis as Record<string, unknown>;
   eq(devis.habillage, 'style contemporain (par défaut) · façade brique · fenêtres verticales (par défaut) · loggias · avec attique · rez-de-chaussée : commerces · lumière de journée (par défaut)');
   const ba = r!.data!.brief_actuel as Record<string, unknown>;
-  eq([ba.facade, ba.balcons, ba.attique, ba.rdc, ba.defauts], ['brique', 'loggias', true, 'commerces', ['style', 'ouvertures', 'ambiance']]);
+  eq([ba.facade, ba.balcons, ba.attique, ba.rdc, ba.defauts], ['brique', 'loggias', true, 'commerces', ['style', 'ouvertures', 'ambiance', 'toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement']]);
   eq((r!.data!.apercu as { corps: unknown[] }).corps.length, 2);
   ok(/carte « Brief créatif »/.test(r!.message!) && /Modifier l’habillage/.test(r!.message!));
   const sortie = JSON.stringify(r);
@@ -842,7 +853,7 @@ Deno.test('BC-2 : brief validé dans la carte — lu par le serveur dans le mess
   const l = await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, 'R3'));
   eq(l?.status, 'ok', l?.message);
   eq((d.travaux[0].fiche as Record<string, unknown>).habillage_batiments, {
-    clauses: ['façade en brique', 'fenêtres verticales', 'avec attique', 'commerces en rez-de-chaussée'], balcons: 'loggia' });
+    clauses: ['façade en brique', 'fenêtres verticales', 'avec attique', 'commerces en rez-de-chaussée'], balcons: 'loggia', details: { gardeCorps: 'metal' } });
 });
 
 Deno.test('BC-3 : bloc de brief — absent → null ; illisible / hors listes → refus dit, rien de lancé ; consigne système', async () => {
@@ -858,7 +869,7 @@ Deno.test('BC-3 : bloc de brief — absent → null ; illisible / hors listes �
   ];
   for (const m of refus) { const v = briefDuMessage(m); ok(v && !v.ok, m); }
   const v = briefDuMessage('x\r\n```mimmoza-brief  \r\n{"v":1,"brief":{"a_toi_de_choisir":true}}\r\n```');
-  ok(v?.ok && v.valeur.type === null && v.valeur.brief.defauts.length === 7, JSON.stringify(v));
+  ok(v?.ok && v.valeur.type === null && v.valeur.brief.defauts.length === 12, JSON.stringify(v));
   const d = await depotAE0414Reelle();
   const r = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, 'R1', { briefCarte: briefDuMessage(refus[2]) }));
   eq([r?.status, d.inserts], ['error', 0]);
@@ -963,4 +974,289 @@ Deno.test('CC-1 : studio_preparer_3d interdit la question d’habillage et renvo
   // L'appel que le modèle doit faire (ou que le serveur impose) : sans brief → carte, rien de lancé ni chiffré.
   const c = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, 'R1'));
   eq([c?.status, c?.data?.brief_requis, c?.data?.carte, d.inserts], ['partial', true, 'brief_creatif', 0]);
+});
+
+// ═══ Lot formes-batiment (06/11/2026) : formes du bâtiment calculées, vérifiées, transmises aile par aile ══════
+
+Deno.test('FB-1 : studio_preparer_3d — forme demandée (« en L ») : volume à ailes enregistré, classement du moteur, verdicts honnêtes', async () => {
+  const d = await depotAE0414Reelle();
+  const base = d.preparations[0];
+  const r = await executerOutilStudio('studio_preparer_3d', { forme: 'l' }, env(d, 'FB1'));
+  eq(r?.status, 'ok', r?.message);
+  eq(d.preparations.length, 2, 'autre forme → autre empreinte → autre ligne');
+  ok(d.preparations[1].empreinte !== base.empreinte);
+  const v = d.preparations[1].volume as { batiments: Array<{ nom: string; formeAiles: string; ailes: Array<{ lu: number; lv: number; niveaux: number }> }>; reculM: number; sdpM2: number };
+  eq(v.batiments.length, 1);
+  eq([v.batiments[0].nom, v.batiments[0].formeAiles], ['Immeuble en L — 40 logements R+2', 'l']);
+  eq(v.batiments[0].ailes.map((a) => [a.lu, a.lv, a.niveaux]), [[32, 16, 3], [16, 26.5, 3]]);
+  ok(v.reculM >= 7.99 && v.sdpM2 === 2808, JSON.stringify([v.reculM, v.sdpM2]));
+  eq([r!.data!.forme_retenue, r!.data!.origine_forme], ['En L', 'demande']);
+  const cmp = r!.data!.formes_comparees as Array<{ forme: string; logements: number }>;
+  eq(cmp.length, 8);
+  eq(cmp[0].forme, 'l');
+  const res = r!.data!.volume as { formes: string[]; controles: Array<{ cle: string; verdict: string; explication: string }> };
+  eq(res.formes, ['immeuble en L']);
+  const lim = res.controles.find((c) => c.cle === 'recul_limites_m')!;
+  eq(lim.verdict, 'dans_la_limite');
+  ok(/aile par aile/.test(lim.explication));
+  eq(res.controles.find((c) => c.cle === 'hauteur_max_m')?.verdict, 'a_verifier');
+  ok(!/conforme\b/i.test(JSON.stringify(r?.data)), "jamais « conforme » dans les données");
+  ok(/formes_comparees/.test(String(r?.message)) && /SUGGESTION/.test(String(r?.message)));
+  // « auto » : la forme en tête du classement.
+  const a = await executerOutilStudio('studio_preparer_3d', { forme: 'auto' }, env(d, 'FB1b'));
+  eq([a?.data?.forme_retenue, a?.data?.origine_forme], ['En L', 'suggestion']);
+  // Sans forme : empreinte et volume d'avant ce lot (même ligne que la préparation de base).
+  const s = await executerOutilStudio('studio_preparer_3d', {}, env(d, 'FB1c'));
+  eq(s?.data?.preparation_id, base.id);
+  eq(s?.data?.origine_forme, 'moteur');
+});
+
+Deno.test('FB-2 : rendu d’une préparation à ailes — fiche du Studio : UN bâtiment avec ses ailes (contrat v2), habillage transmis', async () => {
+  const d = await depotAE0414Reelle();
+  eq((await executerOutilStudio('studio_preparer_3d', { forme: 'cour' }, env(d, 'FB2')))?.status, 'ok');
+  const prep = d.preparations[d.preparations.length - 1];
+  const f = ficheDepuisPreparation(prep, CONV, '2026-11-06T12:00:00.000Z', crypto.randomUUID(), 'https://mimmoza.vercel.app', { ...BRIEF_DEFAUT, precisions: null, defauts: [] });
+  ok(f.ok, f.ok ? '' : f.erreur);
+  if (!f.ok) return;
+  const charge = f.valeur.charge as { batiments: Array<{ nom: string; ailes: Array<{ largeurM: number; profondeurM: number; x: number; y: number }>; emprise: unknown[] }>; extensionsV1: { implantation: unknown } };
+  eq(charge.batiments.length, 1);
+  eq(charge.batiments[0].ailes.length, 4);
+  eq(charge.batiments[0].emprise.length, 1);
+  eq(charge.extensionsV1.implantation, null, 'pas de pose unique : le bâtiment porte sa position');
+  ok(f.valeur.habillage_batiments, 'habillage transmis au bâtiment à ailes');
+  // Aperçu du brief : une boîte par aile, côtés accolés marqués.
+  const ap = apercuVolume(prep.volume)!;
+  eq(ap.corps.length, 4);
+  eq(ap.corps.map((c) => (c as { int?: number[] }).int ?? []), [[], [0, 1], [], [0, 1]]);
+});
+
+Deno.test('FB-3 : forme choisie dans la fiche (bloc ```mimmoza-forme```) — relue, RECALCULÉE par le serveur ; refus et débord dits', async () => {
+  const { formeDuMessage, consigneFormeCarte } = await import('./studio.ts');
+  const { appliquerForme, blocForme, evaluerSaisie, messageForme, modifierAile, saisieDepuisVolume } = await import('../../../../src/spaces/copilot/studio3d/ficheDimensions.ts');
+  const d = await depotAE0414Reelle();
+  const p0 = d.preparations[0];
+  const pf = { idu: IDU, commune: 'Nanterre', volume: p0.volume as never, regles: lireRegles((p0.entree as { regles: unknown }).regles), programme: (p0.entree as { programme_volume: never }).programme_volume, gabaritNiveaux: 5 };
+  // L'utilisateur choisit un U puis met les retours en R+4 dans la fiche.
+  const s = modifierAile(modifierAile(appliquerForme(pf, saisieDepuisVolume(pf.volume), 'u'), 0, 1, 'niveaux', 5), 0, 2, 'niveaux', 5);
+  const ev = evaluerSaisie(pf, s);
+  const msg = messageForme(s, ev)!;
+  const carte = formeDuMessage(msg);
+  ok(carte?.ok);
+  ok(/appelle MAINTENANT studio_preparer_3d/.test(consigneFormeCarte(carte)));
+  const r = await executerOutilStudio('studio_preparer_3d', {}, env(d, 'FB3', { formeCarte: carte }));
+  eq(r?.status, 'ok', r?.message);
+  eq(r?.data?.origine_forme, 'fiche');
+  const v = d.preparations[d.preparations.length - 1].volume as { batiments: Array<{ ailes: Array<{ niveaux: number }> }>; sdpM2: number };
+  eq(v.batiments[0].ailes.map((a) => a.niveaux), [3, 5, 5]);
+  eq(v.sdpM2, ev.sdpM2, 'le serveur trouve les mêmes chiffres que la fiche (même moteur)');
+  // Bloc refusé : erreur dite, rien d'enregistré.
+  const avant = d.preparations.length;
+  const refus = formeDuMessage('```mimmoza-forme\n{"v":1,"forme":"t","corps":[]}\n```');
+  eq(refus?.ok, false);
+  ok(/REFUSÉ/.test(consigneFormeCarte(refus)));
+  eq((await executerOutilStudio('studio_preparer_3d', {}, env(d, 'FB3b', { formeCarte: refus })))?.status, 'partial');
+  // Forme qui déborde (aile de 80 m) : refusée par le serveur, jamais enregistrée.
+  const geante = blocForme(modifierAile(appliquerForme(pf, saisieDepuisVolume(pf.volume), 'l'), 0, 0, 'longueurM', 80))!;
+  const rd = await executerOutilStudio('studio_preparer_3d', {}, env(d, 'FB3c', { formeCarte: formeDuMessage('```mimmoza-forme\n' + JSON.stringify(geante) + '\n```') }));
+  eq(rd?.status, 'partial');
+  ok(/ne tient pas dans la parcelle/.test(String(rd?.message)), String(rd?.message));
+  eq(d.preparations.length, avant);
+  eq(formeDuMessage('aucun bloc'), null);
+});
+
+Deno.test('FB-4 : mission — résultat compact (< 3 000 caractères) avec la seule suggestion de forme', async () => {
+  const dm = new DepotMemoire();
+  const c = conceptionAE0414();
+  c.parcelle = { idu: IDU, geometrie: CONTOUR_REEL_AE0414, surface_m2: null, source: 'cadastre (travail réel)' } as unknown as ConceptionLue['parcelle'];
+  const rm = await executerOutilStudio('studio_preparer_3d', {}, { ...env(dm), secret: null, mission: true, conception: c });
+  eq(rm?.status, 'ok');
+  ok(JSON.stringify(rm).length < 3000, String(JSON.stringify(rm).length));
+  eq(rm?.data?.forme_suggeree, 'En L');
+  eq(rm?.data?.formes_comparees, undefined);
+});
+
+// ═══ Lot brief-unifié (06/11/2026) : détails du brief — toiture, teinte, garde-corps, menuiseries, soubassement ═══
+// Chaque valeur acceptée est rendue par le Studio (vérifié sur le vrai magasin du Studio, voir CHOIX.md du lot) ;
+// les clauses ci-dessous sont EXACTEMENT celles essayées le 06/11 (worker/tests/worker/briefUnifie.test.ts).
+
+const BD = { ...BRIEF_DEFAUT, precisions: null, defauts: [] as never[] };
+
+Deno.test('BU-1 : validation — listes fermées ; teinte selon la matière ; pas d’attique sous un toit à deux pans ; pas de soubassement avec des commerces', () => {
+  for (const toiture of BRIEF_TOITURES) ok(validerBrief({ toiture }).ok, toiture);
+  for (const garde_corps of BRIEF_GARDE_CORPS) ok(validerBrief({ garde_corps }).ok, garde_corps);
+  for (const menuiseries of BRIEF_MENUISERIES) ok(validerBrief({ menuiseries }).ok, menuiseries);
+  for (const soubassement of BRIEF_SOUBASSEMENTS) ok(validerBrief({ soubassement }).ok, soubassement);
+  for (const facade of BRIEF_FACADES) for (const teinte of BRIEF_TEINTES) {
+    eq(validerBrief({ facade, teinte }).ok, TEINTES_PAR_FACADE[facade].includes(teinte), `${facade} ${teinte}`);
+  }
+  for (const [champ, v] of [['toiture', 'mansarde'], ['garde_corps', 'fonte'], ['menuiseries', 'bois'], ['soubassement', 'granit'], ['teinte', 'ocre'], ['entree', 'porche'], ['occultations', 'volets']]) {
+    ok(!validerBrief({ [champ]: v }).ok, `${champ} ${v} refusé`);
+  }
+  ok(!validerBrief({ toiture: 'deux_pans_tuiles', attique: true }).ok, 'attique + deux pans demandés ensemble : refusé et dit');
+  const v1 = validerBrief({ toiture: 'deux_pans_zinc', a_toi_de_choisir: true });
+  ok(v1.ok && v1.valeur.attique === false && v1.valeur.toiture === 'deux_pans_zinc');
+  ok(!validerBrief({ rdc: 'commerces', soubassement: 'pierre' }).ok, 'commerces + soubassement demandés ensemble : refusé');
+  const v2 = validerBrief({ facade: 'brique', teinte: 'claire', garde_corps: 'verre', menuiseries: 'anthracite', soubassement: 'pierre' });
+  ok(v2.ok);
+  if (v2.ok) eq(v2.valeur.defauts, ['style', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance', 'toiture']);
+});
+
+Deno.test('BU-2 : jeton compact « 2: » — aller-retour exact sur toutes les valeurs ; ancien jeton (7 chiffres) toujours relu', () => {
+  for (const toiture of BRIEF_TOITURES) for (const garde_corps of BRIEF_GARDE_CORPS) for (const menuiseries of BRIEF_MENUISERIES) {
+    for (const [facade, teintes] of Object.entries(TEINTES_PAR_FACADE)) for (const teinte of teintes) {
+      const v = validerBrief({ facade, teinte, toiture, garde_corps, menuiseries, soubassement: 'beton', precisions: 'Brique · test' });
+      ok(v.ok, `${facade} ${teinte} ${toiture}`);
+      if (v.ok) eq(briefDuJeton(encoderBrief(v.valeur)), v.valeur);
+    }
+  }
+  // Devis émis avant le lot (valables 2 h) : relus, les 5 nouveaux champs à leur valeur par défaut, dits « par défaut ».
+  const ancien = briefDuJeton('0201000.7d');
+  ok(ancien !== null);
+  eq([ancien?.facade, ancien?.balcons, ancien?.toiture, ancien?.teinte, ancien?.garde_corps, ancien?.menuiseries, ancien?.soubassement],
+    ['brique', 'balcons_filants', 'terrasse', 'naturelle', 'metal', 'gris', 'aucun']);
+  ok(['toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement'].every((c) => ancien!.defauts.includes(c as never)));
+  eq(briefDuJeton('2:0000000000z0.fff'), null, 'rang hors liste');
+  eq(briefDuJeton('2:000000000000'), null);
+});
+
+Deno.test('BU-3 : clauses de création (toiture, teinte) = formulations vérifiées sur le Studio ; détails traduits en valeurs du Studio', () => {
+  const cl = (x: Partial<typeof BD>) => clausesBrief({ ...BD, ...x });
+  eq(cl({ facade: 'brique', teinte: 'claire' })[0], 'façade en brique claire');
+  eq(cl({ facade: 'beton', teinte: 'claire' })[0], 'façade en béton blanc');
+  eq(cl({ facade: 'bardage_bois', teinte: 'foncee' })[0], 'façade en bois brûlé');
+  eq(cl({ facade: 'brique' })[0], 'façade en brique');
+  ok(cl({ toiture: 'vegetalisee' }).includes('toiture végétalisée'));
+  ok(cl({ toiture: 'deux_pans_tuiles' }).includes('toiture à deux pans en tuiles'));
+  ok(cl({ toiture: 'deux_pans_ardoise' }).includes('toiture à deux pans en ardoise'));
+  ok(cl({ toiture: 'deux_pans_zinc' }).includes('toiture à deux pans en zinc'));
+  ok(!cl({}).some((c) => /toit/.test(c)), 'toit-terrasse : dessin par défaut, aucune clause');
+  // Aucune clause ne porte de chiffre, de ponctuation, de balcon ni de style (worker/src/fiche.ts::lireHabillage).
+  for (const toiture of BRIEF_TOITURES) for (const [facade, teintes] of Object.entries(TEINTES_PAR_FACADE)) for (const teinte of teintes) {
+    for (const c of habillageBatiments({ ...BD, facade: facade as never, teinte, toiture, attique: toiture === 'terrasse', rdc: 'commerces' }).clauses) {
+      ok(/^[\p{L} '’-]+$/u.test(c) && !/balcon|loggia|style/i.test(c) && c.length <= 60, c);
+    }
+  }
+  eq(detailsHabillage({ ...BD }), { gardeCorps: 'metal' });
+  eq(detailsHabillage({ ...BD, balcons: 'aucun' }), null);
+  eq(detailsHabillage({ ...BD, garde_corps: 'verre', menuiseries: 'anthracite', soubassement: 'pierre' }), { gardeCorps: 'glass', menuiseries: 'av-aluminium-noir', soubassement: 'pierre-claire-contemp' });
+  eq(detailsHabillage({ ...BD, balcons: 'loggias', garde_corps: 'plein', menuiseries: 'bronze', soubassement: 'brique' }), { gardeCorps: 'solid', menuiseries: 'av-aluminium-bronze', soubassement: 'brique-rouge' });
+  eq(detailsHabillage({ ...BD, balcons: 'aucun', menuiseries: 'blanc', soubassement: 'beton' }), { menuiseries: 'av-aluminium-blanc', soubassement: 'beton-brut' });
+});
+
+Deno.test('BU-4 : libellé et réserves — détails écrits seulement s’ils changent le dessin par défaut ; toit à deux pans et soubassement dits honnêtement', () => {
+  eq(libelleBrief({ ...BD }), 'style contemporain · façade enduit clair (beige) · fenêtres verticales · balcons · sans attique · rez-de-chaussée : logements · lumière de journée');
+  const l = libelleBrief({ ...BD, facade: 'brique', teinte: 'claire', toiture: 'vegetalisee', garde_corps: 'verre', menuiseries: 'anthracite', soubassement: 'pierre' });
+  ok(l.includes('façade brique claire') && l.includes('toiture végétalisée') && l.includes('garde-corps en verre') && l.includes('menuiseries anthracite') && l.includes('soubassement en pierre'), l);
+  ok(!libelleBrief({ ...BD, balcons: 'aucun', garde_corps: 'verre' }).includes('garde-corps'), 'sans balcon : pas de garde-corps annoncé');
+  const r = reservesBrief({ ...BD, toiture: 'deux_pans_tuiles', soubassement: 'beton', facade: 'brique', teinte: 'claire' }, 'preparation', false, 2);
+  ok(r.some((x) => /Toit à deux pans/.test(x) && /AU-DESSUS du dernier niveau/.test(x) && /sur chaque bâtiment/.test(x) && /PLU/.test(x)), r.join(' | '));
+  ok(r.some((x) => /Soubassement : bandeau de 60 cm/.test(x)), r.join(' | '));
+  ok(r.some((x) => /Brique claire : matière dessinée par le Studio/.test(x)), r.join(' | '));
+  ok(questionBrief('film').includes('Détails (facultatif)'));
+});
+
+Deno.test('BU-5 : AE0414 réelle (2 barres) — brief complet validé dans l’Espace 3D → habillage_batiments exact (clauses + balcons + détails), géométrie inchangée', async () => {
+  const d = await depotAE0414Reelle();
+  d.persister(await executerOutilStudio('studio_lancer_rendu', { type: 'image' }, env(d, 'R1')));
+  const brief = { facade: 'brique', teinte: 'claire', balcons: 'loggias', attique: true, toiture: 'vegetalisee', garde_corps: 'verre', menuiseries: 'anthracite', soubassement: 'pierre' };
+  const carte = briefDuMessage(`Brief créatif validé pour l’image (rendu) : Brique claire.\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify({ v: 1, type: 'image', brief: { ...brief, a_toi_de_choisir: true } })}\n\`\`\``);
+  ok(carte?.ok, JSON.stringify(carte));
+  const r = await executerOutilStudio('studio_lancer_rendu', {}, env(d, 'R2', { briefCarte: carte }));
+  eq(r?.status, 'confirmation_requise', r?.message);
+  const devis = r!.data!.devis as Record<string, unknown>;
+  ok(/façade brique claire · fenêtres verticales \(par défaut\) · loggias · avec attique/.test(String(devis.habillage)) && /toiture végétalisée · garde-corps en verre · menuiseries anthracite · soubassement en pierre/.test(String(devis.habillage)), String(devis.habillage));
+  const j = String(r!.data!.jeton_devis);
+  ok(JSON.stringify(r).indexOf(j) + j.length < 900, 'jeton toujours dans les 900 premiers caractères');
+  d.persister(r);
+  const l = await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, 'R3'));
+  eq(l?.status, 'ok', l?.message);
+  const fiche = d.travaux[0].fiche as Record<string, unknown>;
+  eq(fiche.habillage_batiments, {
+    clauses: ['façade en brique claire', 'fenêtres verticales', 'avec attique', 'toiture végétalisée'],
+    balcons: 'loggia',
+    details: { gardeCorps: 'glass', menuiseries: 'av-aluminium-noir', soubassement: 'pierre-claire-contemp' },
+  });
+  const charge = fiche.charge as { batiments: Array<{ nom: string; niveaux: number; largeurM: number; profondeurM: number; rotationDeg: number }> };
+  eq(charge.batiments.map((b) => [b.nom, b.niveaux, b.largeurM, b.profondeurM, b.rotationDeg]), [
+    ['Barre A — 21 logements R+2', 3, 29.5, 16, -120.4], ['Barre B — 19 logements R+2', 3, 29, 16, -120.4]]);
+  // Fixture du worker (tests/worker/fixtures/fiche-AE0414-reelle-brief-unifie.json) : la fiche RÉELLE produite par ce code.
+  const sortie = Deno.env.get('ECRIRE_FIXTURE_WORKER');
+  if (sortie) await Deno.writeTextFile(`${sortie}/fiche-AE0414-reelle-brief-unifie.json`, JSON.stringify(fiche, null, 2) + '\n');
+});
+
+Deno.test('BU-6 : bâtiment seul — toiture dans la commande de création ; détails à part (garde-corps métal malgré « baies vitrées »)', async () => {
+  const d = depotAvecConception();
+  await preparer(d);
+  const r = await executerOutilStudio('studio_lancer_rendu', { type: 'film', brief: { facade: 'beton', teinte: 'claire', ouvertures: 'baies_vitrees', toiture: 'deux_pans_ardoise', menuiseries: 'blanc', soubassement: 'brique' } }, env(d, 'R1'));
+  eq(r?.status, 'confirmation_requise', r?.message);
+  d.persister(r);
+  const l = await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, 'R2'));
+  eq(l?.status, 'ok', l?.message);
+  const fiche = d.travaux[0].fiche as Record<string, unknown>;
+  const commande = String(((fiche.charge as Record<string, unknown>).extensionsV1 as Record<string, unknown> | undefined)?.commandeArchitecture ?? JSON.stringify(fiche.charge));
+  ok(/façade en béton blanc, baies vitrées, avec balcons, toiture à deux pans en ardoise/.test(commande), commande);
+  eq(fiche.habillage_batiments, { clauses: [], balcons: null, details: { gardeCorps: 'metal', menuiseries: 'av-aluminium-blanc', soubassement: 'brique-rouge' } });
+  const sortie = Deno.env.get('ECRIRE_FIXTURE_WORKER');
+  if (sortie) await Deno.writeTextFile(`${sortie}/fiche-AE0414-synthetique-brief-unifie.json`, JSON.stringify(fiche, null, 2) + '\n');
+});
+
+// ═══ Lot brief-formes (06/11/2026) : fusion des lots brief-unifié et formes-batiment ══════════════════════════
+// L'habillage complet part au worker pour un bâtiment À AILES (une seule entrée `batiments` avec ses ailes) : le
+// worker l'applique au bâtiment multi_wing, donc à chaque aile (tests/worker/briefFormes.test.ts). Toit à deux
+// pans : jamais promis sur un bâtiment à ailes (le Studio couvrirait chaque aile d'un toit séparé, sans noue).
+
+const BRIEF_RICHE = { facade: 'brique', teinte: 'claire', balcons: 'loggias', attique: true, toiture: 'vegetalisee', garde_corps: 'verre', menuiseries: 'anthracite', soubassement: 'pierre' };
+
+for (const forme of ['l', 'u', 'cour', 'redans'] as const) {
+  Deno.test(`BF-1 (${forme}) : forme à ailes AE0414 + brief riche validé dans l’Espace 3D → 1 bâtiment, ses ailes, habillage complet (clauses + loggias + détails)`, async () => {
+    const d = await depotAE0414Reelle();
+    eq((await executerOutilStudio('studio_preparer_3d', { forme }, env(d, `BF1-${forme}-P`)))?.status, 'ok');
+    const garde = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, `BF1-${forme}-R1`));
+    eq([garde?.status, garde?.data?.brief_requis], ['partial', true]);
+    eq(garde!.data!.limites, { batiments: 1, balcons: true, ailes: true }, 'la carte sait que le bâtiment a des ailes');
+    d.persister(garde);
+    const carte = briefDuMessage(`Brief créatif validé pour le film (rendu) : Brique claire.\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify({ v: 1, type: 'film', brief: { ...BRIEF_RICHE, a_toi_de_choisir: true } })}\n\`\`\``);
+    ok(carte?.ok, JSON.stringify(carte));
+    const r = await executerOutilStudio('studio_lancer_rendu', {}, env(d, `BF1-${forme}-R2`, { briefCarte: carte }));
+    eq(r?.status, 'confirmation_requise', r?.message);
+    eq((r!.data! as { limites?: unknown }).limites, { batiments: 1, balcons: true, ailes: true });
+    d.persister(r);
+    const l = await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, `BF1-${forme}-R3`));
+    eq(l?.status, 'ok', l?.message);
+    const fiche = d.travaux[0].fiche as Record<string, unknown>;
+    eq(fiche.habillage_batiments, {
+      clauses: ['façade en brique claire', 'fenêtres verticales', 'avec attique', 'toiture végétalisée'],
+      balcons: 'loggia',
+      details: { gardeCorps: 'glass', menuiseries: 'av-aluminium-noir', soubassement: 'pierre-claire-contemp' },
+    });
+    const charge = fiche.charge as { batiments: Array<{ ailes: unknown[] }>; commandeArchitecture?: unknown };
+    eq(charge.batiments.length, 1);
+    eq(charge.batiments[0].ailes.length, { l: 2, u: 3, cour: 4, redans: 3 }[forme]);
+    ok(batimentsAAiles(charge));
+    const sortie = Deno.env.get('ECRIRE_FIXTURE_WORKER');
+    if (sortie) await Deno.writeTextFile(`${sortie}/fiche-AE0414-forme-${forme}-brief-riche.json`, JSON.stringify(fiche, null, 2) + '\n');
+  });
+}
+
+Deno.test('BF-2 : toit à deux pans sur un bâtiment à ailes — refusé (rien lancé) ; brief connu à deux pans → la carte se rouvre ; barres et plots : accepté', async () => {
+  const d = await depotAE0414Reelle();
+  eq((await executerOutilStudio('studio_preparer_3d', { forme: 'u' }, env(d, 'BF2-P')))?.status, 'ok');
+  const r = await executerOutilStudio('studio_lancer_rendu', { type: 'film', brief: { facade: 'brique', toiture: 'deux_pans_tuiles' } }, env(d, 'BF2-R1'));
+  eq(r?.status, 'error');
+  ok(String(r?.message).startsWith(RAISON_PENTE_AILES) && /RIEN N’A ÉTÉ LANCÉ/.test(String(r?.message)), String(r?.message));
+  eq(d.inserts, 0);
+  // Plots (bâtiments rectangulaires) : le toit à deux pans reste proposé.
+  const dp = await depotAE0414Reelle();
+  eq((await executerOutilStudio('studio_preparer_3d', { forme: 'plots' }, env(dp, 'BF2-PP')))?.status, 'ok');
+  const rp = await executerOutilStudio('studio_lancer_rendu', { type: 'film', brief: { facade: 'brique', toiture: 'deux_pans_tuiles' } }, env(dp, 'BF2-R2'));
+  eq(rp?.status, 'confirmation_requise', rp?.message);
+  eq((rp!.data! as { limites?: unknown }).limites, { batiments: 3, balcons: true, ailes: false });
+  // Brief CONNU à deux pans (devis des plots), puis l'utilisateur passe en U : la carte se rouvre (aucun rendu promis).
+  dp.persister(rp);
+  eq((await executerOutilStudio('studio_preparer_3d', { forme: 'u' }, env(dp, 'BF2-PU')))?.status, 'ok');
+  const ru = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(dp, 'BF2-R3'));
+  eq([ru?.status, ru?.data?.brief_requis], ['partial', true], ru?.message);
+  eq(ru!.data!.limites, { batiments: 1, balcons: true, ailes: true });
+  eq(dp.inserts, 0);
+  eq([batimentsAAiles(null), batimentsAAiles({ batiments: [{ ailes: [] }] }), batimentsAAiles({ batiments: [{ ailes: [1, 2] }] })], [false, false, true]);
 });
