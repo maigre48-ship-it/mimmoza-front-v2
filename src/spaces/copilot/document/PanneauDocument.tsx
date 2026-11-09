@@ -29,6 +29,7 @@ import { construireDocumentReponse, dateLongue, pointsListe, titreObjectif } fro
 import { useDocumentUi, type ContenuDocument } from './documentUi.store';
 import '../agent/agent.css';
 import './document.css';
+import mimmozaLogo from '@/assets/mimmoza-logo.webp';
 
 const CopilotChart = lazy(() => import('../charts/CopilotChart').then((m) => ({ default: m.CopilotChart })));
 
@@ -56,7 +57,7 @@ function EnTete({ type, titre, infos }: { type: string; titre: string; infos: (s
   return (
     <header className="mzdoc-entete">
       <div className="mzdoc-marque">
-        <span className="mzdoc-marque__nom">MIMMOZA</span>
+        <img className="mzdoc-marque__logo" src={mimmozaLogo} alt="Mimmoza" />
         <span className="mzdoc-marque__sous">Document établi par MimmozIA</span>
       </div>
       <div className="mzdoc-type">{type}</div>

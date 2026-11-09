@@ -23,8 +23,8 @@
   font-size: 14.5px; line-height: 1.65;
 }
 .mzdoc-entete { border-top: 4px solid var(--ag-accent); padding-top: 18px; margin-bottom: 26px; }
-.mzdoc-marque { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 26px; }
-.mzdoc-marque__nom { font-weight: 800; letter-spacing: .22em; font-size: 13px; color: var(--ag-accent-fort); }
+.mzdoc-marque { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 26px; }
+.mzdoc-marque__logo { display: block; height: 40px; width: auto; }
 .mzdoc-marque__sous { font-size: 11.5px; color: var(--ag-texte-2); }
 .mzdoc-type { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ag-texte-2); }
 .mzdoc-titre { margin: 6px 0 6px; font-size: 25px; line-height: 1.25; font-weight: 750; color: #0f172a; letter-spacing: -.01em; }
