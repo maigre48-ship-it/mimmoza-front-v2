@@ -9,7 +9,7 @@ import { isActionTool, readAction, sameAction } from '../actions/copilotActions'
 import { useCopilotStore } from '../store/copilotStore';
 import { COPILOT_THEME as T } from './copilotTheme';
 import { Download } from 'lucide-react';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { exportCopilotResponseToPdf, markdownToSafeHtml } from '../utils/exportCopilotPdf';
 import { htmlLisible, mettreEnForme } from '../utils/lisibilite';
@@ -35,6 +35,10 @@ import type { DemandeBrief } from '../studio3d/briefCreatif';
 import { lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
 import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
 import { lireBlocChoix, situationChoix } from '../utils/choixCliquables';
+// LOT D1 : réponse longue → aperçu dans le fil + document complet dans le panneau.
+import { ApercuDocument } from '../document/ApercuDocument';
+import { estReponseDocument } from '../document/documentModele';
+import { useDocumentUi } from '../document/documentUi.store';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -108,6 +112,16 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   // La carte « Brief créatif » fait déjà le choix d'habillage : pas de puces en double sous elle.
   const situation = useMemo(() => situationChoix(messages, message.id), [messages, message.id]);
   const carteBriefDemandee = message.toolCalls.some((tc) => lireDemandeBrief(tc)?.origine === 'demande');
+  // LOT D1 : seulement si un panneau document est monté (sinon affichage complet, comme avant).
+  const panneauDocument = useDocumentUi((s) => s.hotes > 0);
+  const enDocument = !isUser && panneauDocument && message.status === 'complete' && estReponseDocument(choix.visible);
+  // Ouverture automatique quand une réponse longue VIENT de se terminer (pas à la relecture d'une conversation).
+  const statutPrecedent = useRef(message.status);
+  useEffect(() => {
+    const avant = statutPrecedent.current;
+    statutPrecedent.current = message.status;
+    if (enDocument && avant === 'streaming') useDocumentUi.getState().ouvrir({ genre: 'reponse', messageId: message.id, question: linkedQuestion });
+  }, [enDocument, message.status, message.id, linkedQuestion]);
 
   const handleResponseExport = async (format: 'pdf' | 'xlsx' | 'docx' | 'pptx') => {
     if (exporting) return;
@@ -203,7 +217,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
           ```mimmoza-chart là où ils éclairent son propos, pas tous à la fin.
           Pendant le streaming, un bloc encore ouvert est masqué — son JSON est
           tronqué, donc invalide, et le laisser défiler serait illisible. */}
-      {message.text && segments.map((seg, i) =>
+      {enDocument && <CopilotRenderBoundary label="Document"><ApercuDocument message={message} texte={choix.visible} question={linkedQuestion} /></CopilotRenderBoundary>}
+      {message.text && !enDocument && segments.map((seg, i) =>
         seg.kind === 'chart' ? (
           // Réserve de hauteur pendant le chargement du module : sans elle, le
           // fil sauterait au moment où recharts arrive.

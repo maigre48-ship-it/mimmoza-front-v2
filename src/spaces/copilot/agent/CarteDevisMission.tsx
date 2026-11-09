@@ -6,12 +6,12 @@
 // La mission est RELUE en base dès qu'on connaît son identifiant : la carte
 // affiche toujours son vrai statut (lancée, annulée…), même des jours après.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Rocket } from 'lucide-react';
+import { FileText, Loader2, Rocket } from 'lucide-react';
 import { JETON_VALEUR_EUR } from '@/lib/billing/grille';
 import { useCopilotStore } from '../store/copilotStore';
 import { annulerMission, lireMissionParId, validerDevis } from './agentApi';
 import {
-  devisExpire, dureeLisible, formatJetons, MESSAGE_DEVIS_EXPIRE, libelleStatut, libelleType, resumerDevis, tonStatut,
+  devisExpire, dureeLisible, formatJetons, MESSAGE_DEVIS_EXPIRE, libelleStatut, libelleType, missionFinie, resumerDevis, tonStatut,
   type AffichageDevis,
 } from './agentLogique';
 import type { Mission } from './agent.types';
@@ -19,6 +19,11 @@ import { useAgentUi } from './agentUi.store';
 import './agent.css';
 import { ObjectifMission, TexteLisible } from './TexteLisible';
 import { creerActionVisualisationMission, missionVisualisable } from '../studio3d/missionPreparation3D';
+import { scinderObjectif } from '../utils/lisibilite';
+// LOT D1 : ordre de mission et rapport présentés comme des documents dans le panneau.
+import { useDocumentUi } from '../document/documentUi.store';
+import { titreObjectif } from '../document/documentModele';
+import '../document/document.css';
 
 interface Props {
   affichage: AffichageDevis;
@@ -73,6 +78,7 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
   const solde = useCopilotStore((s) => s.credits);
   const version = useAgentUi((s) => s.version);
   const hotes = useAgentUi((s) => s.hotes);
+  const panneauDocument = useDocumentUi((s) => s.hotes > 0);
 
   // Solde inconnu à l'ouverture d'une ancienne conversation : on le lit une fois.
   useEffect(() => {
@@ -143,8 +149,24 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
         <span className="mzag-sur"><Rocket size={14} aria-hidden /> {libelleType(type)} · devis</span>
         {statut !== 'devis' && <span className={`mzag-pastille mzag-pastille--${tonStatut(statut)}`}>{libelleStatut(statut)}</span>}
       </div>
-      <ObjectifMission texte={objectif} titreClassName="mzag-devis__objectif" titreParDefaut={libelleType(type)} />
-      {devis?.explication && <TexteLisible texte={devis.explication} className="mzag-muet" />}
+      {/* LOT D1 : avec le panneau document, le fil ne garde que le titre ; le détail est dans l'ordre de mission. */}
+      {panneauDocument
+        ? <p className="mzag-objectif__titre mzag-devis__objectif">{titreObjectif(scinderObjectif(objectif).titre) || libelleType(type)}</p>
+        : <ObjectifMission texte={objectif} titreClassName="mzag-devis__objectif" titreParDefaut={libelleType(type)} />}
+      {devis?.explication && !panneauDocument && <TexteLisible texte={devis.explication} className="mzag-muet" />}
+      {panneauDocument && (
+        <div className="mzag-actions" style={{ margin: '8px 0 12px' }}>
+          <button type="button" className="mzdoc-btn-ouvrir mzdoc-btn-ouvrir--clair"
+            onClick={() => useDocumentUi.getState().ouvrir({ genre: 'ordre', missionId: missionId ?? null, proposition, conversationId: conversationId ?? null })}>
+            <FileText size={14} aria-hidden /> Ouvrir l’ordre de mission
+          </button>
+          {mission && missionFinie(statut) && (mission.rapport || mission.rapport_brut != null) && (
+            <button type="button" className="mzdoc-btn-ouvrir" onClick={() => useDocumentUi.getState().ouvrir({ genre: 'rapport', missionId: mission.id })}>
+              <FileText size={14} aria-hidden /> Ouvrir le rapport de mission
+            </button>
+          )}
+        </div>
+      )}
 
       {devis && resume ? (
         <>

@@ -3,7 +3,10 @@
 // (progression, journal en temps réel, question en attente, annulation,
 // rapport). Temps réel Supabase + relecture de secours toutes les 10 s.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileText } from 'lucide-react';
+// LOT D1 : le rapport s'ouvre aussi en pleine page, comme un document.
+import { useDocumentUi } from '../document/documentUi.store';
+import '../document/document.css';
 import { JETON_VALEUR_EUR } from '@/lib/billing/grille';
 import { useCopilotStore } from '../store/copilotStore';
 import { annulerMission, lireJournal, lireMissionParId, listerMissions, repondreMission, suivreMission, validerDevis } from './agentApi';
@@ -213,6 +216,7 @@ function DetailMission({ id }: { id: string }) {
         </div>
       )}
 
+      {(mission.rapport || mission.rapport_brut != null) && <DocumentRapport missionId={mission.id} />}
       {(mission.rapport || mission.rapport_brut != null) && <RapportMission mission={mission} partiel={mission.statut !== 'terminee'} />}
 
       <section className="mzag-carte" aria-label="Journal de la mission">
@@ -233,6 +237,19 @@ function DetailMission({ id }: { id: string }) {
           </ol>
         )}
       </section>
+    </div>
+  );
+}
+
+/** LOT D1 : bouton « pleine page » au-dessus du rapport (si le panneau document est monté). */
+function DocumentRapport({ missionId }: { missionId: string }) {
+  const panneauDocument = useDocumentUi((s) => s.hotes > 0);
+  if (!panneauDocument) return null;
+  return (
+    <div className="mzag-actions">
+      <button type="button" className="mzdoc-btn-ouvrir" onClick={() => useDocumentUi.getState().ouvrir({ genre: 'rapport', missionId })}>
+        <FileText size={14} aria-hidden /> Ouvrir le rapport en pleine page
+      </button>
     </div>
   );
 }

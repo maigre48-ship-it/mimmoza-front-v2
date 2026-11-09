@@ -15,6 +15,7 @@ import { MimmozIAQuickAction } from './components/MimmozIAQuickAction';
 import { MimmozIAStatus } from './components/MimmozIAStatus';
 import { MimmozIASidebar } from './MimmozIASidebar';
 import { PanneauAgent } from './agent/PanneauAgent';
+import { PanneauDocument } from './document/PanneauDocument';
 import { BandeauBriefing } from './agent/BandeauBriefing';
 import { MissionPreparation3DPanel, type ParcelleMissionConfirmee } from './studio3d/MissionPreparation3DPanel';
 import { missionVisualisable, iduAttenduMission, iduDeParcelle, verifierTerrainMission, preparerTransfertMission } from './studio3d/missionPreparation3D';
@@ -597,6 +598,8 @@ export default function MimmozIAPage() {
       <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} />
       {/* Agent autonome : panneau Missions / À valider / Mémoire (fermé par défaut) */}
       <PanneauAgent />
+      {/* LOT D1 : réponses longues, ordre et rapport de mission présentés comme des documents (fermé par défaut) */}
+      <PanneauDocument />
       {/* Agent autonome : Atelier 3D en mode conception + bilan vivant (fermé par défaut) */}
       <AtelierConception />
       {mission3d && <MissionPreparation3DPanel key={mission3d.mission.id} mission={mission3d.mission} onFermer={() => setMission3d(null)} onOuvrir={ouvrirMission3D} onFermerMaquette={fermerMaquette3d} />}
