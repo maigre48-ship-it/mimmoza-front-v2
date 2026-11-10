@@ -73,6 +73,7 @@ import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mi
 import { depotSupabase } from './agent/depot.ts';
 import { chargerBlocMemoire, projetDuContexte } from './agent/memoire.ts';
 import { DOCTRINE_MISSIONS_CHAT } from './agent/prompt-promoteur.ts';
+import { AVIS_SANS_CONCLUSION, avecConsigneCloture, clotureSansConclusion } from './agent/cloture-tour.ts';
 import { FORMAT_REPONSE_CHAT } from '../_shared/texte/consignesFormat.ts';
 import {
   APPELS_IMBRIQUES_ETUDE_PARCELLE, ATTENTE_MAX_MISSION_MS, ErreurBudgetTrace, acquerirBudget, avecBudgetTrace,
@@ -11092,9 +11093,14 @@ async function runOrchestrator(params: {
   // simplement jetés et l'utilisateur recevrait la narration d'avant-outil
   // présentée comme une réponse aboutie.
   if (finishReason === 'tool_use' || finishReason === 'deadline' || finishReason === 'pause_turn') {
+    // Lot C1 (essai témoin du 10/11/2026) : sans consigne, le modèle ignorait que c'était sa dernière passe,
+    // annonçait encore une lecture et réclamait un outil — la réponse s'arrêtait sans conclusion. La consigne
+    // de clôture est ajoutée au dernier message utilisateur (résultats d'outils) ; reprise pause_turn inchangée.
+    const messagesCloture = finishReason === 'pause_turn' ? messages : avecConsigneCloture(messages);
+    let texteCloture = '';
     for (let attempt = 0; attempt < 3; attempt++) {
       const finalTurn = await streamLLMTurn({
-        model, system: systemTour, messages, tools: [],
+        model, system: systemTour, messages: messagesCloture, tools: [],
         webBudget: webUnavailable ? { search: 0, fetch: 0 }
           : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
             fetch: Math.max(0, WEB_LIMITS[mode].fetch - webFetches) },
@@ -11117,16 +11123,22 @@ async function runOrchestrator(params: {
       webFetches += finalTurn.webFetches;
       finalText += (finalText ? '\n' : '') + finalTurn.textBlocks.join('\n');
       if (finalTurn.textBlocks.length) dernierTexte = finalTurn.textBlocks.join('\n');
+      texteCloture += finalTurn.textBlocks.join('\n');
       finishReason = finalTurn.stopReason;
       toursAcheves += 1;
       publierUsage();
       if (finishReason !== 'pause_turn') break;
-      messages.push({ role: 'assistant', content: finalTurn.contentBlocks });
+      messagesCloture.push({ role: 'assistant', content: finalTurn.contentBlocks });
     }
     if (finishReason === 'pause_turn') {
       const notice = '\n\n_[Recherche interrompue avant une synthèse complète. Vérifiez les sources citées.]_';
       sse.send({ type: 'token', delta: notice });
       finalText += notice;
+    }
+    // Lot C1 : malgré la consigne, pas de conclusion (aucun texte, ou outil encore réclamé) → on le DIT.
+    if (clotureSansConclusion(texteCloture, finishReason)) {
+      sse.send({ type: 'token', delta: AVIS_SANS_CONCLUSION });
+      finalText += AVIS_SANS_CONCLUSION;
     }
   }
 
