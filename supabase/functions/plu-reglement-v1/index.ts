@@ -23,6 +23,10 @@
 //        générales + chapitre de la zone + lexique) et texte de ces pages.
 //     Réponses : { statut: 'pret' | 'en_cours' | 'choix_requis' | 'zone_non_reperee' | 'selection_trop_longue'
 //                  | 'zonage_seul' | 'aucun_document' | 'erreur', … }
+//     Lot C8 : quand le statut est 'pret' (hors pages choisies par l'utilisateur), la réponse porte aussi
+//     `dispositions_communes` (stationnement, mixité : pages jointes, déjà lues, ou « non trouvé dans le
+//     document »), `pages_dispositions_communes`, `dispositions_communes_tronque`, `caracteres_texte_zone` ;
+//     les pages jointes sont ajoutées À LA FIN de `texte`, sous une étiquette, dans le même budget.
 //   { action: 'extraire', bucket, chemin }
 //     Texte page par page d'un PDF DÉJÀ dans le Storage (pièce jointe ou
 //     règlement déposé), quand le navigateur n'a pas pu l'extraire.
@@ -47,6 +51,7 @@ import {
   type FichierReglement, type ZoneAuPoint,
 } from '../_shared/documents/gpuReglement.ts';
 import { decouperCodeZone, enteteDecoupage } from '../_shared/documents/reglementIndices.ts';
+import { joindreDispositionsCommunes, type ChampsDispositionsCommunes } from '../_shared/documents/dispositionsCommunes.ts';
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -176,6 +181,26 @@ async function fichiersEnCache(docId: string): Promise<FichierReglement[]> {
     .select('cle, statut, meta').like('cle', `gpu:${docId}:%`).neq('statut', 'echec').limit(10);
   if (error) { console.warn('[plu-reglement] cache indisponible', error.message); return []; }
   return fichiersDepuisCache(docId, (data ?? []) as Array<{ cle: string; statut: string | null; meta: Record<string, unknown> | null }>);
+}
+
+// ── Lot C8 : dispositions communes (stationnement, mixité) ───────────────────
+
+/**
+ * Ajoute au texte de la zone les pages des dispositions communes qui traitent du stationnement et de la
+ * mixité (essai témoin n° 5 du 10/11/2026 : 7 règles lues sur 9, ces deux-là hors du chapitre de zone et
+ * des fiches d'indices). Repérage déterministe (dispositionsCommunes.ts). Le texte de la zone reste
+ * prioritaire dans le budget ; un thème déjà traité dans les pages lues n'est pas doublé ; un thème
+ * introuvable est dit « non trouvé ». En cas d'erreur du repérage : le texte de la zone seul, comme avant.
+ */
+function avecDispositionsCommunes(
+  pages: string[], texteZone: string, chapitres: Array<{ zone: string; debut: number; fin: number }>, pagesLues: number[], maxCar: number,
+): { texte: string; champs: Partial<ChampsDispositionsCommunes> } {
+  try {
+    return joindreDispositionsCommunes(pages, texteZone, { chapitres, pagesLues, maxCaracteres: maxCar });
+  } catch (e) {
+    console.warn('[plu-reglement] dispositions communes non repérées :', errMsg(e));
+    return { texte: texteZone, champs: {} };
+  }
 }
 
 // ── Action « gpu » ───────────────────────────────────────────────────────────
@@ -313,7 +338,9 @@ async function actionGpu(body: Record<string, unknown>): Promise<Record<string, 
     const numeros = Array.from(new Set([...pagesChapitre, ...(decoupage.pages ?? [])])).sort((a, b) => a - b);
     const entete = enteteDecoupage(decoupage);
     const corps = assemblerTexte(pages, numeros, Math.max(5_000, maxCar - entete.length - 2));
-    const texte = `${entete}\n\n${corps}`;
+    // Lot C8 : stationnement et mixité ne sont ni dans le chapitre de la zone mère ni dans les fiches d'indices.
+    const dc = avecDispositionsCommunes(pages, `${entete}\n\n${corps}`, sel.chapitres, numeros, maxCar);
+    const texte = dc.texte;
     return {
       ...commun, statut: 'pret',
       zone_lue: decoupage.zoneMere, zone_complete: decoupage.code,
@@ -326,6 +353,7 @@ async function actionGpu(body: Record<string, unknown>): Promise<Record<string, 
       tronque: corps.includes('budget de lecture atteint'),
       tokens_estimes: estimerTokensTexte(texte.length),
       texte,
+      ...dc.champs,
     };
   }
   if (sel.statut === 'zone_trouvee' && sel.tronque) {
@@ -345,7 +373,10 @@ async function actionGpu(body: Record<string, unknown>): Promise<Record<string, 
         'Quelle zone (ou quelles pages) lire ?',
     };
   }
-  const texte = assemblerTexte(pages, sel.pages, maxCar);
+  // Lot C8 : PLU classique. Stationnement et mixité sont le plus souvent dans le chapitre de zone (déjà lu :
+  // rien n'est ajouté) ; sinon leurs pages des dispositions communes sont jointes, ou dites « non trouvées ».
+  const dc = avecDispositionsCommunes(pages, assemblerTexte(pages, sel.pages, maxCar), sel.chapitres, sel.pages, maxCar);
+  const texte = dc.texte;
   return {
     ...commun, statut: 'pret',
     zone_lue: sel.zoneRetenue,
@@ -356,6 +387,7 @@ async function actionGpu(body: Record<string, unknown>): Promise<Record<string, 
     tronque: false,
     tokens_estimes: estimerTokensTexte(texte.length),
     texte,
+    ...dc.champs,
   };
 }
 
