@@ -1,0 +1,32 @@
+{
+  "lock": false,
+  "imports": {
+    "./moteur": "./moteur/index.ts",
+    "./moteur/analyzer": "./moteur/analyzer/index.ts",
+    "./moteur/analyzer/index": "./moteur/analyzer/index.ts",
+    "./moteur/critic": "./moteur/critic/index.ts",
+    "./moteur/critic/checks": "./moteur/critic/checks.ts",
+    "./moteur/critic/geo": "./moteur/critic/geo.ts",
+    "./moteur/critic/index": "./moteur/critic/index.ts",
+    "./moteur/critic/style-mesures": "./moteur/critic/style-mesures.ts",
+    "./moteur/data/catalog": "./moteur/data/catalog.ts",
+    "./moteur/data/rules": "./moteur/data/rules.ts",
+    "./moteur/data/schemas": "./moteur/data/schemas.ts",
+    "./moteur/geometry": "./moteur/geometry/index.ts",
+    "./moteur/geometry/index": "./moteur/geometry/index.ts",
+    "./moteur/hypotheses/pointsEau": "./moteur/hypotheses/pointsEau.ts",
+    "./moteur/index": "./moteur/index.ts",
+    "./moteur/pipeline": "./moteur/pipeline.ts",
+    "./moteur/programmer": "./moteur/programmer/index.ts",
+    "./moteur/programmer/index": "./moteur/programmer/index.ts",
+    "./moteur/solver": "./moteur/solver/index.ts",
+    "./moteur/solver/index": "./moteur/solver/index.ts",
+    "./moteur/style": "./moteur/style/index.ts",
+    "./moteur/style/bibliotheque-studio": "./moteur/style/bibliotheque-studio.ts",
+    "./moteur/style/index": "./moteur/style/index.ts",
+    "./moteur/style/styles": "./moteur/style/styles.ts",
+    "./moteur/style/types": "./moteur/style/types.ts",
+    "./moteur/types": "./moteur/types.ts",
+    "zod": "npm:zod@3"
+  }
+}

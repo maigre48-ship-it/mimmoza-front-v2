@@ -291,6 +291,7 @@ const INTERNAL_FUNCTIONS = {
   metrics_zone: Deno.env.get('COPILOT_FN_METRICS_ZONE') ?? null,  // market-metrics-zone-v1 (état du marché d'une zone surveillée)
   parcelles: Deno.env.get('COPILOT_FN_PARCELLES') ?? null,        // rechercher-parcelles-v1 (prospection foncière)
   plu_reglement: Deno.env.get('COPILOT_FN_PLU_REGLEMENT') ?? null, // plu-reglement-v1 (règlement écrit GPU + texte des PDF stockés)
+  interior: Deno.env.get('COPILOT_FN_INTERIOR') ?? 'interior-architect-v1', // interior-architect-v1 (architecte d'intérieur, lot INT-10)
 } as const;
 
 // Timeout dédié aux appels de fonctions internes (séparé du LLM).
@@ -4502,6 +4503,43 @@ const TOOLS: ToolDef[] = [
     },
     available_in_modes: ['quick', 'advanced', 'report'],
   },
+  // Lot INT-10 : architecte d'intérieur (interior-architect-v1 via COPILOT_FN_INTERIOR).
+  {
+    name: 'amenager_interieur',
+    description:
+      "ARCHITECTE D'INTÉRIEUR — aménage un logement (appartement ou maison) à partir de son PLAN : mobilier, " +
+      "matériaux, sols, luminaires, en 2 à 3 variantes triées, avec un verdict par pièce (normes d'usage, " +
+      "circulations, PMR si demandé), les choix principaux justifiés, les points d'eau supposés « à confirmer » " +
+      "et les manques. Aucune cloison n'est déplacée. " +
+      "QUAND L'UTILISER : l'utilisateur demande d'aménager, meubler, décorer, « faire l'architecte d'intérieur », " +
+      "proposer un ameublement ou un home staging pour un logement. " +
+      "QUOI DEMANDER D'ABORD (en une seule question groupée, sans rien supposer) : la cible (famille, couple, " +
+      "primo-accédant, investisseur locatif, senior, étudiant), les occupants (adultes, enfants), le style " +
+      "(contemporain, scandinave, industriel, japandi, classique chic, méditerranéen), la gamme (économique, " +
+      "standard, premium), le besoin de télétravail et le besoin PMR. " +
+      "PLAN : `plan` est un PlanInput (pièces en polygones, murs, ouvertures, en mètres) que tu RECOPIES tel quel " +
+      "s'il a été fourni par l'utilisateur ou le contexte ; tu ne le construis JAMAIS toi-même. Si tu n'as qu'une " +
+      "description (« T3 de 62 m² »), passe-la dans `description` : l'outil refusera d'aménager et dira comment " +
+      "obtenir le plan (MimmozIA Studio) — n'invente alors ni plan ni aménagement. " +
+      "COÛT : calcul Mimmoza sans débit séparé ; seuls les jetons de la conversation sont décomptés, au réel.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan: { type: 'object', description: 'PlanInput du moteur, recopié tel quel. Jamais reconstitué ni inventé.' },
+        description: { type: 'string', description: "Description du logement donnée par l'utilisateur quand aucun plan structuré n'existe (ex. « T3 de 62 m² »)." },
+        cible: { type: 'string', enum: ['famille', 'primo_accedant', 'investisseur_locatif', 'senior', 'couple', 'etudiant'] },
+        adultes: { type: 'integer', minimum: 1, maximum: 12 },
+        enfants: { type: 'integer', minimum: 0, maximum: 12 },
+        style: { type: 'string', enum: ['contemporain', 'scandinave', 'industriel', 'japandi', 'classique_chic', 'mediterraneen'] },
+        gamme: { type: 'string', enum: ['economique', 'standard', 'premium'] },
+        teletravail: { type: 'boolean' },
+        pmr: { type: 'boolean' },
+        animaux: { type: 'boolean' },
+        variantes: { type: 'integer', minimum: 2, maximum: 3, description: 'Nombre de variantes (défaut 3).' },
+      },
+    },
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
   // Agent autonome : prospection foncière + missions / mémoire (ces quatre
   // derniers réservés au vertical promoteur, filtrés dans runOrchestrator).
   TOOL_RECHERCHER_PARCELLES,
@@ -4593,6 +4631,7 @@ async function executeTool(
     case 'get_etude_marche':         return await toolEtudeMarche(input, ctx);
     case 'get_couts_construction':   return await toolCoutsConstruction(input, ctx);
     case 'get_couts_renovation':     return await toolCoutsRenovation(input, ctx);
+    case 'amenager_interieur':       return await toolAmenagerInterieur(input);
     case 'get_sitadel':              return await toolSitadel(input, ctx);
     case 'get_appels_offres':        return await toolAppelsOffres(input, ctx);
     case 'get_etablissements_proches': return await toolEtablissementsProches(input, ctx);
@@ -6037,6 +6076,165 @@ async function toolEtudeParcelle(input: Record<string, unknown>, ctx: MimmozaCon
     );
   } catch (e) {
     return avecAjustement({ status: 'error', source: INTERNAL_FUNCTIONS.etude, message: errMsg(e) }, insee);
+  }
+}
+
+// ─── amenager_interieur (branché sur interior-architect-v1 via COPILOT_FN_INTERIOR) ──
+// Lot INT-10. Calcul pur côté fonction (aucun appel imbriqué, ~1 s) : 2 à 3
+// variantes triées. Le LLM ne reçoit qu'un RÉSUMÉ compact
+// (summarizeInteriorArchitect) : verdict par pièce, trois choix justifiés,
+// manques, points d'eau supposés « à confirmer ». Les layouts complets restent
+// côté fonction (persistance : migration interior_projects, lot ultérieur).
+// >>> INT-10 logique pure (testée hors Deno.serve : interior-architect-v1/tests)
+const INTERIEUR_CIBLES = ['famille', 'primo_accedant', 'investisseur_locatif', 'senior', 'couple', 'etudiant'] as const;
+const INTERIEUR_STYLES = ['contemporain', 'scandinave', 'industriel', 'japandi', 'classique_chic', 'mediterraneen'] as const;
+const INTERIEUR_GAMMES = ['economique', 'standard', 'premium'] as const;
+
+const QUESTIONS_BRIEF_INTERIEUR: Record<string, string> = {
+  cible: 'pour qui (famille, couple, primo-accédant, investisseur locatif, senior, étudiant)',
+  adultes: "combien d'adultes",
+  enfants: "combien d'enfants",
+  style: 'quel style (contemporain, scandinave, industriel, japandi, classique chic, méditerranéen)',
+  gamme: 'quelle gamme (économique, standard, premium)',
+  teletravail: 'faut-il un poste de télétravail',
+  pmr: 'faut-il un aménagement accessible PMR',
+};
+
+/** Brief du moteur à partir des champs de l'outil. Rien n'est supposé : un champ absent est listé dans `manquants`. */
+function construireBriefInterieur(input: Record<string, unknown>): { brief: Record<string, unknown> | null; manquants: string[] } {
+  const enumOk = <T extends string>(v: unknown, xs: readonly T[]): T | undefined => (typeof v === 'string' && (xs as readonly string[]).includes(v) ? v as T : undefined);
+  const entier = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : undefined);
+  const cible = enumOk(input.cible, INTERIEUR_CIBLES);
+  const adultes = entier(input.adultes, 1, 12);
+  const enfants = entier(input.enfants, 0, 12);
+  const style = enumOk(input.style, INTERIEUR_STYLES);
+  const gamme = enumOk(input.gamme, INTERIEUR_GAMMES);
+  const teletravail = typeof input.teletravail === 'boolean' ? input.teletravail : undefined;
+  const pmr = typeof input.pmr === 'boolean' ? input.pmr : undefined;
+  const manquants = Object.entries({ cible, adultes, enfants, style, gamme, teletravail, pmr })
+    .filter(([, v]) => v === undefined).map(([k]) => k);
+  if (manquants.length) return { brief: null, manquants };
+  return {
+    brief: {
+      version: 1, target: cible, occupants: { adults: adultes, children: enfants }, style, gamme,
+      constraints: { teletravail, pmr, animaux: input.animaux === true },
+      imposed: [], forbidden: [],
+    },
+    manquants: [],
+  };
+}
+
+/** Le tour parle-t-il d'aménagement intérieur ? (garde l'outil proposé quand le sélecteur restreint les outils) */
+function interieurPertinent(textes: string[]): boolean {
+  const re = /\b(am[ée]nag\w*|meubl\w*|mobilier|ameublement|d[ée]co(ration)?|architecte d.int[ée]rieur|home\s?staging|agencement)\b/i;
+  return textes.some((t) => re.test(t));
+}
+
+const coupe = (s: unknown, n = 220): string => {
+  const t = typeof s === 'string' ? s : String(s ?? '');
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+
+function summarizeInteriorArchitect(
+  raw: unknown,
+): { status: ToolStatus; data?: Record<string, unknown>; message?: string } {
+  const root = raw as Record<string, any>;
+  if (!root || typeof root !== 'object') return { status: 'error', message: "Réponse de l'architecte d'intérieur illisible." };
+  const status = String(root.status ?? '');
+  const resume = typeof root.resumeTexte === 'string' ? root.resumeTexte : null;
+
+  if (status === 'ok' && root.synthese && Array.isArray(root.variantes) && root.variantes.length > 0) {
+    const s = root.synthese as Record<string, any>;
+    const manques: string[] = Array.isArray(s.manques) ? s.manques.map((m: unknown) => coupe(m)) : [];
+    const materiaux = manques.filter((m) => m.startsWith('Matériau absent'));
+    const autresManques = manques.filter((m) => !m.startsWith('Matériau absent'));
+    return {
+      status: 'ok',
+      data: {
+        variante_recommandee: s.variante ?? null,
+        verdict: s.verdict ?? null,
+        score_de_tri: s.score ?? null,
+        verdicts_par_piece: (Array.isArray(s.verdictsParPiece) ? s.verdictsParPiece : []).map((p: any) => ({
+          piece: p.piece, verdict: p.verdict,
+          ...(Array.isArray(p.bloquantes) && p.bloquantes.length ? { bloquant: p.bloquantes.slice(0, 3).map((b: unknown) => coupe(b, 180)) } : {}),
+        })),
+        points_bloquants_logement: (Array.isArray(s.bloquantesLogement) ? s.bloquantesLogement : []).slice(0, 5).map((b: unknown) => coupe(b, 180)),
+        choix_principaux: (Array.isArray(s.choixPrincipaux) ? s.choixPrincipaux : []).slice(0, 3).map((c: any) => ({
+          titre: c.titre, choix: coupe(c.choix, 240), justification: coupe(c.justification, 240),
+        })),
+        points_eau_supposes: (Array.isArray(s.pointsEauSupposes) ? s.pointsEauSupposes : []).map((p: any) => ({
+          piece: p.piece, raison: coupe(p.raison, 200), statut: 'à confirmer',
+        })),
+        manques: autresManques.slice(0, 10),
+        ...(autresManques.length > 10 ? { manques_non_listes: autresManques.length - 10 } : {}),
+        ...(materiaux.length ? { materiaux_de_repli: `${materiaux.length} matériau(x) absent(s) de la bibliothèque du Studio, remplacé(s) par un matériau voisin` } : {}),
+        autres_variantes: root.variantes.slice(1).map((v: any) => ({ libelle: v.libelle, graine: v.seed, verdict: v.verdict, score_de_tri: v.score })),
+        variantes_ecartees: Array.isArray(root.ecartees) ? root.ecartees.map((e: any) => coupe(`graine ${e.seed} : ${e.motif}`, 160)) : [],
+        recommandations: (Array.isArray(s.recommandations) ? s.recommandations : []).slice(0, 5).map((r: unknown) => coupe(r, 200)),
+        limites: [
+          'Aucune cloison déplacée : mobilier, matériaux et luminaires seulement.',
+          "Points d'eau supposés : position à confirmer sur le plan réel.",
+        ],
+        moteur: root.moteur ?? null,
+        cout: "Aucun débit séparé : seuls les jetons de la conversation sont décomptés, au réel.",
+      },
+    };
+  }
+  if (status === 'plan_requis' || status === 'plan_studio_non_converti') {
+    return {
+      status: 'not_found',
+      data: { compris: root.compris ?? null, comment_obtenir_un_plan: root.comment_obtenir_un_plan ?? [] },
+      message: `${resume ?? 'Plan requis.'}\n\nN'invente ni plan ni aménagement : explique à l'utilisateur ce qu'il faut et comment l'obtenir.`,
+    };
+  }
+  if (status === 'entree_invalide') {
+    return {
+      status: 'error',
+      data: {
+        erreurs: (Array.isArray(root.erreurs) ? root.erreurs : []).slice(0, 10).map((e: any) => coupe(`${e.chemin} : ${e.message}`, 160)),
+        ...(Array.isArray(root.questions) ? { questions: root.questions } : {}),
+      },
+      message: resume ?? 'Entrée invalide.',
+    };
+  }
+  return { status: 'error', message: resume ?? "Erreur de l'architecte d'intérieur." };
+}
+// <<< INT-10 logique pure
+
+async function toolAmenagerInterieur(input: Record<string, unknown>): Promise<ToolResult> {
+  const SOURCE = "Architecte d'intérieur";
+  if (!INTERNAL_FUNCTIONS.interior) {
+    return { status: 'not_configured', source: SOURCE, message: "L'architecte d'intérieur n'est pas branché (COPILOT_FN_INTERIOR vide). Signale-le sans inventer d'aménagement." };
+  }
+  const plan = input.plan && typeof input.plan === 'object' ? input.plan : undefined;
+  const description = str(input.description);
+  if (!plan && !description) {
+    return {
+      status: 'not_found', source: SOURCE,
+      message: "Aucun plan fourni. Demande le plan du logement (MimmozIA Studio : plan généré ou lu) ; une typologie ou une surface seules ne permettent pas d'aménager. N'invente aucun plan.",
+    };
+  }
+  let body: Record<string, unknown>;
+  if (plan) {
+    const { brief, manquants } = construireBriefInterieur(input);
+    if (!brief) {
+      return {
+        status: 'not_found', source: SOURCE,
+        data: { a_demander: manquants.map((k) => QUESTIONS_BRIEF_INTERIEUR[k] ?? k) },
+        message: "Brief incomplet : pose ces questions en UNE fois (liste à tirets), puis rappelle l'outil avec les réponses. N'en suppose aucune.",
+      };
+    }
+    const variantes = typeof input.variantes === 'number' && [2, 3].includes(input.variantes) ? input.variantes : 3;
+    body = { plan, brief, variants: variantes };
+  } else {
+    body = { description };
+  }
+  try {
+    const raw = await callInternalFunction(INTERNAL_FUNCTIONS.interior, body);
+    const s = summarizeInteriorArchitect(raw);
+    return { status: s.status, source: INTERNAL_FUNCTIONS.interior, data: s.data, message: s.message };
+  } catch (e) {
+    return { status: 'error', source: INTERNAL_FUNCTIONS.interior, message: errMsg(e) };
   }
 }
 
@@ -9591,6 +9789,7 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "4sexvicies. CHIFFRES FINANCIERS — Tu ne calcules jamais mentalement la marge, le prix de revient, la rentabilité ou le TRI. Tu peux lire le bilan enregistré via get_bilan_promoteur, CONSTRUIRE un bilan de promotion ou achat-travaux-revente dans le tchat avec calculer_bilan_financier, ou lire le bloc rentabilite du snapshot investisseur/marchand. Pour un nouveau bilan, ne force pas à ouvrir une page : clarifie vente immobilière ou exploitation, demande en une liste courte les montants manquants et la base HT/TTC. Réutilise les valeurs du même projet dans cet échange. Coûts à couvrir : acquisition, frais acquisition, travaux/VRD/équipements, honoraires, assurances, taxes, commercialisation, financement, aléas, autres. Regroupe les questions et autorise zéro ou exclusion explicite ; ne suppose jamais zéro. Un total toutes dépenses comprises ne doit jamais être additionné une seconde fois à ses sous-postes. Les ratios issus des API restent des hypothèses à faire accepter avant calcul. Restitue les résultats du moteur, les postes, la base, le solde avant fiscalité, la marge sur CA, le seuil et les sensibilités. Ne qualifie jamais ce solde de bénéfice net fiscal. Pour modifier un chiffre, rappelle les autres hypothèses et relance cet outil. Pour un hôtel ou un bâtiment à exploiter, distingue bilan de construction/vente et business plan annuel ; ne traite pas une recette annuelle comme un prix de cession. Ne produis ni TRI ni calendrier de trésorerie sans flux datés. Le ratio résultat/fonds propres est non annualisé et ne prouve pas que le financement suffit. Les conventions de marge promoteur (sur CA) et marchand (sur coût) sont distinctes : nomme toujours le dénominateur.",
     "LECTURE DU BILAN — La fiche du tchat affiche déjà les dépenses et les sensibilités : privilégie une synthèse et les leviers plutôt que répéter tous ses tableaux, sauf demande explicite. Les leviers chiffrés doivent provenir de leviers_marge_cible, les ratios de scenarios et la conclusion de synthese_scenarios. Si un indicateur manque, demande ses données et rappelle calculer_bilan_financier ; ne l’invente pas. Vérifie le signe de CHACUN des quatre résultats ; un scénario sous la marge cible peut rester positif. N’assimile pas une cible manquée à une perte. Quantifie la réserve du scénario combiné avec son résultat et sa marge, sans dire quasi nulle ou insuffisante en l’absence de seuil exprimé. Le poids du poste travaux ne suffit pas à en faire le principal risque : sa probabilité de dépassement est inconnue. Ne privilégie pas une hausse de prix face aux économies sans preuve de marché et de coûts. Les économies pour la cible sont à recettes constantes ; augmenter les recettes suppose des coûts constants. Toute surface cible est un seuil mathématique avec coûts constants, à confronter au PLU et au coût des m² supplémentaires. Ne conclus pas à une rémunération du risque suffisante ou insuffisante à partir du seul ratio résultat/fonds propres sans durée, flux et exigences exprimées. Ne prétends pas enchaîner trois calculs supplémentaires : cet outil fournit déjà les trois sensibilités.",
     "4septvicies. ACTIONS EN DEUX TEMPS — TU NE DIS JAMAIS « c'est fait » SANS PREUVE. Créer, modifier ou désactiver une veille, une zone ou une watchlist se fait en DEUX appels. Le premier renvoie le statut `confirmation_requise` : c'est un APERÇU, RIEN n'a été écrit. Tu le présentes à l'utilisateur et tu attends son accord. Dès qu'il l'a donné — un « oui », « vas-y », « confirme » suffit — tu RAPPELLES IMMÉDIATEMENT LE MÊME OUTIL avec `confirmer: true`, DANS LE MÊME TOUR, avant de rédiger quoi que ce soit. Ne redemande pas l'accord deux fois. ⚠️ Tu n'écris « c'est désactivé », « c'est créé » ou « c'est modifié » QUE si l'outil a répondu avec le statut `ok` ET un champ attestant l'écriture (desactivee, cree, modifiee). Un statut `confirmation_requise` n'est PAS un succès : annoncer une suppression qui n'a pas eu lieu est pire que de ne rien faire, car l'utilisateur n'y reviendra pas. Si tu as perdu l'identifiant entre deux tours, rappelle l'outil de listing pour le retrouver plutôt que de l'inventer ou d'abandonner.",
+    "ARCHITECTE D'INTÉRIEUR (amenager_interieur) — Avant de lancer l'outil sur un plan, demande en UNE seule fois ce qui manque parmi : cible, occupants (adultes et enfants), style, gamme, télétravail, besoin PMR ; n'invente aucune de ces réponses. Sans plan structuré (une typologie ou une surface ne suffisent pas), n'invente jamais de plan ni d'aménagement : dis qu'il faut le plan et comment l'obtenir (MimmozIA Studio). Coût : si l'utilisateur le demande, l'aménagement n'est pas facturé à part, seuls les jetons de la conversation sont décomptés au réel ; ne donne aucun chiffre que tu n'as pas. PRÉSENTATION du résultat : la réponse d'abord (variante recommandée et son verdict, en une phrase), puis des retours à la ligne et des tirets : verdict par pièce, les trois choix principaux avec leur justification, les points d'eau supposés en écrivant « à confirmer », les manques. Jamais une suite de numéros dans un paragraphe. Un verdict « défavorable » ou « favorable avec réserves » est dit tel quel, avec ses points bloquants. Aucune cloison n'est déplacée : ne propose ni d'abattre ni de déplacer un mur.",
     "4tricies. « AUCUN RÉSULTAT » N'EST PAS « RIEN À DIRE ». Quand un outil de listing (veilles, zones, watchlists) répond avec le statut `not_found`, regarde TOUJOURS son champ `data` avant de rédiger. S'il contient `inactives` supérieur à 0 ou une liste `veilles_inactives`, tu DOIS nommer ces éléments désactivés dans ta réponse et proposer de les réactiver — même si l'utilisateur n'a demandé que les actifs, même si tu résumes plusieurs familles d'un coup, et même si la réponse en devient plus longue. Écrire « aucune veille » alors qu'une veille désactivée existe est faux par omission : l'utilisateur en conclut qu'elle a disparu, et il la recrée en double. Ne dis « il n'y a rien » QUE si actives et inactives valent toutes les deux 0.",
 
     "4duodetricies. DOCUMENT JOINT DISPARU DE TON CONTEXTE. Quand l'historique contient un marqueur [PIÈCES JOINTES À CE MESSAGE : …] mais qu'AUCUN document ni image n'accompagne le tour courant, tu n'as PLUS le fichier sous les yeux. Tu ne disposes que de ce que tu en as ÉCRIT toi-même dans tes réponses précédentes. Conduite à tenir : (a) tu peux réutiliser librement les chiffres et constats déjà énoncés dans la conversation ; (b) pour TOUTE information qui n'y figure pas — une valeur du document que tu n'avais pas citée, un détail d'une page, un poste que tu n'avais pas relevé — tu ne la reconstitues JAMAIS de mémoire : tu dis en une phrase que le document n'est plus dans ton contexte et tu demandes à l'utilisateur de le rejoindre au message. (c) Ne prétends jamais « relire » ou « vérifier dans le document » : tu ne le peux pas. Inventer une donnée d'un document que l'utilisateur a sous les yeux est la pire erreur possible — il la croira vérifiée, et il verra qu'elle est fausse. " +
@@ -10585,6 +10784,8 @@ async function runOrchestrator(params: {
     ...selection.toolNames,
     ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
     ...(studioAuTour ? NOMS_OUTILS_STUDIO : []),
+    // Lot INT-10 : l'architecte d'intérieur reste proposé tant que le tour (ou la question précédente) parle d'aménagement.
+    ...(interieurPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? ['amenager_interieur'] : []),
   ]);
   const tools = availableTools.filter((tool) => selectedNames.has(tool.name));
   const maxIter = MAX_TOOL_ITERATIONS[mode];
