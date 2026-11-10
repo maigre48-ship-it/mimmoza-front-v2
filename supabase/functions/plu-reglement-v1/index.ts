@@ -46,6 +46,7 @@ import {
   fichiersDepuisCache, lireDetailsDocument, lireDocumentsAuPoint, lireZonesAuPoint, urlApiCarto, urlDetailsDocument, urlDocumentsPartition,
   type FichierReglement, type ZoneAuPoint,
 } from '../_shared/documents/gpuReglement.ts';
+import { decouperCodeZone, enteteDecoupage } from '../_shared/documents/reglementIndices.ts';
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -295,6 +296,36 @@ async function actionGpu(body: Record<string, unknown>): Promise<Record<string, 
       ...commun, statut: 'pret', zone_lue: codeZone, pages_retenues: demandees, pages_zone: plagesLisibles(demandees),
       pages_dispositions_generales: '', pages_lexique: '', pages_choisies_par_utilisateur: true,
       tronque: texte.includes('budget de lecture atteint'), tokens_estimes: estimerTokensTexte(texte.length), texte,
+    };
+  }
+  // Lot C5 — règlement « à indices » (PLUi Est Ensemble…) : le code de zone AU POINT (casse d'origine) est une
+  // suite d'indices. Si les fiches du règlement attestent UN SEUL découpage, on lit le chapitre de la zone mère,
+  // la légende et les fiches de CES indices, précédés d'un en-tête qui dit quel indice s'applique.
+  // Aucun découpage unique → comportement inchangé (on ne tranche pas).
+  const decoupage = decouperCodeZone(pages, zone?.zone ?? codeZone, sel.chapitres.map((c) => c.zone));
+  if (decoupage.statut === 'ambigu' || decoupage.statut === 'non_decoupe') {
+    console.warn(`[plu-reglement] code de zone « ${decoupage.code} » non découpé : ${decoupage.motif}`);
+  }
+  if (decoupage.statut === 'decoupe') {
+    const ch = sel.chapitres.find((c) => c.zone === decoupage.zoneMere) ?? null;
+    const pagesChapitre: number[] = [];
+    if (ch) for (let p = ch.debut; p <= Math.min(ch.fin, ch.debut + 11); p++) pagesChapitre.push(p);
+    const numeros = Array.from(new Set([...pagesChapitre, ...(decoupage.pages ?? [])])).sort((a, b) => a - b);
+    const entete = enteteDecoupage(decoupage);
+    const corps = assemblerTexte(pages, numeros, Math.max(5_000, maxCar - entete.length - 2));
+    const texte = `${entete}\n\n${corps}`;
+    return {
+      ...commun, statut: 'pret',
+      zone_lue: decoupage.zoneMere, zone_complete: decoupage.code,
+      reglement_a_indices: true,
+      decoupage_zone: (decoupage.indices ?? []).map((x) => ({ famille: x.famille, libelle: x.libelle, indice: x.indice, pages: x.pages })),
+      pages_retenues: numeros,
+      pages_zone: plagesLisibles(pagesChapitre),
+      pages_indices: plagesLisibles(decoupage.pages ?? []),
+      pages_dispositions_generales: '', pages_lexique: '',
+      tronque: corps.includes('budget de lecture atteint'),
+      tokens_estimes: estimerTokensTexte(texte.length),
+      texte,
     };
   }
   if (sel.statut === 'zone_trouvee' && sel.tronque) {
