@@ -224,7 +224,8 @@ export function bandePourMoteur(b: BandesConception): BandeVoie | null {
   if (!b.mesure || !b.cote || b.cote.statut !== 'identifie' || b.profondeurM === null || b.tauxPrincipalPct === null) return null;
   const max = empriseMaxParBande(b.mesure, b.tauxPrincipalPct, null);
   if (!max || !(max.principaleM2 > 0)) return null;
-  return { cote: b.cote, profondeurM: b.profondeurM, empriseMaxM2: max.principaleM2 };
+  // Lot C11 : la surface mesurée de la bande principale suit le volume (part non bâtie de la bande dans les contrôles).
+  return { cote: b.cote, profondeurM: b.profondeurM, empriseMaxM2: max.principaleM2, surfaceBandeM2: b.mesure.bandePrincipaleM2 };
 }
 
 /** Note du volume d'étude quand la règle est par bande mais que les bandes ne sont pas mesurées. null sinon. */

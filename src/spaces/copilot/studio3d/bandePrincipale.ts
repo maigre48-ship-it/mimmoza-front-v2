@@ -16,6 +16,12 @@
 // LIMITES SÉPARATIVES. Quand le côté voie est identifié, ce module dit quelles limites du contour sont « sur voie »
 // (marquerSegmentsVoie) et mesure, sur un volume donné, la distance réelle des bâtiments au côté voie et aux autres
 // limites (mesurerReculsVolume) — mesure indépendante du placement, utilisée par les contrôles et par les tests.
+//
+// Lot C11 — implantation EN LIMITE SÉPARATIVE : quand la règle lue la permet (« sur les limites séparatives ou en
+// retrait »), le bâtiment peut venir contre les limites LATÉRALES (celles qui partent de la voie), jamais contre la
+// limite de fond. Ce module dit quelles limites sont latérales (marquerSegmentsLateraux) et mesure la distance de
+// chaque bâtiment à chacune (mesurerReculsVolume). Une limite latérale est soit touchée, soit tenue à distance du
+// retrait réglementaire : l'entre-deux n'est jamais admis (lateralesAdmises).
 // =============================================================================
 
 import type { PointLocal } from './volumeParcelle.ts';
@@ -32,6 +38,8 @@ export interface BandeVoie {
    * Absente : seul le coefficient d'emprise des règles borne l'emprise.
    */
   empriseMaxM2?: number | null;
+  /** Lot C11 : surface mesurée de la bande principale (m²), reportée telle quelle dans le volume ; facultative. */
+  surfaceBandeM2?: number | null;
   /**
    * Lot C10 : implantation par rapport à la voie et aux limites, telle que les règles LUES l'établissent.
    * Absente : le recul à la voie n'est différencié que si une règle chiffrée `recul_voie_m` figure dans les règles.
@@ -49,12 +57,23 @@ export interface ImplantationVoie {
   /** Règle d'où vient `reculVoieM` (source, article), affichée dans les hypothèses. */
   sourceVoie?: string | null;
   /**
-   * Implantation EN LIMITE SÉPARATIVE permise par la règle lue (« sur limites ou en retrait »). Paramètre accepté
-   * mais NON APPLIQUÉ par le moteur tant que cette lecture n'est pas fiable : le retrait est conservé, et dit.
+   * Lot C11 : pourquoi `reculVoieM` vaut 0 — 'regle' : alignement écrit dans la règle ; 'non_reglementee' : recul
+   * sur voie non réglementé (règle confirmée et citée), l'alignement est RETENU par le volume d'étude, et c'est dit.
+   */
+  motifVoie?: 'regle' | 'non_reglementee' | null;
+  /**
+   * Implantation EN LIMITE SÉPARATIVE permise par la règle lue (« sur limites ou en retrait »), confirmée et citée.
+   * Lot C11 : APPLIQUÉE par le moteur aux limites LATÉRALES (celles qui partent de la voie) des bâtiments collectifs
+   * placés dans la bande principale ; le retrait (formule H/k) reste dû sur les autres limites (fond de parcelle) et
+   * sur toute limite latérale que le bâtiment ne touche pas.
    */
   limiteSeparativePermise?: boolean | null;
+  /** Lot C11 : règle d'où vient `limiteSeparativePermise` (source, article), affichée dans les hypothèses. */
+  sourceLimites?: string | null;
   /** Phrase affichée telle quelle dans les hypothèses (ex. « recul à la voie non réglementé : alignement non supposé »). */
   note?: string | null;
+  /** Lot C11 : seconde phrase, sur les limites séparatives (ex. implantation en limite lue mais non confirmée). */
+  noteLimites?: string | null;
 }
 
 /** Ce que le volume dit de la bande demandée (présent seulement quand une bande a été demandée). */
@@ -84,6 +103,14 @@ export interface BandeVolume {
    */
   reculVoieM?: number;
   reculLimitesM?: number;
+  /**
+   * Lot C11 : présent (0) seulement quand l'implantation EN LIMITE SÉPARATIVE est appliquée aux limites latérales.
+   * Chaque bâtiment est alors soit au contact d'une limite latérale (à CONTACT_LIMITE_M près), soit à `reculLimitesM`
+   * au moins ; `reculLimitesM` (toujours présent avec ce champ) vaut pour les autres limites (fond de parcelle).
+   */
+  reculLateralM?: number;
+  /** Lot C11 : surface de la bande principale (m², mesurée par l'appelant), pour dire la part non bâtie de la bande. */
+  surfaceBandeM2?: number;
 }
 
 export interface FacadeLocale { a: PointLocal; b: PointLocal }
@@ -96,7 +123,13 @@ export interface BandePreparee {
   angle: number;
   empriseMaxM2: number | null;
   /** Lot C10 : implantation relue (valeurs hors bornes écartées, avec la raison dans `note`). */
-  implantation: { reculVoieM: number | null; sourceVoie: string | null; limiteSeparativePermise: boolean; notes: string[] };
+  implantation: {
+    reculVoieM: number | null; sourceVoie: string | null; limiteSeparativePermise: boolean; notes: string[];
+    /** Lot C11. */
+    motifVoie: 'regle' | 'non_reglementee' | null; sourceLimites: string | null;
+  };
+  /** Lot C11 : surface de la bande principale fournie par l'appelant (m²) ; null si absente ou illisible. */
+  surfaceBandeM2: number | null;
 }
 
 /** Lot C10 : recul à la voie accepté par le moteur (m). Au-delà, la valeur est écartée et le recul prudent est gardé. */
@@ -195,11 +228,17 @@ export function preparerBande(
     else notes.push('Recul à la voie fourni illisible ou hors bornes : non appliqué, recul prudent conservé côté voie.');
   }
   if (im && typeof im.note === 'string' && im.note.trim()) notes.push(im.note.trim().slice(0, 300));
+  if (im && typeof im.noteLimites === 'string' && im.noteLimites.trim()) notes.push(im.noteLimites.trim().slice(0, 300));
+  const court = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim().slice(0, 200) : null;
   const implantation = {
-    reculVoieM, sourceVoie: im && typeof im.sourceVoie === 'string' && im.sourceVoie.trim() ? im.sourceVoie.trim().slice(0, 200) : null,
+    reculVoieM, sourceVoie: im ? court(im.sourceVoie) : null,
     limiteSeparativePermise: im?.limiteSeparativePermise === true, notes,
+    motifVoie: reculVoieM === 0 && im?.motifVoie === 'non_reglementee' ? 'non_reglementee' as const : reculVoieM !== null ? 'regle' as const : null,
+    sourceLimites: im ? court(im.sourceLimites) : null,
   };
-  return { ok: true, bande: { facades, profondeurM: p, longueurFacadeM, angle, empriseMaxM2, implantation } };
+  const sb = bande.surfaceBandeM2;
+  const surfaceBandeM2 = typeof sb === 'number' && Number.isFinite(sb) && sb > 0 ? sb : null;
+  return { ok: true, bande: { facades, profondeurM: p, longueurFacadeM, angle, empriseMaxM2, implantation, surfaceBandeM2 } };
 }
 
 /** Écart toléré entre une façade sur voie et l'arête du contour qu'elle désigne (même relevé, mêmes sommets). */
@@ -225,6 +264,67 @@ export function marquerSegmentsVoie<T extends { a: PointLocal; b: PointLocal; vo
   for (const s of trouves) s.voie = true;
   for (const s of segments) if (!s.voie && Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y) < ARETE_NEGLIGEABLE_M) s.voie = true;
   return true;
+}
+
+/** Lot C11 : un bâtiment à moins de cette distance d'une limite latérale est tenu pour implanté EN LIMITE (m). */
+export const CONTACT_LIMITE_M = 0.05;
+/** Lot C11 : en dessous de cet angle avec la voie (degrés), une limite n'est pas latérale : elle est traitée comme un fond. */
+export const ANGLE_LATERALE_MIN_DEG = 45;
+
+/**
+ * Lot C11 — marque les limites LATÉRALES du contour : `laterale = n` (1, 2…), un numéro par côté. Définition
+ * retenue (celle des règlements : « limites séparatives aboutissant aux voies ») : en partant de chaque extrémité
+ * du côté voie, les arêtes qui se suivent tant qu'elles s'éloignent de la voie (angle d'au moins
+ * ANGLE_LATERALE_MIN_DEG avec la direction de la voie). La première arête qui longe la voie arrête la limite
+ * latérale : elle et toutes les suivantes sont des limites de FOND (non marquées), où le retrait reste dû.
+ *
+ * `segments` : ceux de segmentsDe(anneaux) ; seuls les `nExterieur` premiers (anneau extérieur, dans l'ordre du
+ * contour) sont parcourus — le bord d'un trou n'est jamais une limite latérale. Les limites sur voie doivent être
+ * retrouvées sur le contour (marquerSegmentsVoie) : sinon rien n'est marqué. Rend le nombre de côtés marqués (0 :
+ * aucune limite latérale identifiable, l'appelant garde le retrait partout).
+ */
+export function marquerSegmentsLateraux<T extends { a: PointLocal; b: PointLocal; voie?: boolean; laterale?: number }>(
+  segments: T[], nExterieur: number, facades: readonly FacadeLocale[],
+): number {
+  const n = Math.min(nExterieur, segments.length);
+  if (n < 3 || !marquerSegmentsVoie(segments, facades)) return 0;
+  const direction = directionVoie(facades);
+  if (direction === null) return 0;
+  const ext = segments.slice(0, n);
+  for (const s of ext) delete s.laterale;
+  const longueur = (s: T) => Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
+  const seuil = Math.sin(ANGLE_LATERALE_MIN_DEG * Math.PI / 180) - 1e-9;
+  const sEloigne = (s: T) => Math.abs(Math.sin(Math.atan2(s.b.y - s.a.y, s.b.x - s.a.x) - direction)) >= seuil;
+  let cotes = 0;
+  const parcourir = (depart: number, pas: 1 | -1) => {
+    const numero = cotes + 1;
+    let marques = 0;
+    for (let k = 1; k < n; k++) {
+      const s = ext[((depart + pas * k) % n + n) % n];
+      if (s.voie || s.laterale !== undefined) break;
+      // Arête négligeable (doublon de sommet) : elle suit le sort de la limite en cours, sans l'arrêter.
+      if (longueur(s) >= ARETE_NEGLIGEABLE_M && !sEloigne(s)) break;
+      s.laterale = numero;
+      if (longueur(s) >= ARETE_NEGLIGEABLE_M) marques++;
+    }
+    if (marques) cotes = numero;
+    else for (const s of ext) if (s.laterale === numero) delete s.laterale;
+  };
+  for (let i = 0; i < n; i++) {
+    if (!ext[i].voie) continue;
+    if (!ext[(i + 1) % n].voie) parcourir(i, 1);
+    if (!ext[(i - 1 + n) % n].voie) parcourir(i, -1);
+  }
+  return cotes;
+}
+
+/**
+ * Lot C11 — chaque limite latérale est-elle soit TOUCHÉE (distance ≤ CONTACT_LIMITE_M), soit tenue à `retraitM` au
+ * moins (à `toleranceM` près) ? `distances` : distance du bâtiment à chaque côté latéral. Un bâtiment à 2 m d'une
+ * limite n'est ni « sur la limite » ni « en retrait » réglementaire : refusé.
+ */
+export function lateralesAdmises(distances: readonly number[], retraitM: number, toleranceM = 0.02): boolean {
+  return distances.every((d) => d <= CONTACT_LIMITE_M + 1e-9 || d >= retraitM - toleranceM);
 }
 
 /**
@@ -269,8 +369,19 @@ function distanceSegments(a: PointLocal, b: PointLocal, c: PointLocal, d: PointL
 export interface ReculsMesures {
   /** Plus petite distance d'un bâtiment aux limites présumées sur voie (m, arrondie au centimètre). */
   voieM: number;
-  /** Plus petite distance d'un bâtiment aux AUTRES limites du contour (m, arrondie au centimètre) ; null si tout le contour est sur voie. */
+  /**
+   * Plus petite distance d'un bâtiment aux AUTRES limites du contour (m, arrondie au centimètre) ; null si tout le
+   * contour est sur voie. Lot C11 : quand `laterales` est présent, les limites latérales n'y sont PAS comptées
+   * (seulement le fond et les autres limites).
+   */
   limitesM: number | null;
+  /**
+   * Lot C11 — présent seulement si le volume déclare l'implantation en limite (`bande.reculLateralM`) et si ses
+   * limites latérales sont retrouvées : pour CHAQUE rectangle bâti (bâtiment, ou aile), sa distance à chaque côté
+   * latéral (m, arrondie au centimètre), et le plus grand vide entre ce rectangle et une limite qu'il touche
+   * (limite non parallèle au pignon : le contact se fait en un point, le reste du pignon s'en écarte).
+   */
+  laterales?: { distancesM: number[]; videMaxM: number }[];
 }
 
 /**
@@ -292,13 +403,33 @@ export function mesurerReculsVolume(v: VolumeAVerifier & { contour?: readonly Po
     if (ailes) for (const a of ailes) rectangles.push(a.coins); else rectangles.push(c.coins);
   }
   if (!rectangles.length || rectangles.some((r) => r.length !== 4 || !r.every((q) => q && Number.isFinite(q.x) && Number.isFinite(q.y)))) return null;
+  // Lot C11 : limites latérales à part, seulement si le volume déclare l'implantation en limite.
+  const cotes = v.bande?.reculLateralM !== undefined ? marquerSegmentsLateraux(segments as { a: PointLocal; b: PointLocal; voie?: boolean; laterale?: number }[], segments.length, facades) : 0;
+  const lateraux = segments as { a: PointLocal; b: PointLocal; voie?: boolean; laterale?: number }[];
   let voie = Infinity, limites = Infinity;
-  for (const r of rectangles) for (let k = 0; k < 4; k++) for (const s of segments) {
-    const d = distanceSegments(r[k], r[(k + 1) % 4], s.a, s.b);
-    if (s.voie) voie = Math.min(voie, d); else limites = Math.min(limites, d);
-  }
   const cm = (x: number) => Math.round(x * 100) / 100;
-  return { voieM: cm(voie), limitesM: Number.isFinite(limites) ? cm(limites) : null };
+  const laterales: { distancesM: number[]; videMaxM: number }[] = [];
+  for (const r of rectangles) {
+    const parCote = Array.from({ length: cotes }, () => Infinity);
+    for (let k = 0; k < 4; k++) for (const s of lateraux) {
+      const d = distanceSegments(r[k], r[(k + 1) % 4], s.a, s.b);
+      if (s.voie) voie = Math.min(voie, d);
+      else if (cotes && s.laterale !== undefined) parCote[s.laterale - 1] = Math.min(parCote[s.laterale - 1], d);
+      else limites = Math.min(limites, d);
+    }
+    if (!cotes) continue;
+    // Vide derrière un contact : pour chaque côté touché, le coin du rectangle le plus proche de ce côté parmi les
+    // deux coins du pignon qui lui fait face (les deux plus proches) — le plus éloigné des deux donne le vide.
+    let vide = 0;
+    for (let c = 0; c < cotes; c++) {
+      if (parCote[c] > CONTACT_LIMITE_M + 1e-9) continue;
+      const chaine = lateraux.filter((s) => s.laterale === c + 1);
+      const ds = r.map((q) => Math.min(...chaine.map((s) => distancePointSegment(q, s.a, s.b)))).sort((x, y) => x - y);
+      vide = Math.max(vide, ds[1]);
+    }
+    laterales.push({ distancesM: parCote.map(cm), videMaxM: cm(vide) });
+  }
+  return { voieM: cm(voie), limitesM: Number.isFinite(limites) ? cm(limites) : null, ...(cotes ? { laterales } : {}) };
 }
 
 /** Ce qui est lu d'un volume pour revérifier sa bande (sous-ensemble de VolumePropose). */

@@ -29,12 +29,22 @@
 //     MESURÉES sur ses bâtiments (mesurerReculsVolume) et jugées chacune contre sa règle ;
 //   · implantationDesRegles : ce que les règles lues établissent du recul à la voie (alignement explicite
 //     seulement), pour le moteur. Rien n'y est supposé.
+//
+// Lot C11 (décisions prises pour Albé le 10/11/2026, après la mission réelle de Montreuil) —
+//   · recul sur voie « non réglementé », CONFIRMÉ et CITÉ : l'implantation est libre par rapport à la voie ; le
+//     moteur retient l'alignement (implantationDesRegles) et l'hypothèse le dit, avec la règle complémentaire lue ;
+//   · « sur limite séparative ou en retrait », CONFIRMÉ et CITÉ : l'implantation en limite est transmise au moteur,
+//     qui l'applique aux limites latérales dans la bande principale ; le contrôle du recul aux limites juge alors
+//     chaque limite latérale (touchée, ou au retrait) et le fond de parcelle (retrait de la formule) ;
+//   · pleine terre PAR BANDE : le moteur ne la contrôle pas ; le contrôle donne la part NON BÂTIE de chaque bande
+//     (ce n'est pas la pleine terre) quand le volume est prouvé dans la bande principale ;
+//   · formule de recul « H/2 et 3 mètres minimum » : le minimum écrit APRÈS le nombre est lu (il était perdu).
 // =============================================================================
 
 import { HYPOTHESES_VOLUME, libelleNiveaux, regleValide, type ReglePlu, type ReglesPluVolume, type VolumePropose } from './volumeParcelle.ts';
 import { estConditionBande, mentionBandes, optionBandePrincipale, optionBandeSecondaire, profondeurBandePrincipaleM, type OptionBande } from './reglesParBande.ts';
 import type { MesureBandes } from './coteVoie.ts';
-import { mesurerReculsVolume, verifierBandeVolume, type ImplantationVoie } from './bandePrincipale.ts';
+import { CONTACT_LIMITE_M, mesurerReculsVolume, verifierBandeVolume, type ImplantationVoie } from './bandePrincipale.ts';
 
 type Obj = Record<string, unknown>;
 const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -140,21 +150,38 @@ export function conditionSelonBande(regle: RegleLue, bandeProuvee: boolean): str
  *     et citée (article) ; une règle positive passe par les règles du volume (reglesVolume), pas par ici ;
  *   · règle absente, « non réglementée », non chiffrée ou seulement estimée : rien n'est établi, le moteur garde
  *     son recul prudent côté voie, et `note` dit pourquoi ;
- *   · « sur limite séparative ou en retrait » (option à 0 m dans `recul_limites_m`) : signalé au moteur
- *     (`limiteSeparativePermise`), qui ne l'applique pas encore.
+ *   · lot C11 — recul sur voie « non réglementé », règle CONFIRMÉE et CITÉE : l'implantation est libre par rapport
+ *     à la voie ; l'alignement est RETENU (`reculVoieM: 0`, `motifVoie: 'non_reglementee'`) et `note` le dit, avec
+ *     la règle complémentaire non chiffrée si elle a été lue. Non confirmée ou non citée : rien n'est établi ;
+ *   · lot C11 — « sur limite séparative ou en retrait » (valeur 0 m ET option à 0 m dont le libellé parle de
+ *     « limite », forme écrite par le lot C9) : transmis au moteur (`limiteSeparativePermise`) seulement si la
+ *     règle est CONFIRMÉE et CITÉE ; sinon `noteLimites` dit pourquoi le retrait est gardé.
  */
 export function implantationDesRegles(regles: readonly RegleLue[]): ImplantationVoie {
   const rv = regles.find((x) => x.cle === 'recul_voie_m' && x.statut !== 'manquant');
   const out: ImplantationVoie = { reculVoieM: null, sourceVoie: null, limiteSeparativePermise: false, note: null };
   const prudent = 'alignement non supposé, recul prudent conservé côté voie';
   if (!rv) out.note = `Recul à la voie : règle non lue — ${prudent}.`;
-  else if (rv.nature === 'non_reglementee') out.note = `Recul à la voie non réglementé (${libelleRegle(rv)}) : aucune valeur chiffrée lue — ${prudent}.`;
-  else if (fini(rv.valeur) && rv.valeur === 0) {
-    if (regleCitee(rv)) { out.reculVoieM = 0; out.sourceVoie = libelleRegle(rv); }
+  else if (rv.nature === 'non_reglementee') {
+    if (regleCitee(rv)) {
+      out.reculVoieM = 0; out.sourceVoie = libelleRegle(rv); out.motifVoie = 'non_reglementee';
+      // La règle complémentaire non chiffrée (« tenir compte de l'implantation des constructions voisines »…) est
+      // reprise telle qu'elle a été lue ; rien n'est ajouté quand elle manque.
+      const complement = [rv.regle_relative, rv.texte].find((t) => !!t && !/^(?:il\s+n['’]est\s+pas\s+fix[ée]|non\s+r[ée]glement)/iu.test(t.trim())) ?? null;
+      const suite = !complement ? 'aucune règle complémentaire lue ; implantation réelle à vérifier sur place'
+        : /constructions?\s+voisines?/iu.test(complement) ? 'le règlement demande de tenir compte de l’implantation des constructions voisines — à vérifier sur place'
+          : `règle complémentaire non chiffrée du règlement : « ${complement.replace(/\s+/g, ' ').trim().slice(0, 160)} » — à vérifier sur place`;
+      out.note = `Recul sur voie non réglementé (${rv.article}) : alignement retenu ; ${suite}.`;
+    } else out.note = `Recul à la voie non réglementé (${libelleRegle(rv)}), règle ${rv.statut === 'confirme' ? 'sans article cité' : 'non confirmée (estimée)'} — ${prudent}.`;
+  } else if (fini(rv.valeur) && rv.valeur === 0) {
+    if (regleCitee(rv)) { out.reculVoieM = 0; out.sourceVoie = libelleRegle(rv); out.motifVoie = 'regle'; }
     else out.note = `Recul à la voie de 0 m (alignement) non confirmé (${rv.statut === 'confirme' ? 'article non cité' : 'règle estimée'}) — ${prudent}.`;
   } else if (!fini(rv.valeur)) out.note = `Recul à la voie non chiffré (${libelleRegle(rv)}) — ${prudent}.`;
   const rl = regles.find((x) => x.cle === 'recul_limites_m' && x.statut !== 'manquant');
-  if (rl && fini(rl.valeur) && rl.valeur === 0 && (rl.alternatives ?? []).some((a) => a.valeur === 0 && /\blimites?\b/iu.test(a.libelle))) out.limiteSeparativePermise = true;
+  if (rl && fini(rl.valeur) && rl.valeur === 0 && (rl.alternatives ?? []).some((a) => a.valeur === 0 && /\blimites?\b/iu.test(a.libelle))) {
+    if (regleCitee(rl)) { out.limiteSeparativePermise = true; out.sourceLimites = libelleRegle(rl); }
+    else out.noteLimites = `Implantation en limite séparative lue mais ${rl.statut === 'confirme' ? 'sans article cité' : 'non confirmée (règle estimée)'} (${libelleRegle(rl)}) — non appliquée, retrait conservé sur les limites séparatives.`;
+  }
   return out;
 }
 
@@ -163,7 +190,9 @@ export function formuleRecul(v: string): { diviseur: number; minimumM: number | 
   const f = v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const m = /\bh\s*\/\s*([1-4])\b/.exec(f);
   if (!m) return null;
-  const min = /(?:min(?:imum)?\.?|≥|>=)\s*(?:de\s*)?(\d+(?:[.,]\d+)?)\s*m/.exec(f);
+  // Lot C11 : le minimum peut être écrit APRÈS le nombre (« H/2 et 3 mètres minimum », forme du PLUi Est Ensemble).
+  const min = /(?:min(?:imum)?\.?|≥|>=)\s*(?:de\s*)?(\d+(?:[.,]\d+)?)\s*m/.exec(f)
+    ?? /(\d+(?:[.,]\d+)?)\s*m(?:etres?)?\.?\s*(?:au\s+)?min(?:imum)?\b/.exec(f.slice(m.index + m[0].length));
   return { diviseur: Number(m[1]), minimumM: min ? Number(min[1].replace(',', '.')) : null };
 }
 
@@ -316,13 +345,50 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
   if (rv && fini(rv.valeur)) out.push(juger(rv, reculVoie + tolerance >= rv.valeur, valeurVoie, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m',
     `${precisionVoie}${surContour}`));
   else if (rv && rv.nature === 'non_reglementee' && rv.article) {
-    // Lot C10 : « non réglementé » n'est pas « inconnu ». Aucun minimum n'est lu ; le volume n'en déduit PAS l'alignement.
+    // Lot C10 : « non réglementé » n'est pas « inconnu » : aucun minimum n'est lu.
+    // Lot C11 : règle confirmée et citée, côté voie identifié → le volume retient l'alignement (`bande.reculVoieM` à 0) et
+    // le contrôle le dit ; sinon il garde son recul prudent, et le dit aussi. La règle complémentaire non chiffrée
+    // (constructions voisines…) n'est pas vérifiable par le calcul : verdict « à vérifier » quand elle existe.
+    const aligne = mesures !== null && v.bande?.reculVoieM === 0;
+    const complement = [rv.regle_relative, rv.texte].find((t) => !!t && !/^(?:il\s+n['’]est\s+pas\s+fix[ée]|non\s+r[ée]glement)/iu.test(t.trim())) ?? null;
     out.push({ cle: 'recul_voie_m', libelle: LIBELLES.recul_voie_m, valeur_volume: valeurVoie, regle: `non réglementé (${libelleRegle(rv)})`,
-      verdict: regleCitee(rv) ? 'dans_la_limite' : 'a_verifier',
-      explication: `Recul à la voie non réglementé${regleCitee(rv) ? ` (${rv.article})` : ' (règle non confirmée)'} : aucun minimum chiffré à respecter. Le volume d’étude n’en déduit pas l’implantation à l’alignement : il garde ${mesures ? `${fr(reculVoie, 2)} m` : `${fr(recul, 1)} m`} côté voie.${mesures ? precisionVoie : ''}${surContour}` });
+      verdict: regleCitee(rv) && !(aligne && complement) ? 'dans_la_limite' : 'a_verifier',
+      explication: `Recul à la voie non réglementé${regleCitee(rv) ? ` (${rv.article})` : ' (règle non confirmée)'} : aucun minimum chiffré à respecter. ` +
+        (aligne
+          ? `Le volume d’étude retient l’implantation à l’alignement (${fr(reculVoie, 2)} m mesuré côté voie).` +
+            (complement ? ` Règle complémentaire non chiffrée, non vérifiée par le calcul : « ${complement.replace(/\s+/g, ' ').trim().slice(0, 200)} » — à vérifier sur place.` : '')
+          : `Le volume d’étude n’en déduit pas l’implantation à l’alignement : il garde ${mesures ? `${fr(reculVoie, 2)} m` : `${fr(recul, 1)} m`} côté voie.`) +
+        `${mesures ? precisionVoie : ''}${surContour}` });
   } else out.push(nonControle('recul_voie_m', 'Recul à la voie inconnu : non contrôlé.'));
   const rl = r('recul_limites_m');
-  if (rl && fini(rl.valeur)) out.push(juger(rl, reculLimites + tolerance >= rl.valeur, valeurLimites, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m', surContour));
+  // Lot C11 — implantation en limite appliquée par le volume (`bande.reculLateralM`) : chaque limite latérale doit
+  // être touchée ou tenue au retrait de la formule ; le fond de parcelle garde le retrait. Mesuré bâtiment par bâtiment.
+  const lat = mesures?.laterales && v.bande?.reculLateralM !== undefined ? mesures.laterales : null;
+  if (rl && fini(rl.valeur) && rl.valeur === 0 && lat && lat.length) {
+    const rf = r('recul_limites_formule');
+    const f = rf && typeof rf.valeur === 'string' ? formuleRecul(rf.valeur) : null;
+    // Retrait dû là où le bâtiment n'est pas en limite : la formule lue ; à défaut, le retrait que le volume déclare avoir tenu.
+    const exige = f ? Math.max(f.minimumM ?? 0, v.hauteurM / f.diviseur) : v.bande?.reculLimitesM ?? recul;
+    const tous = lat.flatMap((l) => l.distancesM);
+    const touchees = tous.filter((d) => d <= CONTACT_LIMITE_M + 1e-9).length;
+    const entreDeux = tous.filter((d) => d > CONTACT_LIMITE_M + 1e-9 && d < exige - tolerance);
+    const fondOk = mesures!.limitesM === null || mesures!.limitesM + tolerance >= exige;
+    const vide = Math.max(0, ...lat.map((l) => l.videMaxM));
+    const valeur = `${touchees} limite${touchees > 1 ? 's' : ''} latérale${touchees > 1 ? 's' : ''} touchée${touchees > 1 ? 's' : ''} sur ${tous.length}` +
+      `${mesures!.limitesM !== null ? `, ${fr(mesures!.limitesM, 2)} m du fond de parcelle et des autres limites (mesuré)` : ''}`;
+    const regle = `en limite séparative ou en retrait${f ? ` (${String(rf!.valeur)}, soit ${fr(exige, 1)} m pour ≈ ${fr(v.hauteurM, 1)} m)` : ` (retrait retenu ${fr(exige, 1)} m)`} (${libelleRegle(rl)})`;
+    const base = { cle: 'recul_limites_m', libelle: LIBELLES.recul_limites_m, valeur_volume: valeur, regle };
+    if (entreDeux.length || !fondOk) {
+      out.push({ ...base, verdict: 'au_dela', explication: `Le volume d’étude dépasse la règle : ` +
+        (entreDeux.length ? `un bâtiment est à ${fr(Math.min(...entreDeux), 2)} m d’une limite latérale, ni en limite ni au retrait de ${fr(exige, 1)} m. ` : '') +
+        (!fondOk ? `Le fond de parcelle (ou une autre limite) est à ${fr(mesures!.limitesM ?? 0, 2)} m pour ${fr(exige, 1)} m de retrait.` : '') + surContour });
+    } else {
+      out.push({ ...base, verdict: 'a_verifier', explication: `Implantation en limite séparative permise par la règle citée (${rl.article ?? 'article non cité'}) et appliquée aux limites latérales : ` +
+        `chaque limite latérale est touchée par le bâtiment ou tenue à ${fr(exige, 1)} m au moins ; le fond de parcelle est à ${mesures!.limitesM !== null ? `${fr(mesures!.limitesM, 2)} m` : 'distance non mesurable'} pour ${fr(exige, 1)} m de retrait — vérifié par le calcul. ` +
+        (vide > CONTACT_LIMITE_M ? `Une limite touchée n’est pas parallèle au pignon : contact en un point, vide en biais jusqu’à ${fr(vide, 2)} m, à traiter au plan (pignon suivant la limite, ou retrait réglementaire). ` : '') +
+        'Reste à vérifier : limites latérales et fond présumés d’après le cadastre ; vues, prospects et servitudes sur les fonds voisins non examinés.' + surContour });
+    }
+  } else if (rl && fini(rl.valeur)) out.push(juger(rl, reculLimites + tolerance >= rl.valeur, valeurLimites, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m', surContour));
   else {
     const rf = r('recul_limites_formule');
     const f = rf && typeof rf.valeur === 'string' ? formuleRecul(rf.valeur) : null;
@@ -333,7 +399,22 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
   }
   // Pleine terre : jamais affirmée (voirie, stationnement, dalles non déduits).
   const pt = r('pleine_terre_min_pct');
-  if (pt && fini(pt.valeur) && ratioPct !== null) {
+  const surfaceBande = v.bande?.surfaceBandeM2 ?? null;
+  if (pt && fini(pt.valeur) && ratioPct !== null && estConditionBande(pt.alternatives ?? []) && preuveBande.prouvee && surfaceBande !== null && surfaceBande > 0 && surface > surfaceBande) {
+    // Lot C11 — pleine terre PAR BANDE, volume prouvé dans la bande principale : le moteur ne contrôle pas la pleine
+    // terre bande par bande. On donne la part NON BÂTIE de chaque bande (mesure), qui n'est pas la pleine terre.
+    const alts = pt.alternatives ?? [];
+    const p = optionBandePrincipale(alts), s = optionBandeSecondaire(alts);
+    const libreP = Math.max(0, surfaceBande - preuveBande.empriseM2), pctP = Math.round(libreP / surfaceBande * 1000) / 10;
+    const secondaire = surface - surfaceBande;
+    const manque = p !== null && p !== undefined && pctP + 1e-9 < p.valeur;
+    out.push({ cle: 'pleine_terre_min_pct', libelle: LIBELLES.pleine_terre_min_pct,
+      valeur_volume: `≤ ${fr(pctP, 1)} % non bâti dans la bande principale (${fr(libreP)} m² sur ${fr(surfaceBande)} m²) ; bande secondaire non construite (${fr(secondaire)} m²)`,
+      regle: `${mentionBandes(alts, '%', pt.texte)} (${libelleRegle(pt)})`, verdict: manque ? 'au_dela' : 'a_verifier',
+      explication: `Pleine terre par bande : NON contrôlée par le moteur de volume. Mesure : ${fr(libreP)} m² non bâtis dans la bande principale, soit ${fr(pctP, 1)} %` +
+        `${p ? ` pour ${fr(p.valeur, 1)} % de pleine terre exigés` : ''}${manque ? ' — insuffisant même sans voirie ni stationnement' : ''} ; la bande secondaire (${fr(secondaire)} m²) n’est pas construite` +
+        `${s ? ` (${fr(s.valeur, 1)} % de pleine terre exigés)` : ''}. Surface non bâtie n’est pas pleine terre : voirie, stationnement, dalles et sous-sols ne sont pas déduits — à vérifier.` });
+  } else if (pt && fini(pt.valeur) && ratioPct !== null) {
     out.push({ cle: 'pleine_terre_min_pct', libelle: LIBELLES.pleine_terre_min_pct, valeur_volume: `≤ ${fr(100 - ratioPct, 1)} % non bâti`,
       regle: `${fr(pt.valeur, 1)} % min. (${libelleRegle(pt)})`, verdict: 100 - ratioPct + 1e-9 < pt.valeur ? 'au_dela' : 'a_verifier',
       explication: `Emprise bâtie ${fr(ratioPct, 1)} % : au plus ${fr(100 - ratioPct, 1)} % de la parcelle reste non bâti ; voirie, stationnement et dalles ne sont pas déduits — pleine terre réelle à vérifier.` });
@@ -452,10 +533,25 @@ export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null, 
       }
     }
     const v = fini(r.valeur) ? r.valeur : null;
-    if (v === null) { non.push(`${r.cle} : valeur non chiffrée`); continue; }
+    if (v === null) {
+      // Lot C11 : recul sur voie « non réglementé », confirmé et cité, volume destiné à la bande principale → l'alignement est retenu (hypothèses).
+      non.push(r.cle === 'recul_voie_m' && r.nature === 'non_reglementee' && regleCitee(r) && options.implantationDansBande
+        ? `recul_voie_m : non réglementé (${libelleRegle(r)}) — aucune valeur chiffrée ; alignement retenu côté voie dans la bande principale, voir les hypothèses`
+        : `${r.cle} : valeur non chiffrée`);
+      continue;
+    }
     const regle: ReglePlu = { cle, valeur: cle === 'emprise_max_ratio' || cle === 'pleine_terre_min_ratio' ? v / 100 : v, ...base };
+    // Lot C11 — pleine terre PAR BANDE, volume destiné à la bande principale : le moteur n'applique que la valeur de
+    // la bande principale, comme une part de TOUTE la parcelle. Il ne contrôle pas la pleine terre bande par bande : dit ici.
+    if (r.cle === 'pleine_terre_min_pct' && estConditionBande(r.alternatives ?? []) && regleValide(regle)) {
+      non.push(`Règle par bande, pleine terre (${mentionBandes(r.alternatives ?? [], '%', r.texte).replace(/^règle par bande — /u, '')}) — NON contrôlée bande par bande par le moteur de volume : ` +
+        `${fr(v, 1)} % (bande principale) appliqué comme part non bâtie de toute la parcelle ; la part non bâtie de chaque bande est donnée dans les vérifications, voirie et stationnement non déduits`);
+    }
     if (regleValide(regle)) out.push(regle);
-    else if (v === 0 && cle === 'recul_limites_m') non.push('recul_limites_m : 0 m (implantation en limite séparative permise) — non appliqué : le volume garde un retrait sur les limites séparatives');
+    else if (v === 0 && cle === 'recul_limites_m') non.push(options.implantationDansBande
+      // Lot C11 : dans la bande principale, l'implantation en limite est appliquée aux limites latérales si la règle est confirmée et citée.
+      ? 'recul_limites_m : 0 m (implantation en limite séparative permise) — appliqué aux limites latérales dans la bande principale seulement si la règle est confirmée et citée, voir les hypothèses ; retrait conservé sur le fond de parcelle'
+      : 'recul_limites_m : 0 m (implantation en limite séparative permise) — non appliqué : le volume garde un retrait sur les limites séparatives');
     else if (v === 0 && cle.startsWith('recul')) non.push(options.implantationDansBande
       ? `${r.cle} : 0 m (implantation à l’alignement autorisée) — appliqué côté voie seulement si la règle est confirmée et citée, voir les hypothèses`
       : `${r.cle} : 0 m (implantation à l’alignement autorisée) — le volume garde le recul des limites séparatives`);

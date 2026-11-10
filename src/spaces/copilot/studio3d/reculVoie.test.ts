@@ -117,12 +117,19 @@ const regle = (cle: ReglePlu['cle'], valeur: number, extra: Partial<ReglePlu> = 
 
 // ══════════════════════════ B. Recul différencié voie / limites ══════════════════════════
 
-test('B — implantationDesRegles : l’alignement n’est retenu que pour un recul à la voie LU à 0 m, confirmé et cité', () => {
-  // Montreuil, essai 5 : voie « non réglementée » → rien d'établi, et la note le dit.
+test('B — implantationDesRegles : l’alignement n’est retenu que pour un recul à la voie LU à 0 m ou « non réglementé », confirmé et cité', () => {
+  // Lot C11 (décision du 10/11/2026) — Montreuil, essai 5 : voie « non réglementée », confirmée et citée → alignement RETENU, et la note le dit.
   const lues = implantationDesRegles(lireRegles(REGLES_LUES));
-  assert.equal(lues.reculVoieM, null);
+  assert.equal(lues.reculVoieM, 0);
+  assert.equal(lues.motifVoie, 'non_reglementee');
   assert.equal(lues.limiteSeparativePermise, false);
-  assert.equal(lues.note, 'Recul à la voie non réglementé (Règlement GPU — PLUi Est Ensemble, indice 9, p. 200) : aucune valeur chiffrée lue — alignement non supposé, recul prudent conservé côté voie.');
+  assert.equal(lues.note, 'Recul sur voie non réglementé (indice 9, p. 200) : alignement retenu ; aucune règle complémentaire lue ; implantation réelle à vérifier sur place.');
+  // « Non réglementé » seulement estimé, ou confirmé sans article : rien n'est établi (comportement prudent du lot C10).
+  for (const [r, motif] of [[{ ...VOIE_LUE, statut: 'estime' }, /règle non confirmée \(estimée\) — alignement non supposé, recul prudent conservé côté voie\.$/], [{ ...VOIE_LUE, article: null }, /règle sans article cité — alignement non supposé/]] as const) {
+    const i = implantationDesRegles(lireRegles([r]));
+    assert.equal(i.reculVoieM, null);
+    assert.match(i.note!, motif);
+  }
   // Règle absente.
   assert.deepEqual(implantationDesRegles(lireRegles(PAR_BANDE)), { reculVoieM: null, sourceVoie: null, limiteSeparativePermise: false, note: 'Recul à la voie : règle non lue — alignement non supposé, recul prudent conservé côté voie.' });
   // 0 m seulement ESTIMÉ, ou confirmé sans article : non retenu.
@@ -132,14 +139,20 @@ test('B — implantationDesRegles : l’alignement n’est retenu que pour un re
   assert.equal(implantationDesRegles(lireRegles([{ cle: 'recul_voie_m', valeur: 0, statut: 'confirme', source: 'PLU' }])).reculVoieM, null);
   // 0 m lu, confirmé, cité (ex. « à l'alignement ou en recul de 4 m », lot Q3) : alignement retenu, avec sa source.
   const lu = implantationDesRegles(lireRegles([{ cle: 'recul_voie_m', valeur: 0, statut: 'confirme', source: 'PLU de Nanterre', article: 'UC 6-1', nature: 'alternative', alternatives: [{ libelle: 'alignement', valeur: 0 }, { libelle: 'recul minimum', valeur: 4 }] }]));
-  assert.deepEqual(lu, { reculVoieM: 0, sourceVoie: 'PLU de Nanterre, UC 6-1', limiteSeparativePermise: false, note: null });
+  assert.deepEqual(lu, { reculVoieM: 0, sourceVoie: 'PLU de Nanterre, UC 6-1', limiteSeparativePermise: false, note: null, motifVoie: 'regle' });
   // Recul POSITIF : il passe par les règles du volume (reglesVolume), pas par l'implantation.
   assert.equal(implantationDesRegles(lireRegles([{ cle: 'recul_voie_m', valeur: 5, statut: 'confirme', source: 'PLU', article: 'UA 6' }])).reculVoieM, null);
   // Présentation du lot C9 (« sur limite séparative ou en retrait ») : signalée, jamais déduite d'autre chose.
   const c9 = implantationDesRegles(lireRegles([{ cle: 'recul_limites_m', valeur: 0, statut: 'confirme', source: SRC, article: 'indice 1, p. 208', nature: 'alternative',
     alternatives: [{ libelle: 'sur limite séparative', valeur: 0 }, { libelle: 'en retrait, minimum cité', valeur: 3 }] }]));
   assert.equal(c9.limiteSeparativePermise, true);
+  assert.equal(c9.sourceLimites, 'Règlement GPU — PLUi Est Ensemble, indice 1, p. 208');
   assert.equal(implantationDesRegles(lireRegles(LIMITES_LUES)).limiteSeparativePermise, false);
+  // Lot C11 : la même lecture seulement ESTIMÉE, ou sans article → non transmise au moteur, et la raison est dite.
+  const c9estimee = implantationDesRegles(lireRegles([{ cle: 'recul_limites_m', valeur: 0, statut: 'estime', source: SRC, article: 'indice 1, p. 208', nature: 'alternative',
+    alternatives: [{ libelle: 'sur limite séparative', valeur: 0 }, { libelle: 'en retrait, minimum cité', valeur: 3 }] }]));
+  assert.equal(c9estimee.limiteSeparativePermise, false);
+  assert.match(c9estimee.noteLimites!, /^Implantation en limite séparative lue mais non confirmée \(règle estimée\) .* non appliquée, retrait conservé/);
 });
 
 test('B — reculsRetenus : hors bande aucun recul différencié ; dans la bande, voie établie par une règle chiffrée ou par l’implantation lue', () => {
@@ -161,24 +174,28 @@ test('B — reculsRetenus : hors bande aucun recul différencié ; dans la bande
   assert.equal(reculsRetenus([regle('recul_limites_m', 3)], { reculVoieM: null }).voieM, null);
 });
 
-test('B — Montreuil, règles RÉELLEMENT lues (essai 5) : recul à la voie non chiffré → recul uniforme d’origine, et l’hypothèse le dit', () => {
+test('B — Montreuil, règles de l’essai 5 (voie « non réglementée », limites 3 m + H/2) : alignement retenu côté voie (lot C11), H/2 aux autres limites', () => {
   for (const n of [30, 40]) {
     const v = volumeEnBande(REGLES_LUES, prog(`${n} logements`));
     assert.equal(v.bande?.statut, 'appliquee');
-    assert.equal(v.bande?.reculVoieM, undefined, 'pas de recul différencié');
-    assert.match(v.hypotheses[0], /^Recul de 4,5 m sur toutes les limites, côté voie compris : le plus fort des reculs PLU \(recul à la voie et reculs aux limites non différenciés\)\.$/);
-    assert.ok(v.hypotheses.includes('Recul à la voie non réglementé (Règlement GPU — PLUi Est Ensemble, indice 9, p. 200) : aucune valeur chiffrée lue — alignement non supposé, recul prudent conservé côté voie.'));
-    // Chiffres obtenus : 13 × 13,5 m = 175,5 m², R+2, 527 m² de SDP, 7 logements (recul H/2 = 4,5 m partout).
-    assert.deepEqual(v.batiments!.map(b => [b.largeurM, b.profondeurM, b.niveaux]), [[13, 13.5, 3]]);
-    assert.deepEqual([v.kpi!.empriseTotaleM2, v.sdpM2, v.logementsEstimes, v.reculM], [176, 527, 7, 4.5]);
-    const g = verifierGrille(v, COTE, { reculVoieM: 4.5, reculLimitesM: 4.5, profondeurM: 18 });
-    assert.ok(g.emprise <= PLAFOND && g.minVoie >= 4.48, JSON.stringify(g));
-    // Résultat identique à celui d'une bande passée SANS implantation, aux lignes d'hypothèses près.
+    // Lot C11 : « non réglementé », confirmé et cité → alignement retenu. Aucune implantation en limite dans ces règles (3 m lus comme un minimum).
+    assert.equal(v.bande?.reculVoieM, 0);
+    assert.equal(v.bande?.reculLateralM, undefined);
+    assert.match(v.hypotheses[0], /^Côté voie : implantation à l’alignement \(recul 0 m\) RETENUE par le volume d’étude, le recul sur voie n’étant pas réglementé \(Règlement GPU — PLUi Est Ensemble, indice 9, p\. 200\) ; recul de 6 m aux autres limites/);
+    assert.ok(v.hypotheses.includes('Recul sur voie non réglementé (indice 9, p. 200) : alignement retenu ; aucune règle complémentaire lue ; implantation réelle à vérifier sur place.'));
+    // Mêmes bâtiments qu'avec la valeur d'essai « alignement lu » du lot C10 : 10,5 × 16 m, R+3, 9 logements.
+    const essai = volumeEnBande(REGLES_ESSAI, prog(`${n} logements`));
+    assert.deepEqual(v.batiments, essai.batiments);
+    assert.deepEqual(v.batiments!.map(b => [b.largeurM, b.profondeurM, b.niveaux]), [[10.5, 16, 4]]);
+    assert.deepEqual([v.kpi!.empriseTotaleM2, v.sdpM2, v.logementsEstimes, v.reculM], [168, 672, 9, 6]);
+    const g = verifierGrille(v, COTE, { reculVoieM: 0, reculLimitesM: 6, profondeurM: 18 });
+    assert.ok(g.emprise <= PLAFOND && g.minVoie < 0.5, JSON.stringify(g));
+    // Sans implantation fournie (bande seule) : recul uniforme d'origine du lot C10, 13 × 13,5 m en R+2 — le comportement prudent n'a pas changé.
     const rv = reglesVolume(lireRegles(REGLES_LUES), null, BANDES, { implantationDansBande: true });
     const sans = calculerVolumeProgramme(PARCELLE, prog(`${n} logements`), rv, { cote: COTE, profondeurM: 18, empriseMaxM2: PLAFOND });
-    assert.deepEqual(v.batiments, sans.batiments);
-    assert.deepEqual(v.bande, sans.bande);
-    assert.deepEqual(v.hypotheses.filter(h => !/^Recul à la voie non réglementé/.test(h)), sans.hypotheses);
+    assert.deepEqual(sans.batiments!.map(b => [b.largeurM, b.profondeurM, b.niveaux]), [[13, 13.5, 3]]);
+    assert.deepEqual([sans.kpi!.empriseTotaleM2, sans.sdpM2, sans.logementsEstimes, sans.reculM], [176, 527, 7, 4.5]);
+    assert.equal(sans.bande?.reculVoieM, undefined);
   }
 });
 
@@ -213,18 +230,20 @@ test('B — Montreuil, VALEUR D’ESSAI sans recul aux limites lu : alignement c
   assert.match(v.hypotheses[0], /recul de 4 m aux autres limites \(valeur par défaut : recul aux limites séparatives non lu\)/);
 });
 
-test('B — « implantation en limite séparative permise » : paramètre accepté, NON appliqué, et c’est dit', () => {
+test('B — « implantation en limite séparative permise » : APPLIQUÉE aux limites latérales depuis le lot C11 (détail dans implantationLimite.test.ts)', () => {
   const regles = lireRegles(REGLES_ESSAI);
   const rv = reglesVolume(regles, null, BANDES, { implantationDansBande: true });
   const base: BandeVoie = { cote: COTE, profondeurM: 18, empriseMaxM2: PLAFOND, implantation: implantationDesRegles(regles) };
   const sans = calculerVolumeProgramme(PARCELLE, prog('30 logements'), rv, base);
   const avec = calculerVolumeProgramme(PARCELLE, prog('30 logements'), rv, { ...base, implantation: { ...base.implantation, limiteSeparativePermise: true } });
-  assert.deepEqual(avec.batiments, sans.batiments);
-  assert.equal(avec.reculM, sans.reculM);
-  const ligne = 'Implantation en limite séparative permise selon la règle lue : NON appliquée dans ce volume d’étude (retrait conservé sur les limites autres que la voie), ce qui peut sous-estimer l’emprise possible.';
-  assert.ok(avec.hypotheses.includes(ligne) && !sans.hypotheses.includes(ligne));
-  // Volume unique (sans programme détaillé) : même ligne.
-  assert.ok(calculerVolumeParcelle(PARCELLE, { logements: 30, libelle: null, origine: 'fiche' }, rv, { ...base, implantation: { reculVoieM: 0, limiteSeparativePermise: true } }).hypotheses.includes(ligne));
+  assert.equal(sans.bande?.reculLateralM, undefined);
+  assert.equal(avec.bande?.reculLateralM, 0);
+  assert.ok(avec.kpi!.empriseTotaleM2 > sans.kpi!.empriseTotaleM2 && avec.kpi!.empriseTotaleM2 <= PLAFOND, `${avec.kpi!.empriseTotaleM2} m² avec, ${sans.kpi!.empriseTotaleM2} m² sans`);
+  assert.match(avec.hypotheses[0], /limites latérales \(celles qui partent de la voie\) : implantation en limite séparative permise par la règle lue/);
+  assert.ok(!avec.hypotheses.some(h => /NON appliquée/.test(h)));
+  // Volume unique (sans programme détaillé) : appliquée aussi.
+  const unique = calculerVolumeParcelle(PARCELLE, { logements: 30, libelle: null, origine: 'fiche' }, rv, { ...base, implantation: { reculVoieM: 0, limiteSeparativePermise: true } });
+  assert.equal(unique.bande?.reculLateralM, 0);
 });
 
 test('B — une valeur de recul à la voie illisible ou hors bornes n’est jamais appliquée', () => {
@@ -346,7 +365,13 @@ test('B — contrôles : distances MESURÉES à la voie et aux autres limites, c
   const lues = volumeEnBande(REGLES_LUES, prog('30 logements'));
   const cl = Object.fromEntries(controlerVolume(lues, lireRegles(REGLES_LUES), lues.logementsEstimes).map(x => [x.cle, x]));
   assert.equal(cl.recul_voie_m.regle, 'non réglementé (Règlement GPU — PLUi Est Ensemble, indice 9, p. 200)');
-  assert.match(cl.recul_voie_m.explication, /^Recul à la voie non réglementé \(indice 9, p\. 200\) : aucun minimum chiffré à respecter\. Le volume d’étude n’en déduit pas l’implantation à l’alignement : il garde 4,5 m côté voie\./);
+  // Lot C11 : l'alignement est retenu, et le contrôle le dit avec la distance mesurée.
+  assert.match(cl.recul_voie_m.explication, /^Recul à la voie non réglementé \(indice 9, p\. 200\) : aucun minimum chiffré à respecter\. Le volume d’étude retient l’implantation à l’alignement \(0,25 m mesuré côté voie\)\./);
+  assert.equal(cl.recul_voie_m.verdict, 'dans_la_limite');
+  // Sans côté voie (calcul prudent) : le texte du lot C10 reste — l'alignement n'est pas déduit.
+  const prudent = calculerVolumeProgramme(PARCELLE, prog('30 logements'), reglesVolume(lireRegles(REGLES_LUES), null, null));
+  const cp = Object.fromEntries(controlerVolume(prudent, lireRegles(REGLES_LUES), prudent.logementsEstimes).map(x => [x.cle, x]));
+  assert.match(cp.recul_voie_m.explication, /Le volume d’étude n’en déduit pas l’implantation à l’alignement : il garde/);
   // Volume modifié (bâtiment poussé de 5,5 m le long de la voie) : la mesure le voit, quelle que soit la valeur déclarée.
   const b = essai.batiments![0];
   const a = b.angleDeg * Math.PI / 180, du = { x: Math.cos(a) * 5.5, y: Math.sin(a) * 5.5 };

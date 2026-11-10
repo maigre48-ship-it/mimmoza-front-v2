@@ -33,21 +33,29 @@ const prete = (r: IssuePreparation): Prete => { na.ok(r.ok, r.ok ? '' : r.raison
 const controle = (r: Prete, cle: string) => r.resume.controles.find((k) => k.cle === cle)!;
 
 Deno.test('C10-1 : la version du calcul est incrémentée (le volume d’une même conception peut changer)', () => {
-  na.equal(VERSION_CALCUL, 'e1-studio-2');
+  // Lot C11 : incrémentée de nouveau (alignement retenu pour un recul sur voie non réglementé, implantation en limite).
+  na.equal(VERSION_CALCUL, 'e1-studio-3');
 });
 
-Deno.test('C10-2 : Montreuil, règles réellement lues — voie « non réglementée » : recul uniforme, alignement NON supposé, et c’est dit', async () => {
+Deno.test('C10-2 : Montreuil, règles de l’essai 5 — voie « non réglementée » confirmée et citée : alignement RETENU depuis le lot C11, et c’est dit', async () => {
   const r = prete(await preparerVolume(conception(30, [...PAR_BANDE, VOIE_LUE, ...LIMITES_LUES])));
   na.equal(r.volume.bande?.statut, 'appliquee');
-  na.equal(r.volume.bande?.reculVoieM, undefined);
-  na.deepEqual([r.resume.emprise_batie_m2, r.resume.niveaux, r.resume.sdp_estimee_m2, r.resume.logements_places, r.resume.recul_applique_m], [176, 3, 527, 7, 4.5]);
-  na.ok(r.resume.hypotheses.includes('Recul à la voie non réglementé (Règlement GPU — PLUi Est Ensemble, indice 9, p. 200) : aucune valeur chiffrée lue — alignement non supposé, recul prudent conservé côté voie.'));
-  na.match(r.resume.hypotheses[0], /^Recul de 4,5 m sur toutes les limites, côté voie compris/);
+  // Lot C11 (décision du 10/11/2026) : même volume qu'avec la valeur d'essai « alignement lu » (C10-3). Les limites de l'essai 5 (3 m, H/2) restent un retrait.
+  na.deepEqual([r.volume.bande?.reculVoieM, r.volume.bande?.reculLimitesM, r.volume.bande?.reculLateralM], [0, 6, undefined]);
+  na.deepEqual([r.resume.emprise_batie_m2, r.resume.niveaux, r.resume.sdp_estimee_m2, r.resume.logements_places, r.resume.recul_applique_m], [168, 4, 672, 9, 6]);
+  na.ok(r.resume.hypotheses.includes('Recul sur voie non réglementé (indice 9, p. 200) : alignement retenu ; aucune règle complémentaire lue ; implantation réelle à vérifier sur place.'));
+  na.match(r.resume.hypotheses[0], /^Côté voie : implantation à l’alignement \(recul 0 m\) RETENUE par le volume d’étude, le recul sur voie n’étant pas réglementé/);
   const m = mesurerReculsVolume(r.volume)!;
-  na.ok(m.voieM >= 4.48 && m.limitesM! >= 4.48, JSON.stringify(m));
+  na.ok(m.voieM < 0.5 && m.limitesM! >= 5.98, JSON.stringify(m));
   const voie = controle(r, 'recul_voie_m');
   na.equal(voie.regle, 'non réglementé (Règlement GPU — PLUi Est Ensemble, indice 9, p. 200)');
-  na.match(voie.explication, /n’en déduit pas l’implantation à l’alignement/);
+  na.match(voie.explication, /Le volume d’étude retient l’implantation à l’alignement/);
+  // « Non réglementé » seulement ESTIMÉ : comportement prudent du lot C10, inchangé (recul uniforme, 7 logements).
+  const e = prete(await preparerVolume(conception(30, [...PAR_BANDE, { ...VOIE_LUE, statut: 'estime' }, ...LIMITES_LUES])));
+  na.equal(e.volume.bande?.reculVoieM, undefined);
+  na.deepEqual([e.resume.emprise_batie_m2, e.resume.niveaux, e.resume.sdp_estimee_m2, e.resume.logements_places, e.resume.recul_applique_m], [176, 3, 527, 7, 4.5]);
+  na.match(e.resume.hypotheses[0], /^Recul de 4,5 m sur toutes les limites, côté voie compris/);
+  na.match(controle(e, 'recul_voie_m').explication, /n’en déduit pas l’implantation à l’alignement/);
 });
 
 Deno.test('C10-3 : Montreuil, VALEUR D’ESSAI — recul à la voie supposé lu à 0 m : alignement côté voie, H/2 aux autres limites', async () => {
@@ -87,7 +95,7 @@ Deno.test('C10-5 : sans parcelles voisines (côté voie non situé) — plafond 
   na.match(controle(r, 'hauteur_max_m').regle!, /^13,5 m max\. \(valeur la plus contraignante des bandes\)/);
 });
 
-Deno.test('C10-6 : lecture RÉELLE du lot C9 (« Sur les limites séparatives ou en retrait », indice 1, p. 208) — permission signalée, retrait conservé', async () => {
+Deno.test('C10-6 : lecture RÉELLE du lot C9 (« Sur les limites séparatives ou en retrait », indice 1, p. 208) — permission APPLIQUÉE aux limites latérales depuis le lot C11', async () => {
   // Le lot C9 corrige la lecture dans conception.ts (fichier que ce lot ne modifie pas). S'il n'est pas dans la base, rien à vérifier ici.
   const c9 = await import('./conception.ts') as unknown as { reglesDepuisLecture?: (lecture: unknown, origine: string, source: string) => { cle: string; valeur: unknown }[]; LIBELLE_SUR_LIMITE?: string };
   if (typeof c9.reglesDepuisLecture !== 'function' || typeof c9.LIBELLE_SUR_LIMITE !== 'string') return;
@@ -98,11 +106,13 @@ Deno.test('C10-6 : lecture RÉELLE du lot C9 (« Sur les limites séparatives ou
   ] }, 'gpu', SRC);
   na.equal(lues.find((x) => x.cle === 'recul_limites_m')!.valeur, 0);
   const r = prete(await preparerVolume(conception(30, [...PAR_BANDE, VOIE_LUE, ...lues])));
-  // Le moteur NE construit PAS en limite (donnée pas encore tenue pour fiable) : retrait H/2, minimum 3 m, partout — et il le dit.
+  // Lot C11 : la règle lue par le lot C9 est confirmée et citée → le moteur construit contre les limites latérales
+  // (jamais contre le fond), à l'alignement (voie non réglementée, citée). Détail : implantation-limite.test.ts.
   na.equal(r.volume.bande?.statut, 'appliquee');
-  na.deepEqual([r.resume.emprise_batie_m2, r.resume.niveaux, r.resume.recul_applique_m], [176, 3, 4.5]);
-  na.ok(r.resume.hypotheses.includes('Implantation en limite séparative permise selon la règle lue : NON appliquée dans ce volume d’étude (retrait conservé sur les limites autres que la voie), ce qui peut sous-estimer l’emprise possible.'));
-  na.match(r.resume.regles_non_appliquees.join(' | '), /recul_limites_m : 0 m \(implantation en limite séparative permise\) — non appliqué : le volume garde un retrait sur les limites séparatives/);
+  na.deepEqual([r.volume.bande?.reculVoieM, r.volume.bande?.reculLateralM], [0, 0]);
+  na.deepEqual([r.resume.emprise_batie_m2, r.resume.niveaux, r.resume.logements_places, r.resume.programme_atteint, r.resume.recul_applique_m], [367, 6, 30, true, 9]);
+  na.match(r.resume.hypotheses[0], /limites latérales \(celles qui partent de la voie\) : implantation en limite séparative permise par la règle lue \(Règlement GPU — PLUi Est Ensemble, indice 1, p\. 208\) — 2 sur 2 touchées/);
+  na.match(r.resume.regles_non_appliquees.join(' | '), /recul_limites_m : 0 m \(implantation en limite séparative permise\) — appliqué aux limites latérales dans la bande principale seulement si la règle est confirmée et citée/);
   const m = mesurerReculsVolume(r.volume)!;
-  na.ok(m.limitesM! >= 4.48, JSON.stringify(m));
+  na.ok(m.limitesM! >= 8.98 && m.laterales!.every((l) => l.distancesM.every((d) => d <= 0.05)), JSON.stringify(m));
 });

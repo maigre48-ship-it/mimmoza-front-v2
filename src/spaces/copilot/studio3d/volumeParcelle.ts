@@ -36,9 +36,16 @@
 // `bande.implantation.reculVoieM`), il s'applique aux limites présumées sur voie, et le recul aux limites
 // séparatives à toutes les autres. Recul à la voie non établi : recul uniforme d'origine, côté voie compris, et
 // l'hypothèse affichée le dit. L'alignement n'est jamais supposé.
+//
+// Lot C11 (seulement quand la bande est appliquée et les limites sur voie retrouvées sur le contour) :
+//   · recul sur voie « non réglementé » (règle confirmée et citée) : l'appelant passe `implantation.reculVoieM = 0`
+//     avec `motifVoie: 'non_reglementee'` ; le volume retient l'ALIGNEMENT et l'écrit dans les hypothèses ;
+//   · implantation en limite séparative permise (`implantation.limiteSeparativePermise`) : le volume peut venir
+//     contre les limites LATÉRALES (marquerSegmentsLateraux). Chaque limite latérale est soit touchée, soit tenue à
+//     distance du retrait (formule H/k) : jamais entre les deux. Le retrait reste dû sur le fond de parcelle.
 
 import type { JarvisDraft } from './jarvisDraft.ts';
-import { distanceVoie, marquerSegmentsVoie, preparerBande, rectangleDansBande, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
+import { CONTACT_LIMITE_M, distanceVoie, lateralesAdmises, marquerSegmentsLateraux, marquerSegmentsVoie, preparerBande, rectangleDansBande, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
 
 export type { BandeVoie, BandeVolume, ImplantationVoie } from './bandePrincipale.ts';
 
@@ -368,12 +375,22 @@ export function orientationParcelle(anneau: PointLocal[]): number {
   return meilleur.angle;
 }
 
-export interface Rect { cu: number; cv: number; w: number; d: number }
+export interface Rect {
+  cu: number; cv: number; w: number; d: number;
+  /**
+   * Lot C11 : côté(s) du rectangle posé(s) CONTRE une limite latérale (u bas : 'g', u haut : 'd', les deux : 'gd').
+   * Un rectangle ancré ne se réduit que du côté libre (jamais en s'écartant de la limite qu'il touche) ; ancré des
+   * deux côtés, sa largeur ne change plus. Absent : rectangle en retrait, réduit autour de son centre comme avant.
+   */
+  ancre?: 'g' | 'd' | 'gd';
+}
 
 export interface Segment {
   a: PointLocal; b: PointLocal; x0: number; x1: number; y0: number; y1: number;
   /** Lot C10 : limite présumée sur voie (posé par marquerSegmentsVoie) ; absent = limite ordinaire. */
   voie?: boolean;
+  /** Lot C11 : limite LATÉRALE, numéro du côté (posé par marquerSegmentsLateraux) ; absent = fond ou autre limite. */
+  laterale?: number;
 }
 export const segmentsDe = (anneaux: PointLocal[][]): Segment[] => anneaux.flatMap(anneau => anneau.map((a, i) => {
   const b = anneau[(i + 1) % anneau.length];
@@ -384,15 +401,21 @@ export const segmentsDe = (anneaux: PointLocal[][]): Segment[] => anneaux.flatMa
  * Le rectangle (repère tourné u, v) tient-il à ≥ recul de toutes les limites ?
  * Lot C10 : `reculVoie` (facultatif) remplace `recul` pour les segments marqués `voie` (limites présumées sur
  * voie) ; sans ce paramètre, ou sans segment marqué, le test est celui d'origine.
+ * Lot C11 : `reculLateral` (facultatif ; une valeur, ou une par côté) remplace `recul` pour les segments marqués `laterale`. Ce test dit
+ * seulement que le rectangle reste DANS la parcelle à ces distances ; la règle « en limite OU en retrait » des
+ * limites latérales se vérifie en plus (distancesLaterales + lateralesAdmises).
  */
-export function rectTient(anneaux: PointLocal[][], segments: Segment[], r: Rect, recul: number, reculVoie?: number): boolean {
+export function rectTient(anneaux: PointLocal[][], segments: Segment[], r: Rect, recul: number, reculVoie?: number, reculLateral?: number | readonly number[]): boolean {
   const x0 = r.cu - r.w / 2, x1 = r.cu + r.w / 2, y0 = r.cv - r.d / 2, y1 = r.cv + r.d / 2;
   if (!dansPolygone(anneaux, x0, y0)) return false;
   const coins = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
   const margeLimites = Math.max(recul, 1e-6);
   const margeVoie = reculVoie === undefined ? margeLimites : Math.max(reculVoie, 1e-6);
+  /** Marge d'un côté latéral : une valeur pour tous, ou une par côté (indice = numéro du côté − 1). */
+  const margeLaterale = (cote: number) => reculLateral === undefined ? margeLimites
+    : Math.max(typeof reculLateral === 'number' ? reculLateral : reculLateral[cote - 1] ?? recul, 1e-6);
   for (const s of segments) {
-    const marge = s.voie ? margeVoie : margeLimites;
+    const marge = s.voie ? margeVoie : s.laterale !== undefined ? margeLaterale(s.laterale) : margeLimites;
     // Segment loin du rectangle (boîtes englobantes) : rien à vérifier.
     if (s.x1 < x0 - marge || s.x0 > x1 + marge || s.y1 < y0 - marge || s.y0 > y1 + marge) continue;
     // Sommet de la parcelle (ou d'un trou) dans le rectangle : rectangle refusé.
@@ -400,6 +423,21 @@ export function rectTient(anneaux: PointLocal[][], segments: Segment[], r: Rect,
     for (let k = 0; k < 4; k++) if (distSegments(coins[k], coins[(k + 1) % 4], s.a, s.b) < marge) return false;
   }
   return true;
+}
+
+/**
+ * Lot C11 — distance du rectangle à chaque côté latéral (`cotes` côtés numérotés de 1 à `cotes` dans `segments`),
+ * dans le repère des segments. À passer à lateralesAdmises.
+ */
+export function distancesLaterales(segments: readonly Segment[], r: Rect, cotes: number): number[] {
+  const x0 = r.cu - r.w / 2, x1 = r.cu + r.w / 2, y0 = r.cv - r.d / 2, y1 = r.cv + r.d / 2;
+  const coins = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  const out = Array.from({ length: cotes }, () => Infinity);
+  for (const s of segments) {
+    if (s.laterale === undefined || s.laterale > cotes) continue;
+    for (let k = 0; k < 4; k++) out[s.laterale - 1] = Math.min(out[s.laterale - 1], distSegments(coins[k], coins[(k + 1) % 4], s.a, s.b));
+  }
+  return out;
 }
 
 /** Plus grand rectangle orienté (épaisseur ≤ max) à distance ≥ recul des limites ; grille de centres fixe. */
@@ -437,11 +475,15 @@ function plusGrandRectangle(anneaux: PointLocal[][], recul: number, epaisseurMax
  * des limites ET entièrement dans la bande principale. Grille de départs fixe, donc déterministe ; à surface
  * égale, le rectangle le plus proche de la voie.
  */
-function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisseurMax: number, coteMin: number, facades: FacadeLocale[], profondeurM: number, reculVoie?: number): Rect | null {
+function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisseurMax: number, coteMin: number, facades: FacadeLocale[], profondeurM: number, reculVoie?: number,
+  /** Lot C11 : implantation en limite latérale permise ; `capM2` : emprise maximale (le rectangle rendu la respecte déjà). */
+  enLimite?: { capM2: number } | null): Rect | null {
   const segments = segmentsDe(anneaux);
   // Lot C10 : recul différencié seulement si chaque façade sur voie est retrouvée sur le contour ; sinon recul uniforme.
   const differencie = reculVoie !== undefined && marquerSegmentsVoie(segments, facades);
-  const rVoie = differencie ? reculVoie as number : recul, rMin = Math.min(recul, rVoie);
+  // Lot C11 : limites latérales retrouvées sur le contour → recherche « en limite ou en retrait » (ci-dessous).
+  const cotes = enLimite ? marquerSegmentsLateraux(segments, anneaux[0].length, facades) : 0;
+  const rVoie = differencie ? reculVoie as number : recul, rMin = cotes ? 0 : Math.min(recul, rVoie);
   const us = anneaux[0].map(p => p.x), vs = anneaux[0].map(p => p.y);
   const fu = facades.flatMap(f => [f.a.x, f.b.x]), fv = facades.flatMap(f => [f.a.y, f.b.y]);
   // Zone utile : la parcelle moins le recul, réduite à ce qui peut être à moins de `profondeurM` d'une façade.
@@ -450,13 +492,28 @@ function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisse
   const largeurMax = u1 - u0, hauteurMax = v1 - v0;
   if (largeurMax < coteMin || hauteurMax < coteMin) return null;
   // Épaisseurs essayées : celles du calcul habituel, et la profondeur de bande moins le recul côté voie (à 0,5 m et 1 m près).
-  const epaisseurs = [...new Set([epaisseurMax, epaisseurMax * 0.75, epaisseurMax * 0.5, profondeurM - rVoie, profondeurM - rVoie - 0.5, profondeurM - rVoie - 1]
+  const habituelles = [epaisseurMax, epaisseurMax * 0.75, epaisseurMax * 0.5, profondeurM - rVoie, profondeurM - rVoie - 0.5, profondeurM - rVoie - 1];
+  // Lot C11, en limite : un bâtiment de limite à limite ne passe sous le plafond d'emprise qu'à une épaisseur
+  // précise — on ajoute les épaisseurs proches du maximum (pas de 0,5 m sur 4 m) et celles qui mettent une largeur
+  // égale à la façade sous le plafond (à ± 1 m).
+  const candidates = cotes && enLimite ? [...habituelles, ...epaisseursEnLimite(epaisseurMax, enLimite.capM2, facades)] : habituelles;
+  const epaisseurs = [...new Set(candidates
     .map(e => arrondiInf(Math.min(e, epaisseurMax, hauteurMax))).filter(e => e >= coteMin))].sort((a, b) => b - a);
-  const tient = (r: Rect) => {
-    if (!rectTient(anneaux, segments, r, recul, differencie ? rVoie : undefined)) return false;
+  const tient = (r: Rect, lateral?: readonly number[]) => {
+    if (!rectTient(anneaux, segments, r, recul, differencie ? rVoie : undefined, lateral)) return false;
     const x0 = r.cu - r.w / 2, x1 = r.cu + r.w / 2, y0 = r.cv - r.d / 2, y1 = r.cv + r.d / 2;
     return rectangleDansBande([{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }], facades, profondeurM);
   };
+  // Lot C11 : chaque côté latéral est à gauche (u bas) ou à droite (u haut) du côté voie. Deux côtés du même bord,
+  // ou plus de deux côtés : cas non traité, le retrait est gardé partout (cotesG null).
+  const milieuFacades = fu.reduce((a, b) => a + b, 0) / fu.length;
+  const gauches = Array.from({ length: cotes }, (_, i) => {
+    const us2 = segments.filter(s => s.laterale === i + 1).flatMap(s => [s.a.x, s.b.x]);
+    return us2.reduce((a, b) => a + b, 0) / us2.length < milieuFacades;
+  });
+  const cotesG: boolean[] | null = cotes >= 1 && cotes <= 2 && (cotes === 1 || gauches[0] !== gauches[1]) ? gauches : null;
+  /** Marges tenues aux limites latérales : `mG` au côté gauche, `mD` au côté droit (0 : contact permis ; `recul` : retrait). */
+  const tientCotes = (r: Rect, mG: number, mD: number) => tient(r, (cotesG ?? []).map(gauche => gauche ? mG : mD));
   // Le plus loin que le bord peut aller (de `depuis` vers `jusque`) sans que le rectangle cesse de tenir.
   const pousser = (depuis: number, jusque: number, essai: (bord: number) => boolean) => {
     if (essai(jusque)) return jusque;
@@ -468,6 +525,7 @@ function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisse
   // vers la gauche puis vers la droite (le rectangle n'est pas forcément centré sur son départ).
   const NU = Math.max(3, Math.min(25, Math.ceil(largeurMax / 2))), NV = Math.max(3, Math.min(120, Math.ceil(hauteurMax / 0.25)));
   let meilleur: Rect | null = null, distanceMeilleur = Infinity;
+  const rangeesVues = new Set<string>();
   for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
     const su = u0 + largeurMax * (i + 0.5) / NU, cv = v0 + hauteurMax * (j + 0.5) / NV;
     if (distanceVoie({ x: su, y: cv }, facades) > profondeurM || !dansPolygone(anneaux, su, cv)) continue;
@@ -476,6 +534,45 @@ function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisse
       const entre = (g: number, dr: number): Rect => ({ cu: (g + dr) / 2, cv, w: dr - g, d });
       // Départ : le plus petit rectangle admis, calé sur le départ et ramené dans la zone utile.
       const g0 = Math.max(u0, Math.min(su - coteMin / 2, u1 - coteMin));
+      if (cotesG !== null && enLimite) {
+        // Lot C11 — « en limite OU en retrait » : de chaque côté, le rectangle est poussé soit jusqu'au contact de la
+        // limite latérale (marge 0), soit jusqu'au retrait ; les quatre combinaisons sont essayées. Un bord au contact
+        // est gardé tel quel (pas d'arrondi qui le décollerait) ; seul un bord libre est arrondi ou ramené sous le plafond.
+        if (!tientCotes(entre(g0, g0 + coteMin), 0, 0)) continue;
+        // Une même rangée (profondeur, épaisseur) donne les mêmes rectangles quel que soit le départ : un seul départ par rangée.
+        const rangee = `${j}:${d}`;
+        if (rangeesVues.has(rangee)) continue;
+        rangeesVues.add(rangee);
+        for (const mG of [0, recul]) {
+          if (!tientCotes(entre(g0, g0 + coteMin), mG, 0)) continue;
+          const g = pousser(g0, u0, x => tientCotes(entre(x, g0 + coteMin), mG, 0));
+          for (const mD of [0, recul]) {
+            if (!tientCotes(entre(g, g + coteMin), mG, mD)) continue;
+            const dr = pousser(g + coteMin, u1, x => tientCotes(entre(g, x), mG, mD));
+            if (dr - g < coteMin - 1e-9) continue;
+            const dl = distancesLaterales(segments, entre(g, dr), cotes);
+            const contact = (cote: 'g' | 'd') => cotesG.some((gauche, i) => gauche === (cote === 'g') && dl[i] <= CONTACT_LIMITE_M);
+            const aG = contact('g'), aD = contact('d');
+            let r: Rect;
+            if (aG && aD) {
+              // De limite à limite : largeur gardée (au centimètre inférieur, le contact reste dans la tolérance).
+              const w = Math.floor((dr - g) * 100) / 100;
+              if (w * d > enLimite.capM2 + 1e-6) continue;
+              r = { cu: (g + dr) / 2, cv, w, d, ancre: 'gd' };
+            }
+            else {
+              const w = arrondiInf(Math.min(dr - g, enLimite.capM2 / d));
+              if (w < coteMin) continue;
+              r = aD && !aG ? { ...entre(dr - w, dr), ancre: 'd' } : aG ? { ...entre(g, g + w), ancre: 'g' } : entre(g, g + w);
+            }
+            if (!tientCotes(r, 0, 0) || !lateralesAdmises(distancesLaterales(segments, r, cotes), recul)) continue;
+            const distance = distanceVoie({ x: r.cu, y: r.cv }, facades);
+            const aire = r.w * d, aireMeilleur = meilleur ? meilleur.w * meilleur.d : -1;
+            if (aire > aireMeilleur + 1e-6 || (Math.abs(aire - aireMeilleur) <= 1e-6 && distance < distanceMeilleur - 1e-9)) { meilleur = r; distanceMeilleur = distance; }
+          }
+        }
+        continue;
+      }
       if (!tient(entre(g0, g0 + coteMin))) continue;
       const gauche = pousser(g0, u0, g => tient(entre(g, g0 + coteMin)));
       const droite = pousser(g0 + coteMin, u1, dr => tient(entre(gauche, dr)));
@@ -488,6 +585,17 @@ function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisse
     }
   }
   return meilleur;
+}
+
+/**
+ * Lot C11 — épaisseurs supplémentaires essayées quand un bâtiment peut aller d'une limite latérale à l'autre :
+ * les demi-mètres sous l'épaisseur maximale (sur 4 m), et autour de plafond d'emprise / longueur de façade (± 1 m).
+ */
+export function epaisseursEnLimite(epaisseurMax: number, capM2: number | null, facades: readonly FacadeLocale[]): number[] {
+  const out = Array.from({ length: 9 }, (_, i) => epaisseurMax - 0.5 * i);
+  const facade = facades.reduce((s, f) => s + Math.hypot(f.b.x - f.a.x, f.b.y - f.a.y), 0);
+  if (capM2 !== null && capM2 > 0 && facade > 0) { const e = capM2 / facade; out.push(e + 1, e + 0.5, e, e - 0.5, e - 1); }
+  return out;
 }
 
 /** Normalise un ratio PLU : seuls les ratios entre 0 et 1 sont acceptés (40 → refusé, comme ailleurs dans l'app). */
@@ -539,6 +647,8 @@ export interface ReculsRetenus {
   voieM: number | null;
   /** D'où vient `voieM` : règle chiffrée des règles du volume, ou implantation fournie par l'appelant. */
   origineVoie: 'regle' | 'implantation' | null;
+  /** Lot C11 : implantation en limite séparative permise par la règle lue (fournie par l'appelant avec la bande). */
+  enLimite: boolean;
 }
 
 /**
@@ -546,7 +656,7 @@ export interface ReculsRetenus {
  * bande → `voieM` null, donc aucun recul différencié. Le recul à la voie n'est établi que par une règle chiffrée
  * `recul_voie_m` ou par `implantation.reculVoieM` (valeur lue, 0 = alignement) ; si les deux existent, le plus fort.
  */
-export function reculsRetenus(regles: readonly ReglePlu[], implantation: { reculVoieM: number | null } | null): ReculsRetenus {
+export function reculsRetenus(regles: readonly ReglePlu[], implantation: { reculVoieM: number | null; limiteSeparativePermise?: boolean } | null): ReculsRetenus {
   const H = HYPOTHESES_VOLUME;
   const valides = regles.filter(regleValide);
   const max = (cle: CleReglePlu) => { const l = valides.filter(r => r.cle === cle); return l.length ? Math.max(...l.map(r => r.valeur)) : null; };
@@ -563,6 +673,7 @@ export function reculsRetenus(regles: readonly ReglePlu[], implantation: { recul
     reculConnu, uniformePour, limitesLues,
     limitesPour: (h: number) => limitesLues ? Math.max(limites ?? 0, parFormule(h)) : uniformePour(h),
     voieM, origineVoie: voieM === null ? null : lue !== null && lue >= (voieRegle ?? 0) ? 'implantation' : 'regle',
+    enLimite: !!implantation && implantation.limiteSeparativePermise === true,
   };
 }
 
@@ -593,7 +704,21 @@ export function calculerVolumeParcelle(
   const prep = preparerBande(bande, proj.origine, proj.anneaux[0], H.coteMinM);
   if (!prep.ok) return sansBande(prep.raison);
   const b = prep.bande;
-  const v = calculerVolume(geometrie, programme, regles, b);
+  // Lot C11 — implantation en limite séparative permise : d'abord le volume EN RETRAIT de toutes les limites
+  // séparatives (calcul du lot C10, inchangé). L'implantation en limite n'est utilisée que si le programme n'y
+  // tient pas (ou s'il est inconnu), et gardée seulement si elle donne plus de surface de plancher.
+  let limite: 'appliquee' | 'inutile' | 'sans-gain' | 'impossible' = 'impossible';
+  let v: VolumePropose;
+  if (!b.implantation.limiteSeparativePermise) v = calculerVolume(geometrie, programme, regles, b);
+  else {
+    const retrait = calculerVolume(geometrie, programme, regles, { ...b, implantation: { ...b.implantation, limiteSeparativePermise: false } });
+    if (retrait.emprise && retrait.programmeAtteint === true) { v = retrait; limite = 'inutile'; }
+    else {
+      const enLimite = calculerVolume(geometrie, programme, regles, b);
+      if (enLimite.emprise && enLimite.bande?.reculLateralM !== undefined && enLimite.sdpM2 > retrait.sdpM2) { v = enLimite; limite = 'appliquee'; }
+      else { v = retrait; if (enLimite.bande?.reculLateralM !== undefined) limite = 'sans-gain'; }
+    }
+  }
   if (!v.emprise) {
     return sansBande(v.statut === 'trop-petite'
       ? `aucun rectangle de ${H.coteMinM} × ${H.coteMinM} m ne tient à la fois à ${fr(v.reculM, 1)} m des limites et à moins de ${fr(b.profondeurM, 1)} m du côté voie${b.empriseMaxM2 !== null ? ` (emprise maximale ${fr(b.empriseMaxM2)} m²)` : ''}.`
@@ -605,21 +730,35 @@ export function calculerVolumeParcelle(
     hypotheses: [...v.hypotheses,
       ...(b.empriseMaxM2 !== null ? [`Emprise au sol bornée à ${fr(b.empriseMaxM2)} m² : maximum de la bande principale.`] : []),
       `Bande secondaire (au-delà de ${fr(b.profondeurM, 1)} m depuis la voie) : non construite dans ce volume d’étude.`,
-      ...hypothesesImplantation(b)],
+      ...hypothesesImplantation(b, limite)],
     bande: {
       statut: 'appliquee', raison: null, profondeurM: b.profondeurM, longueurFacadeM: b.longueurFacadeM,
       angleVoieDeg: Math.round(b.angle * 180 / Math.PI * 10) / 10,
       distanceMaxVoieM: Math.ceil(distanceMax * 100 - 1e-6) / 100, empriseMaxM2: b.empriseMaxM2,
       ...(v.bande?.reculVoieM !== undefined ? { reculVoieM: v.bande.reculVoieM, reculLimitesM: v.reculM } : {}),
+      ...(v.bande?.reculLateralM !== undefined ? { reculLateralM: v.bande.reculLateralM, reculLimitesM: v.reculM } : {}),
+      ...(b.surfaceBandeM2 !== null ? { surfaceBandeM2: b.surfaceBandeM2 } : {}),
     },
   };
 }
 
-/** Lot C10 : lignes d'hypothèses tirées de l'implantation fournie (notes de l'appelant, implantation en limite non appliquée). */
-export function hypothesesImplantation(b: BandePreparee): string[] {
+/**
+ * Lot C10 : lignes d'hypothèses tirées de l'implantation fournie (notes de l'appelant).
+ * Lot C11 : `limite` — sort de l'implantation en limite quand la règle lue la permet : appliquée (l'hypothèse des
+ * reculs le dit alors), inutile (le programme tient en retrait), sans gain, impossible, ou programme de maisons.
+ */
+export function hypothesesImplantation(b: BandePreparee, limite: 'appliquee' | 'inutile' | 'sans-gain' | 'impossible' | 'maisons' = 'impossible'): string[] {
+  const permise = `Implantation en limite séparative permise selon la règle lue${b.implantation.sourceLimites ? ` (${b.implantation.sourceLimites})` : ''}`;
+  const suite: Record<typeof limite, string | null> = {
+    appliquee: null,   // dite dans l'hypothèse des reculs
+    inutile: 'non utilisée dans ce volume d’étude, le programme tient en retrait des limites séparatives.',
+    'sans-gain': 'non utilisée dans ce volume d’étude, elle n’y loge rien de plus que l’implantation en retrait.',
+    impossible: 'NON appliquée dans ce volume d’étude (limites latérales non identifiables sur le contour) — retrait conservé sur les limites autres que la voie, ce qui peut sous-estimer l’emprise possible.',
+    maisons: 'NON appliquée aux maisons de ce volume d’étude — retrait conservé sur les limites autres que la voie.',
+  };
   return [
     ...b.implantation.notes,
-    ...(b.implantation.limiteSeparativePermise ? ['Implantation en limite séparative permise selon la règle lue : NON appliquée dans ce volume d’étude (retrait conservé sur les limites autres que la voie), ce qui peut sous-estimer l’emprise possible.'] : []),
+    ...(b.implantation.limiteSeparativePermise && suite[limite] ? [`${permise} : ${suite[limite]}`] : []),
   ];
 }
 
@@ -627,12 +766,27 @@ export function hypothesesImplantation(b: BandePreparee): string[] {
  * Lot C10 : première ligne d'hypothèses quand les reculs sont différenciés (recul côté voie établi par une règle lue).
  * `reculLimitesM` null : la valeur dépend du bâtiment (plusieurs hauteurs), elle n'est pas chiffrée dans la phrase.
  */
-export function hypotheseReculsDifferencies(rc: ReculsRetenus, b: BandePreparee, reculLimitesM: number): string {
-  const voie = rc.voieM ?? 0;
+export function hypotheseReculsDifferencies(rc: ReculsRetenus, b: BandePreparee, reculLimitesM: number,
+  /** Lot C11 : implantation en limite appliquée aux limites latérales ; `contacts` : limites latérales touchées par au moins un bâtiment, `videMaxM` : plus grand vide derrière un contact. */
+  enLimite: { contacts: number; cotes: number; videMaxM: number } | null = null): string {
   const source = rc.origineVoie === 'implantation' && b.implantation.sourceVoie ? ` (${b.implantation.sourceVoie})` : '';
-  const coteVoie = voie === 0
-    ? `Côté voie : implantation à l’alignement (recul 0 m), permise par la règle lue${source}`
-    : `Recul de ${fr(voie, 1)} m côté voie : règle de recul à la voie lue${source}`;
+  const coteVoie = rc.voieM === null
+    // Lot C11 : recul à la voie non établi, mais limites latérales différenciées — le recul prudent reste dû côté voie.
+    ? `Recul de ${fr(reculLimitesM, 1)} m côté voie (recul à la voie non établi : le plus fort des reculs lus pour cette hauteur, ou la valeur par défaut)`
+    : rc.voieM === 0
+      ? (rc.origineVoie === 'implantation' && b.implantation.motifVoie === 'non_reglementee'
+        ? `Côté voie : implantation à l’alignement (recul 0 m) RETENUE par le volume d’étude, le recul sur voie n’étant pas réglementé${source}`
+        : `Côté voie : implantation à l’alignement (recul 0 m), permise par la règle lue${source}`)
+      : `Recul de ${fr(rc.voieM, 1)} m côté voie : règle de recul à la voie lue${source}`;
+  if (enLimite) {
+    const src = b.implantation.sourceLimites ? ` (${b.implantation.sourceLimites})` : '';
+    const contact = enLimite.contacts === 0 ? 'aucune n’est touchée par ce volume'
+      : `${enLimite.contacts} sur ${enLimite.cotes} touchée${enLimite.contacts > 1 ? 's' : ''} par ce volume` +
+        (enLimite.videMaxM > CONTACT_LIMITE_M ? ` ; limite non parallèle au pignon : contact en un point, vide en biais jusqu’à ${fr(enLimite.videMaxM, 1)} m à traiter au plan` : '');
+    return `${coteVoie} ; limites latérales (celles qui partent de la voie) : implantation en limite séparative permise par la règle lue${src} — ${contact} ; ` +
+      `retrait de ${fr(reculLimitesM, 1)} m sur le fond de parcelle et sur toute limite latérale non touchée${rc.limitesLues ? ' (le plus fort des reculs aux limites lus pour cette hauteur)' : ' (recul aux limites non lu : valeur prudente)'}. ` +
+      'Côté voie et limites latérales présumés d’après le cadastre, à confirmer.';
+  }
   const autres = rc.limitesLues
     ? `recul de ${fr(reculLimitesM, 1)} m aux autres limites : le plus fort des reculs aux limites séparatives lus pour cette hauteur`
     : rc.reculConnu
@@ -640,6 +794,9 @@ export function hypotheseReculsDifferencies(rc: ReculsRetenus, b: BandePreparee,
       : `recul de ${fr(reculLimitesM, 1)} m aux autres limites (valeur par défaut : recul aux limites séparatives non lu)`;
   return `${coteVoie} ; ${autres}. Reculs différenciés : le côté voie est présumé d’après le cadastre (limite sans parcelle mitoyenne), à confirmer.`;
 }
+
+/** Lot C11 : précision ajoutée à la règle de recul (formule) quand le volume est implanté en limite latérale. */
+export const PRECISION_RETRAIT_EN_LIMITE = ' — dû sur le fond de parcelle et sur toute limite latérale non touchée';
 
 /** Le calcul lui-même. `bande` null : comportement d'origine, à l'identique. */
 function calculerVolume(
@@ -692,12 +849,14 @@ function calculerVolume(
   // Lot C10 — bande appliquée ET recul à la voie établi par une règle lue ET façades retrouvées sur le contour :
   // recul « voie » côté voie, recul « limites » ailleurs. Sinon (toujours hors bande) : recul uniforme d'origine.
   const rc = reculsRetenus(valides, bande ? bande.implantation : null);
-  const differencie = !!bande && rc.voieM !== null && (() => {
-    const proj0 = projeterParcelle(geometrie);
-    return !!proj0 && marquerSegmentsVoie(segmentsDe(proj0.anneaux), bande.facades);
-  })();
+  const proj0 = bande && (rc.voieM !== null || rc.enLimite) ? projeterParcelle(geometrie) : null;
+  const differencie = !!bande && rc.voieM !== null && !!proj0 && marquerSegmentsVoie(segmentsDe(proj0.anneaux), bande.facades);
   const reculVoieM = differencie ? rc.voieM as number : null;
   const reculPour = differencie ? rc.limitesPour : reculUniformePour;
+  // Lot C11 — implantation en limite : seulement si la règle lue la permet ET si les limites latérales sont
+  // retrouvées sur le contour (ce qui exige les limites sur voie). Sinon rien ne change.
+  const cotesLateraux = bande && rc.enLimite && proj0 ? marquerSegmentsLateraux(segmentsDe(proj0.anneaux), proj0.anneaux[0].length, bande.facades) : 0;
+  const enLimite = cotesLateraux > 0;
 
   const mentionPlu = appliquees.size || valides.length
     ? 'Règles PLU appliquées — conformité à vérifier par un professionnel'
@@ -742,12 +901,13 @@ function calculerVolume(
     const reculM = Math.round(reculPour(n * H.hauteurEtageM) * 100) / 100;
     const cle = reculM.toFixed(2);
     if (!cacheRect.has(cle)) cacheRect.set(cle, bande && facadesUV
-      ? plusGrandRectangleBande(anneauxUV, reculM, epaisseurMax, H.coteMinM, facadesUV, bande.profondeurM, reculVoieM ?? undefined)
+      ? plusGrandRectangleBande(anneauxUV, reculM, epaisseurMax, H.coteMinM, facadesUV, bande.profondeurM, reculVoieM ?? undefined, enLimite ? { capM2: empriseMaxSurface } : null)
       : plusGrandRectangle(anneauxUV, reculM, epaisseurMax, H.coteMinM));
     const rect = cacheRect.get(cle);
     if (!rect) return null;
     let w = rect.w, d = rect.d;
-    if (w * d > empriseMaxSurface + 1e-6) {
+    // Lot C11 : un rectangle « en limite » sort de la recherche déjà sous le plafond d'emprise (il n'est pas réduit ici).
+    if (w * d > empriseMaxSurface + 1e-6 && !enLimite) {
       w = arrondiInf(Math.max(H.coteMinM, empriseMaxSurface / d));
       if (w * d > empriseMaxSurface + 1e-6 || w <= H.coteMinM) { const cote = arrondiInf(Math.sqrt(empriseMaxSurface)); w = Math.min(w, cote); d = Math.min(d, cote); }
     }
@@ -770,7 +930,9 @@ function calculerVolume(
     }
     if (choix) {
       const cible = sdpVisee / choix.n;
-      if (cible < choix.w * choix.d) {
+      // Lot C11 : un rectangle posé contre les DEUX limites latérales garde sa largeur (la réduire le décollerait
+      // d'une limite sans atteindre le retrait) : l'emprise peut alors dépasser le besoin du programme.
+      if (cible < choix.w * choix.d && choix.rect.ancre !== 'gd') {
         const w2 = Math.ceil(cible / choix.d / 0.5 - 1e-9) * 0.5;
         if (w2 >= H.coteMinM) choix.w = Math.min(choix.w, w2);
         else { const cote = Math.max(H.coteMinM, Math.ceil(Math.sqrt(cible) / 0.5 - 1e-9) * 0.5); choix.w = Math.min(choix.w, cote); choix.d = Math.min(choix.d, cote); }
@@ -793,10 +955,32 @@ function calculerVolume(
 
   const { n: niveaux, reculM, rect } = choix;
   const w = choix.w, d = choix.d;
+  // Lot C11 : rectangle ancré à une limite latérale — la réduction de largeur se fait du côté libre (le centre se déplace).
+  const cuFinal = rect.ancre === 'g' ? rect.cu - rect.w / 2 + w / 2 : rect.ancre === 'd' ? rect.cu + rect.w / 2 - w / 2 : rect.cu;
+  // Lot C11 : contacts réels du volume avec les limites latérales, mesurés sur le rectangle final (repère tourné).
+  let mesureLimite: { contacts: number; cotes: number; videMaxM: number } | null = null;
+  if (enLimite && bande && facadesUV) {
+    const segs = segmentsDe(anneauxUV);
+    const cotes = marquerSegmentsLateraux(segs, anneauxUV[0].length, facadesUV);
+    const final: Rect = { cu: cuFinal, cv: rect.cv, w, d };
+    const dl = distancesLaterales(segs, final, cotes);
+    // Garde : le volume final doit respecter « en limite OU en retrait » ; sinon aucun volume n'est rendu en bande (repli de l'appelant).
+    if (!cotes || !lateralesAdmises(dl, reculM)) return vide('trop-petite', contour, proj.origine, surface, ['Implantation en limite séparative non prouvée sur le volume obtenu : aucun volume proposé dans la bande.'], reculM);
+    const coinsUV = [{ x: final.cu - w / 2, y: final.cv - d / 2 }, { x: final.cu + w / 2, y: final.cv - d / 2 }, { x: final.cu + w / 2, y: final.cv + d / 2 }, { x: final.cu - w / 2, y: final.cv + d / 2 }];
+    let vide2 = 0, contacts = 0;
+    dl.forEach((x, i) => {
+      if (x > CONTACT_LIMITE_M + 1e-9) return;
+      contacts++;
+      const chaine = segs.filter(sg => sg.laterale === i + 1);
+      const ds = coinsUV.map(q => Math.min(...chaine.map(sg => distPointSegment(q.x, q.y, sg.a.x, sg.a.y, sg.b.x, sg.b.y)))).sort((p, q) => p - q);
+      vide2 = Math.max(vide2, ds[1]);
+    });
+    mesureLimite = { contacts, cotes, videMaxM: Math.round(vide2 * 100) / 100 };
+  }
   if (rVoie) noter(rVoie, differencie ? 'recul appliqué côté voie' : 'recul appliqué');
   if (rLimites) noter(rLimites, differencie ? 'recul appliqué aux limites autres que la voie' : 'recul appliqué');
-  if (rFormule) noter(rFormule, `recul recalculé pour H = ${fr(niveaux * H.hauteurEtageM)} m : ${fr(Math.max(rFormule.minimumM ?? 0, niveaux * H.hauteurEtageM / rFormule.valeur), 1)} m`);
-  if (differencie && bande) hypotheses[0] = hypotheseReculsDifferencies(rc, bande, reculM);
+  if (rFormule) noter(rFormule, `recul recalculé pour H = ${fr(niveaux * H.hauteurEtageM)} m : ${fr(Math.max(rFormule.minimumM ?? 0, niveaux * H.hauteurEtageM / rFormule.valeur), 1)} m${mesureLimite ? PRECISION_RETRAIT_EN_LIMITE : ''}`);
+  if (bande && (differencie || mesureLimite)) hypotheses[0] = hypotheseReculsDifferencies(rc, bande, reculM, mesureLimite);
   else if (reculConnu) hypotheses[0] = bande
     ? `Recul de ${fr(reculM, 1)} m sur toutes les limites, côté voie compris : le plus fort des reculs PLU pour cette hauteur (recul à la voie et reculs aux limites non différenciés).`
     : `Recul de ${fr(reculM, 1)} m sur toutes les limites : le plus fort des reculs PLU pour cette hauteur (côté voie non identifié).`;
@@ -807,8 +991,8 @@ function calculerVolume(
   const programmeAtteint = sdpVisee !== null ? sdp + 1e-6 >= sdpVisee : null;
   const ci = Math.cos(angle), si = Math.sin(angle);
   const retour = (p: PointLocal) => ({ x: p.x * ci - p.y * si, y: p.x * si + p.y * ci });
-  const coins = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([du, dv]) => retour({ x: rect.cu + du, y: rect.cv + dv }));
-  const centre = retour({ x: rect.cu, y: rect.cv });
+  const coins = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([du, dv]) => retour({ x: cuFinal + du, y: rect.cv + dv }));
+  const centre = retour({ x: cuFinal, y: rect.cv });
   return {
     statut: logements !== null ? 'calcule' : 'indicatif',
     surfaceParcelleM2: Math.round(surface),
@@ -828,7 +1012,8 @@ function calculerVolume(
     reglesAppliquees: lignesRegles(),
     reglesNonAppliquees: [...regles.nonAppliquees],
     // Lot C10 : reculs différenciés → repris et complétés par calculerVolumeParcelle (état de la bande).
-    ...(reculVoieM !== null ? { bande: { statut: 'appliquee' as const, raison: null, profondeurM: null, longueurFacadeM: null, angleVoieDeg: null, distanceMaxVoieM: null, empriseMaxM2: null, reculVoieM, reculLimitesM: reculM } } : {}),
+    ...(reculVoieM !== null || mesureLimite ? { bande: { statut: 'appliquee' as const, raison: null, profondeurM: null, longueurFacadeM: null, angleVoieDeg: null, distanceMaxVoieM: null, empriseMaxM2: null,
+      ...(reculVoieM !== null ? { reculVoieM } : {}), reculLimitesM: reculM, ...(mesureLimite ? { reculLateralM: 0 } : {}) } } : {}),
   };
 }
 

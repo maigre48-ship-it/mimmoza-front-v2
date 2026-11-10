@@ -16,6 +16,15 @@
 //   · une limite non mitoyenne peut border autre chose qu'une voie (place, cours d'eau, emprise non cadastrée) :
 //     le côté voie est « présumé », à confirmer ;
 //   · les surfaces de bandes sont mesurées sur une grille (pas de 0,25 m), puis recalées sur la surface exacte.
+//
+// Lot C11 — sondage par PORTIONS d'arête. Avant : trois points par arête, et l'arête ENTIÈRE passait « sur voie »
+// dès qu'un seul n'avait pas de voisine. Une limite en partie mitoyenne devenait une façade sur toute sa longueur ;
+// avec l'alignement et l'implantation en limite, un bâtiment pouvait venir contre sa portion mitoyenne prise pour
+// de la voie (ou, à l'inverse, une portion libre entre deux points sondés passait inaperçue). Maintenant chaque
+// arête d'au moins 1 m est sondée tous les 0,5 m : seules ses portions libres (1 m au moins) sont des façades.
+// Une arête entièrement libre reste UNE façade, de sommet à sommet (résultat inchangé) ; une arête en partie libre
+// donne une façade plus courte que l'arête, que le moteur ne sait pas traiter en recul différencié : il garde alors
+// le recul uniforme (marquerSegmentsVoie), ce qui est le comportement prudent.
 // =============================================================================
 
 import { aireSignee, dansPolygone, projeterParcelle, type GeometrieParcelle, type PointLocal } from './volumeParcelle.ts';
@@ -26,6 +35,9 @@ export const TOLERANCE_MITOYENNETE_M = 0.5;
 /** En dessous, une « façade » n'est qu'un décroché de relevé. */
 export const FACADE_MIN_M = 3;
 export const PAS_GRILLE_M = 0.25;
+/** Lot C11 : pas du sondage d'une arête (m) et longueur minimale d'une portion libre retenue comme façade (m). */
+export const PAS_SONDAGE_M = 0.5;
+export const PORTION_LIBRE_MIN_M = 1;
 
 export interface SegmentVoie { a: PointLocal; b: PointLocal; longueurM: number }
 
@@ -97,14 +109,45 @@ export function identifierCoteVoie(parcelle: GeometrieParcelle | null | undefine
     return vide('voisines_absentes', 'Parcelles voisines non fournies : le côté voie ne peut pas être déduit du cadastre.');
   }
   const mitoyen = (p: PointLocal) => anneauxVoisins.some((r) => distanceAnneau(p, r) <= TOLERANCE_MITOYENNETE_M);
+  /**
+   * Lot C11 — point d'une arête à `s` mètres de son sommet le plus proche. Près d'un sommet, la voisine qui borde
+   * l'arête SUIVANTE est forcément à moins de la tolérance : elle ne rend pas ce point mitoyen. La tolérance est
+   * donc resserrée près des sommets (un quart de la distance au sommet, 5 cm au moins) : une limite réellement
+   * partagée (écart de relevé de quelques centimètres) reste mitoyenne, une limite qui s'écarte du contour ne l'est pas.
+   */
+  const mitoyenPres = (p: PointLocal, s: number) => {
+    const tol = Math.min(TOLERANCE_MITOYENNETE_M, Math.max(0.05, 0.25 * s));
+    return anneauxVoisins.some((r) => distanceAnneau(p, r) <= tol);
+  };
   const facades: SegmentVoie[] = [];
   for (let i = 0; i < contour.length; i++) {
     const a = contour[i], b = contour[(i + 1) % contour.length];
     const longueurM = dist(a, b);
     if (longueurM < 0.05) continue;
-    const points = longueurM < 1 ? [0.5] : [0.25, 0.5, 0.75];
-    const tousMitoyens = points.every((t) => mitoyen({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) }));
-    if (!tousMitoyens) facades.push({ a, b, longueurM });
+    const sur = (t: number): PointLocal => ({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+    if (longueurM < 1) {
+      // Arête courte : un seul point, au milieu (inchangé).
+      if (!mitoyen(sur(0.5))) facades.push({ a, b, longueurM });
+      continue;
+    }
+    // Lot C11 : sondage tous les PAS_SONDAGE_M ; chaque suite de points libres est une portion libre de l'arête.
+    const n = Math.max(3, Math.ceil(longueurM / PAS_SONDAGE_M));
+    const libre = Array.from({ length: n }, (_, k) => {
+      const t = (k + 0.5) / n;
+      return !mitoyenPres(sur(t), Math.min(t, 1 - t) * longueurM);
+    });
+    for (let k = 0; k < n; k++) {
+      if (!libre[k]) continue;
+      let fin = k;
+      while (fin + 1 < n && libre[fin + 1]) fin++;
+      const t0 = k / n, t1 = (fin + 1) / n;
+      if (t0 === 0 && t1 === 1) facades.push({ a, b, longueurM });
+      else if ((t1 - t0) * longueurM >= PORTION_LIBRE_MIN_M - 1e-9) {
+        const p = t0 === 0 ? a : sur(t0), q = t1 === 1 ? b : sur(t1);
+        facades.push({ a: p, b: q, longueurM: dist(p, q) });
+      }
+      k = fin;
+    }
   }
   const longueurFacadeM = Math.round(facades.reduce((s, f) => s + f.longueurM, 0) * 100) / 100;
   if (longueurFacadeM < FACADE_MIN_M) {

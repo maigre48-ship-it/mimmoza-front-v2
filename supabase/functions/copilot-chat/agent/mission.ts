@@ -42,6 +42,7 @@ import {
   amorceMission, CONSIGNE_CONTINUER, CONSIGNE_PLAN, consigneRapport, systemeMission,
 } from './prompt-promoteur.ts';
 import { NOMS_OUTILS_MISSION, OUTILS_MISSION_INTERDITS_VEILLE, outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
+import { appliquerConstatAuRapport, CONSIGNE_PROGRAMME_NON_ATTEINT, lireConstatVolume, type ConstatVolume } from './constat-volume.ts';
 import {
   ajusterToiture, appliquerReponseFormulaire, appliquerSecteur, appliquerSecteursDeclares, centroideParcelle, cheminReglementAutorise, cheminTexteReglement, chercherContourParcelle,
   appliquerDispositionsCommunes, contexteDispositionsCommunes, lireDispositionsCommunes, resumeVoisines, type DispositionLue,
@@ -137,6 +138,11 @@ export interface EtatConception {
   secteurs_declares?: SecteursDeclares;
   /** Lot Q3 : dernière erreur d'écriture du dossier (journalisée UNE fois ; réessayée à la prochaine écriture). */
   persistance_erreur?: string | null;
+  /**
+   * Lot C11 : constat chiffré du dernier volume d'étude préparé pendant la mission (studio_preparer_3d). Sert au
+   * rapport : quand le programme n'est pas atteint, le constat remplace tout jugement sur la parcelle.
+   */
+  volume_etude?: ConstatVolume | null;
 }
 
 /** Lot Q3 : secteurs déclarés dans les critères et l'objectif de la mission. */
@@ -169,6 +175,8 @@ export function chargerConception(brut: unknown, m: MissionRow): EtatConception 
       return Object.keys(d).length ? { secteurs_declares: d } : {};
     })(),
     ...(typeof b.persistance_erreur === 'string' ? { persistance_erreur: b.persistance_erreur } : {}),
+    // Lot C11 : relu sans confiance (mêmes champs, mêmes bornes) ; absent d'une mission plus ancienne.
+    ...(() => { const v = lireConstatVolume(b.volume_etude); return v ? { volume_etude: v } : {}; })(),
   };
 }
 
@@ -601,6 +609,10 @@ export function normaliserRapport(
       programme: k.programme, alertes_programme: k.programme ? controlerProgramme(k.programme) : [],
       prochaine_etape: 'Choisissez la voie du plan : plan fourni (le plus précis), dessin de l’emprise, ou proposition Mimmoza.',
     };
+    // Lot C11 : programme non atteint par le volume d'étude → les jugements sur la parcelle ou le programme sont
+    // retirés de la synthèse et des limites rédigées par le modèle, et le constat chiffré du moteur est ajouté.
+    if (!Array.isArray(r.limites)) r.limites = [];
+    appliquerConstatAuRapport(r, k.volume_etude ?? null);
     if (!k.parcelle) (r.limites as string[]).push('Contour cadastral non récupéré : le Studio devra le recharger.');
     for (const x of k.conflits) {
       (r.limites as string[]).push(`Règle ${x.cle} : vous avez confirmé ${x.valeur_utilisateur}, ${x.source_proposee} indique ${x.valeur_proposee}${x.article ? ` (art. ${x.article})` : ''}. Votre valeur est conservée ; à vérifier.`);
@@ -1003,7 +1015,18 @@ async function executerOutilMission(
       appliquerSecteursConnus(k, c.m);   // lot Q3
       await persisterConceptionSure(c, k);
       c.etat.conception = k;
-      return `Règles enregistrées au statut « estime » : ${nouvelles.length}${refusees ? ` (${refusees} refusée(s) : clé inconnue ou sans source)` : ''}. ` +
+      // Lot C11 : le message disait « enregistrées au statut estime » pour TOUTES les règles proposées, y compris
+      // celles que la fusion n'a pas retenues parce qu'une règle plus sûre (lue avec son article, confirmée) existe
+      // déjà. Le modèle écrivait ensuite dans le rapport que ces règles étaient « au statut estime ». On dit ce qui
+      // a réellement été écrit, et le statut réel des règles gardées.
+      const ecrites: string[] = [], gardees: string[] = [];
+      for (const n of nouvelles) {
+        const finale = k.regles.find((x) => x.cle === n.cle);
+        if (finale && finale.statut === n.statut && finale.source === n.source && finale.valeur === n.valeur) ecrites.push(n.cle);
+        else if (finale) gardees.push(`${n.cle} (${finale.statut === 'confirme' ? 'confirmée' : finale.statut === 'estime' ? 'déjà estimée' : 'manquante'}, ${finale.source})`);
+      }
+      return `Règles enregistrées au statut « estime » : ${ecrites.length}${ecrites.length ? ` (${ecrites.join(', ')})` : ''}${refusees ? ` ; ${refusees} refusée(s) : clé inconnue ou sans source` : ''}. ` +
+        (gardees.length ? `NON remplacées, car déjà enregistrées avec une source plus sûre : ${gardees.join(' ; ')} — leur statut ne change pas, ne les présente pas comme estimées. ` : '') +
         `Seuls l'utilisateur (formulaire) ou le règlement lu avec son article peuvent les confirmer. Manquantes : ${reglesManquantes(k.regles).join(', ') || 'aucune'}.${conflit}`;
     }
     case 'enregistrer_programme': {
@@ -1084,7 +1107,12 @@ async function executerOutilMission(
         conception: { id: k.id, idu: k.idu, commune: k.commune, parcelle: k.parcelle, regles_plu: k.regles, programme: k.programme },
       });
       await c.depot.journal(c.m.id, 'resultat', 'studio_preparer_3d', { conception_id: k.id }, texte(r.message ?? r.status, 300), 0);
-      return texte(JSON.stringify({ status: r.status, ...(r.data ?? {}), ...(r.message ? { message: r.message } : {}) }), RESULTAT_OUTIL_MAX_CARS);
+      // Lot C11 : le constat chiffré est gardé pour le rapport ; programme non atteint → la consigne passe EN TÊTE du
+      // résultat (le résultat est plafonné : la fin peut être coupée).
+      const constat = r.status === 'ok' ? lireConstatVolume((r.data as Record<string, unknown> | undefined)?.volume) : null;
+      if (r.status === 'ok') { k.volume_etude = constat; c.etat.conception = k; }
+      return texte(JSON.stringify({ status: r.status, ...(constat?.programme_atteint === false ? { consigne_rapport: CONSIGNE_PROGRAMME_NON_ATTEINT } : {}),
+        ...(r.data ?? {}), ...(r.message ? { message: r.message } : {}) }), RESULTAT_OUTIL_MAX_CARS);
     }
     case 'rapport_contact': {
       const n = normaliserContact(input);

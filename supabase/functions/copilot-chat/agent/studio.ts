@@ -67,8 +67,12 @@ export const SOURCE_STUDIO = 'MimmozIA · Studio 3D';
  * `e1-studio-2` (lot C10) : pour une même conception, le volume peut changer — plafond d'emprise strict (plus
  * d'arrondi au-dessus du plafond), hauteur / niveaux / pleine terre les plus contraignants quand la bande
  * principale n'est pas appliquée, recul différencié voie / limites quand la bande l'est.
+ * `e1-studio-3` (lot C11) : dans la bande principale, alignement retenu quand le recul sur voie est « non
+ * réglementé » (confirmé, cité), implantation en limite séparative appliquée aux limites latérales quand la règle
+ * lue la permet ; minimum de la formule de recul lu quand il suit le nombre (« H/2 et 3 mètres minimum ») ;
+ * côté voie sondé par portions d'arête.
  */
-export const VERSION_CALCUL = 'e1-studio-2';
+export const VERSION_CALCUL = 'e1-studio-3';
 export const TYPES_RENDU = ['film', 'visite360', 'image'] as const;
 export type TypeRendu = typeof TYPES_RENDU[number];
 /** Durée de validité d'un devis de rendu. */
@@ -239,6 +243,15 @@ export function resumeCompact(r: ResumePreparation): Obj {
     emprise_batie_m2: r.emprise_batie_m2, emprise_pct: r.emprise_pct, sdp_estimee_m2: r.sdp_estimee_m2,
     logements_places: r.logements_places, logements_vises: r.logements_vises, programme_atteint: r.programme_atteint,
     alertes: r.alertes.slice(0, 3), controles: r.controles.map((c) => `${c.libelle} : ${c.verdict}`),
+    recul_applique_m: r.recul_applique_m,
+    // Lot C11 — programme NON atteint : de quoi dire POURQUOI le volume a cette taille (implantation retenue, plafonds
+    // opposés), sans rien conclure — le rapport d'une mission ne doit pas juger la parcelle à la place des données.
+    // Programme atteint : ces champs sont omis (le résultat d'outil d'une mission est plafonné à 3 000 caractères).
+    ...(r.programme_atteint === false ? {
+      implantation: (r.hypotheses[0] ?? '').slice(0, 420) || null,
+      plafonds: r.controles.filter((c) => ['emprise_sol_max_pct', 'hauteur_max_m', 'niveaux_max'].includes(c.cle) && c.regle)
+        .map((c) => `${c.libelle} : ${c.valeur_volume ?? '?'} pour ${c.regle}`.slice(0, 200)),
+    } : {}),
   };
 }
 
@@ -259,6 +272,9 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
   // avec le plafond prudent du lot C6 (taux le plus contraignant sur toute la parcelle) et la raison est notée.
   // Lot C10 : la bande porte aussi l'implantation établie par les règles LUES (recul à la voie de 0 m = alignement,
   // seulement s'il est écrit, confirmé et cité ; sinon le moteur garde son recul prudent côté voie et le dit).
+  // Lot C11 : recul sur voie « non réglementé » confirmé et cité → alignement retenu ; « sur limite séparative ou
+  // en retrait » confirmé et cité → implantation en limite appliquée aux limites latérales (implantationDesRegles).
+  // Hors bande (calcul prudent) : rien de tout cela ne s'applique.
   const bandeMoteur = bandes.mesure ? bandePourMoteur(bandes) : null;
   const demande = bandeMoteur ? { ...bandeMoteur, implantation: implantationDesRegles(regles) } : null;
   /** Calcul prudent : règles sans bandes mesurées, implantation habituelle, raison notée. */
@@ -1233,6 +1249,9 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       'Volume d’étude INDICATIF, calculé par le moteur (ne recalcule rien de tête, cite ces chiffres tels quels). ' +
       'Reprends chaque vérification avec son verdict : « dans la limite de la règle citée » seulement si verdict dans_la_limite, sinon « à vérifier » ou « non contrôlé » ; ' +
       'n’écris jamais « conforme ». Rien n’a été envoyé au Studio : l’utilisateur ouvre la 3D d’un clic. ' +
+      // Lot C11 — mission : le message s'arrête ici. La suite ne concerne que le chat (fiche, habillage, rendu — interdit
+      // en mission —, comparaison des formes non transmise en mission) et faisait dépasser le plafond du résultat d'outil.
+      (env.mission ? '' :
       'Dans la fiche ```mimmoza-3d```, programme et dimensions sont ceux de CE volume (bâtiments, gabarit, SDP estimée, logements) : ' +
       'n’y écris aucun autre chiffre (le gabarit du programme est un plafond, pas le volume ; aucune SHAB n’est calculée) — la fiche du chat affiche les chiffres du moteur. ' +
       'HABILLAGE : ne pose JAMAIS toi-même la question d’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, ambiance), ' +
@@ -1241,7 +1260,7 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       'l’habillage déjà choisi, puis le devis. Sinon, propose un rendu en une phrase, sans détailler l’habillage. ' +
       'FORME : `forme_retenue` est la forme de CE volume ; `formes_comparees` est le classement du moteur (dans les règles, logements, niveaux, ' +
       'façade, emprise) : présente la première comme une SUGGESTION en une phrase — l’utilisateur choisit dans la fiche (« Forme et dimensions ») ' +
-      'ou te le demande (paramètre `forme`). Les formes à ailes (L, U, cour, redans) partent au Studio aile par aile.',
+      'ou te le demande (paramètre `forme`). Les formes à ailes (L, U, cour, redans) partent au Studio aile par aile.'),
   };
 }
 
