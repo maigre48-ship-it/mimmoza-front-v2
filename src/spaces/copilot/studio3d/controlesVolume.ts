@@ -17,6 +17,7 @@
 // =============================================================================
 
 import { HYPOTHESES_VOLUME, libelleNiveaux, regleValide, type ReglePlu, type ReglesPluVolume, type VolumePropose } from './volumeParcelle.ts';
+import { estConditionBande, mentionBandes, optionBandePrincipale, optionBandeSecondaire, profondeurBandePrincipaleM, type OptionBande } from './reglesParBande.ts';
 
 type Obj = Record<string, unknown>;
 const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -34,6 +35,18 @@ export interface RegleLue {
   nature: string | null;
   texte: string | null;
   regle_relative: string | null;
+  /** Lot C6 : options de la règle (bandes, façades, choix), telles que stockées. Vide si aucune. */
+  alternatives?: OptionBande[];
+}
+
+const UNITES_BANDE: Record<string, string> = {
+  hauteur_max_m: 'm', niveaux_max: 'niveaux', emprise_sol_max_pct: '%', pleine_terre_min_pct: '%', recul_voie_m: 'm', recul_limites_m: 'm',
+};
+
+function lireOptions(v: unknown): OptionBande[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((e): OptionBande[] =>
+    estObj(e) && typeof e.libelle === 'string' && e.libelle.trim() && fini(e.valeur) ? [{ libelle: e.libelle.trim().slice(0, 80), valeur: e.valeur }] : []).slice(0, 6);
 }
 
 export function lireRegles(brut: unknown): RegleLue[] {
@@ -41,10 +54,20 @@ export function lireRegles(brut: unknown): RegleLue[] {
   return brut.flatMap((e): RegleLue[] => {
     if (!estObj(e) || typeof e.cle !== 'string') return [];
     const statut = e.statut === 'confirme' || e.statut === 'estime' ? e.statut : 'manquant';
-    const valeur = fini(e.valeur) || typeof e.valeur === 'string' ? e.valeur as number | string : null;
+    let valeur = fini(e.valeur) || typeof e.valeur === 'string' ? e.valeur as number | string : null;
+    let relative = txt(e.regle_relative, 300);
+    const alternatives = lireOptions(e.alternatives);
+    // Lot C6 : règle PAR BANDE → la valeur du projet est celle de la bande principale (même pour une règle
+    // stockée avant le lot avec la valeur du fond), et la condition de bande reste « à vérifier ».
+    if (statut !== 'manquant' && estConditionBande(alternatives)) {
+      const p = optionBandePrincipale(alternatives);
+      if (p) valeur = p.valeur;
+      const mention = `${mentionBandes(alternatives, UNITES_BANDE[e.cle] ?? '', txt(e.texte, 600))} ; côté voie non identifié par le volume`;
+      relative = (relative ? `${relative} ; ${mention}` : mention).slice(0, 400);
+    }
     return [{
       cle: e.cle, valeur, statut, source: txt(e.source, 300) ?? 'source non précisée', article: txt(e.article, 120),
-      nature: txt(e.nature, 40), texte: txt(e.texte, 300), regle_relative: txt(e.regle_relative, 300),
+      nature: txt(e.nature, 40), texte: txt(e.texte, 300), regle_relative: relative, alternatives,
     }];
   });
 }
@@ -197,6 +220,24 @@ export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null):
     }
     if (r.statut === 'manquant') {
       non.push(`${r.cle} : ${r.nature === 'par_secteur' ? 'valeur selon le secteur, à préciser' : 'règle inconnue'}`);
+      continue;
+    }
+    // Lot C6 — emprise PAR BANDE : « 80 % de la bande principale de 18 m » n'est pas « 80 % de la parcelle ».
+    // Le volume d'étude ne sait pas de quel côté est la voie : il ne peut donc pas placer le bâtiment dans la
+    // bande principale. On ne devine pas : le taux le plus contraignant est appliqué à toute la parcelle, et
+    // on DIT que le volume sous-estime la constructibilité tant que le côté voie n'est pas identifié.
+    if (r.cle === 'emprise_sol_max_pct' && estConditionBande(r.alternatives ?? [])) {
+      const alts = r.alternatives ?? [];
+      const p = optionBandePrincipale(alts);
+      const s = optionBandeSecondaire(alts);
+      const prof = profondeurBandePrincipaleM(alts, r.texte);
+      const min = Math.min(...alts.map((a) => a.valeur));
+      if (min > 0 && min <= 100) {
+        out.push({ cle: 'emprise_max_ratio', valeur: min / 100, ...base, source: `${r.source} — emprise par bande, côté voie non identifié : taux le plus contraignant appliqué à la parcelle` });
+      }
+      non.push(`Emprise par bande${p ? ` : ${fr(p.valeur, 1)} % dans la bande principale${prof ? ` de ${fr(prof, 1)} m depuis la voie` : ''}` : ''}` +
+        `${s ? `, ${fr(s.valeur, 1)} % dans la bande secondaire` : ''} — le volume d’étude ne situe pas la voie : ${fr(min, 1)} % appliqué à toute la parcelle, ` +
+        'ce qui SOUS-ESTIME l’emprise possible sur rue');
       continue;
     }
     if (cle === 'recul_limites_formule') {
