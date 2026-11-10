@@ -14,11 +14,18 @@
 //     (article renseigné) sans condition complémentaire non vérifiée ;
 //   - sinon « à vérifier » (règle estimée, condition complémentaire) ou « non contrôlé ».
 // Aucune I/O ici.
+//
+// Lot C7c — règles « par bande » : les textes disent l'état RÉEL du volume. La bande principale n'est tenue pour
+// appliquée que si verifierBandeVolume le PROUVE sur la géométrie du volume contrôlé (tous les bâtiments dans la
+// bande, emprise sous le plafond de la bande) — y compris pour un volume modifié dans la fiche. Sinon l'emprise
+// est rapportée au plafond prudent (taux le plus contraignant sur toute la parcelle). Le verdict reste « à
+// vérifier » dans les deux cas : le côté voie est présumé d'après le cadastre, pas constaté.
 // =============================================================================
 
 import { HYPOTHESES_VOLUME, libelleNiveaux, regleValide, type ReglePlu, type ReglesPluVolume, type VolumePropose } from './volumeParcelle.ts';
 import { estConditionBande, mentionBandes, optionBandePrincipale, optionBandeSecondaire, profondeurBandePrincipaleM, type OptionBande } from './reglesParBande.ts';
 import type { MesureBandes } from './coteVoie.ts';
+import { verifierBandeVolume } from './bandePrincipale.ts';
 
 type Obj = Record<string, unknown>;
 const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -44,6 +51,11 @@ const UNITES_BANDE: Record<string, string> = {
   hauteur_max_m: 'm', niveaux_max: 'niveaux', emprise_sol_max_pct: '%', pleine_terre_min_pct: '%', recul_voie_m: 'm', recul_limites_m: 'm',
 };
 
+/** Fin de la condition d'une règle par bande, écrite à la lecture (le volume n'est pas encore connu). */
+const VOIE_NON_IDENTIFIEE = ' ; côté voie non identifié par le volume';
+/** Lot C7c : ce qui la remplace quand le volume contrôlé est PROUVÉ dans la bande principale. */
+const VOLUME_DANS_BANDE = ' ; volume d’étude contenu dans la bande principale (vérifié par le calcul), côté voie présumé d’après le cadastre, à confirmer';
+
 function lireOptions(v: unknown): OptionBande[] {
   if (!Array.isArray(v)) return [];
   return v.flatMap((e): OptionBande[] =>
@@ -63,7 +75,7 @@ export function lireRegles(brut: unknown): RegleLue[] {
     if (statut !== 'manquant' && estConditionBande(alternatives)) {
       const p = optionBandePrincipale(alternatives);
       if (p) valeur = p.valeur;
-      const mention = `${mentionBandes(alternatives, UNITES_BANDE[e.cle] ?? '', txt(e.texte, 600))} ; côté voie non identifié par le volume`;
+      const mention = `${mentionBandes(alternatives, UNITES_BANDE[e.cle] ?? '', txt(e.texte, 600))}${VOIE_NON_IDENTIFIEE}`;
       relative = (relative ? `${relative} ; ${mention}` : mention).slice(0, 400);
     }
     return [{
@@ -113,8 +125,16 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
   const surface = v.surfaceParcelleM2;
   const emprise = v.kpi?.empriseTotaleM2 ?? v.emprise?.surfaceM2 ?? 0;
   const ratioPct = surface > 0 ? Math.round(emprise / surface * 1000) / 10 : null;
+  // Lot C7c : la bande principale est-elle PROUVÉE pour ce volume (géométrie revérifiée, pas seulement déclarée) ?
+  const preuveBande = verifierBandeVolume(v);
+  /** Condition d'une règle, mise à jour selon l'état réel du volume (règle par bande : voie identifiée ou non). */
+  const conditionDe = (regle: RegleLue): string | null => {
+    const c = regle.regle_relative;
+    return c && preuveBande.prouvee && c.endsWith(VOIE_NON_IDENTIFIEE) ? `${c.slice(0, -VOIE_NON_IDENTIFIEE.length)}${VOLUME_DANS_BANDE}` : c;
+  };
   const juger = (regle: RegleLue, respecte: boolean, valeur: string, limite: string, cle: string, precision = ''): ControleVolume => {
-    const condition = regle.regle_relative ? ` Condition complémentaire non vérifiée : ${regle.regle_relative}.` : '';
+    const relative = conditionDe(regle);
+    const condition = relative ? ` ${preuveBande.prouvee && relative.endsWith(VOLUME_DANS_BANDE) ? 'Condition complémentaire' : 'Condition complémentaire non vérifiée'} : ${relative}.` : '';
     if (!respecte) return { cle, libelle: LIBELLES[cle], valeur_volume: valeur, regle: `${limite} (${libelleRegle(regle)})`, verdict: 'au_dela', explication: `Le volume d’étude dépasse la règle (${valeur} pour ${limite}).${condition}` };
     const sure = regleCitee(regle) && !regle.regle_relative;
     return {
@@ -141,6 +161,45 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
     out.push({ cle: 'emprise_sol_max_pct', libelle: LIBELLES.emprise_sol_max_pct, valeur_volume: ratioPct !== null ? `${fr(ratioPct, 1)} %` : null,
       regle: `non réglementée (${libelleRegle(e)})`, verdict: regleCitee(e) ? 'dans_la_limite' : 'a_verifier',
       explication: `Emprise non réglementée${regleCitee(e) ? ` (${e.article})` : ' (règle non confirmée)'} : aucun plafond ; le volume occupe ${ratioPct !== null ? `${fr(ratioPct, 1)} %` : '?'} de la parcelle, borné par la pleine terre et les reculs.` });
+  } else if (e && fini(e.valeur) && ratioPct !== null && estConditionBande(e.alternatives ?? [])) {
+    // Lot C7c — emprise PAR BANDE : « 80 % » vaut dans la bande principale, pas sur toute la parcelle.
+    const alts = e.alternatives ?? [];
+    const taux = alts.map((a) => a.valeur).filter((x) => x >= 0 && x <= 100);
+    const p = optionBandePrincipale(alts);
+    const prudent = taux.length ? Math.min(...taux) : e.valeur, plusHaut = taux.length ? Math.max(...taux) : e.valeur;
+    const mention = mentionBandes(alts, '%', e.texte);
+    const base = { cle: 'emprise_sol_max_pct', libelle: LIBELLES.emprise_sol_max_pct };
+    const plafond = v.bande?.empriseMaxM2 ?? null;
+    if (preuveBande.prouvee && plafond !== null) {
+      // Prouvé par le calcul : tous les bâtiments dans la bande principale, emprise ≤ plafond de la bande.
+      const profondeur = v.bande?.profondeurM ?? null;
+      out.push({
+        ...base, valeur_volume: `${fr(preuveBande.empriseM2, 1)} m² dans la bande principale (${fr(ratioPct, 1)} % de la parcelle)`,
+        regle: `${fr(plafond)} m² max. dans la bande principale${p ? ` (${fr(p.valeur, 1)} % de la bande${profondeur ? ` de ${fr(profondeur, 1)} m` : ''})` : ''} (${libelleRegle(e)})`,
+        verdict: 'a_verifier',
+        explication: `${fr(preuveBande.empriseM2, 1)} m² pour ${fr(plafond)} m² au plus : tous les bâtiments du volume d’étude sont dans la bande principale` +
+          `${preuveBande.distanceMaxVoieM !== null && profondeur ? ` (à ${fr(preuveBande.distanceMaxVoieM, 2)} m au plus du côté voie, pour ${fr(profondeur, 1)} m)` : ''}` +
+          ' et leur emprise tient sous le maximum de cette bande — vérifié par le calcul. Reste à vérifier : le côté voie est présumé d’après le cadastre ' +
+          `(limite sans parcelle mitoyenne), et la bande secondaire n’est pas construite. ${mention.charAt(0).toUpperCase()}${mention.slice(1)}.`,
+      });
+    } else {
+      // Non prouvé : plafond prudent (taux le plus contraignant sur toute la parcelle). Au-delà du taux le plus
+      // élevé des bandes, le dépassement est certain ; entre les deux, seule la part d'emprise dans la bande
+      // principale pourrait le justifier, et le calcul ne la prouve pas.
+      const pourquoi = preuveBande.raison ? ` (${preuveBande.raison})` : '';
+      const regle = `${fr(prudent, 1)} % de la parcelle (plafond prudent) — ${mention} (${libelleRegle(e)})`;
+      if (ratioPct > plusHaut + 1e-9) {
+        out.push({ ...base, valeur_volume: `${fr(ratioPct, 1)} %`, regle, verdict: 'au_dela',
+          explication: `Le volume d’étude dépasse la règle : ${fr(ratioPct, 1)} % de la parcelle, plus que le taux le plus élevé des bandes (${fr(plusHaut, 1)} %). ${mention.charAt(0).toUpperCase()}${mention.slice(1)}.` });
+      } else {
+        out.push({ ...base, valeur_volume: `${fr(ratioPct, 1)} %`, regle, verdict: 'a_verifier',
+          explication: (ratioPct <= prudent + 1e-9
+            ? `${fr(ratioPct, 1)} % de la parcelle : sous le plafond prudent de ${fr(prudent, 1)} % (taux le plus contraignant, appliqué à toute la parcelle).`
+            : `${fr(ratioPct, 1)} % de la parcelle : au-dessus du plafond prudent de ${fr(prudent, 1)} % (taux le plus contraignant, appliqué à toute la parcelle) ; ` +
+              `admissible seulement pour la part d’emprise située dans la bande principale${p ? ` (${fr(p.valeur, 1)} %)` : ''}, ce que le calcul ne prouve pas ici.`) +
+            ` Les bâtiments du volume ne sont pas prouvés dans la bande principale${pourquoi} : à vérifier. ${mention.charAt(0).toUpperCase()}${mention.slice(1)}.` });
+      }
+    }
   } else if (e && fini(e.valeur) && ratioPct !== null) {
     out.push(juger(e, ratioPct <= e.valeur + 1e-9, `${fr(ratioPct, 1)} %`, `${fr(e.valeur, 1)} % max.`, 'emprise_sol_max_pct'));
   } else {
@@ -153,7 +212,8 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
   const ailes = (v.batiments ?? []).some((b) => (b.ailes?.length ?? 0) >= 2);
   const surContour = ailes ? ' Mesuré aile par aile sur le contour réel du bâtiment (pas sur son rectangle englobant).' : '';
   const rv = r('recul_voie_m');
-  if (rv && fini(rv.valeur)) out.push(juger(rv, recul + 0.01 >= rv.valeur, `${fr(recul, 1)} m de toutes les limites`, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m', ` Côté voie non identifié sur le cadastre : recul uniforme.${surContour}`));
+  if (rv && fini(rv.valeur)) out.push(juger(rv, recul + 0.01 >= rv.valeur, `${fr(recul, 1)} m de toutes les limites`, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m',
+    `${preuveBande.prouvee ? ' Côté voie présumé d’après le cadastre ; recul uniforme sur toutes les limites, côté voie compris.' : ' Côté voie non identifié sur le cadastre : recul uniforme.'}${surContour}`));
   else out.push(nonControle('recul_voie_m', 'Recul à la voie inconnu : non contrôlé.'));
   const rl = r('recul_limites_m');
   if (rl && fini(rl.valeur)) out.push(juger(rl, recul + 0.01 >= rl.valeur, `${fr(recul, 1)} m de toutes les limites`, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m', surContour));
@@ -201,7 +261,8 @@ const CLES_VOLUME: Record<string, ReglePlu['cle']> = {
  * devient un plafond de 100 % (aucun plafond ; la pleine terre borne l'emprise), au lieu du 40 % par défaut.
  * Le gabarit du programme (R+n), s'il est fixé, plafonne les niveaux (choix du projet, pas une règle PLU).
  */
-export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null, bandes: MesureBandes | null = null): ReglesPluVolume {
+export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null, bandes: MesureBandes | null = null,
+  options: { /** Lot C7c : l'appelant GARANTIT que les bâtiments sont placés dans la bande principale (moteur avec `bande`, résultat « appliquee »). */ implantationDansBande?: boolean } = {}): ReglesPluVolume {
   const out: ReglePlu[] = [];
   const non: string[] = [];
   for (const r of regles) {
@@ -243,7 +304,9 @@ export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null, 
           non.push(`Emprise par bande : ${fr(p.valeur, 1)} % de la bande principale (${fr(bandes.bandePrincipaleM2)} m² à moins de ${fr(prof, 1)} m de la voie) = ${fr(empriseM2)} m², ` +
             `soit ${fr(ratio * 100, 1)} % de la parcelle de ${fr(bandes.surfaceParcelleM2)} m²`);
           non.push(`Bande secondaire (${fr(bandes.bandeSecondaireM2)} m²${s ? `, emprise ${fr(s.valeur, 1)} %` : ''}) : non construite dans le volume d’étude`);
-          non.push('Côté voie présumé d’après le cadastre (limite sans parcelle mitoyenne) ; le volume n’est pas encore contraint à rester dans la bande principale — implantation à vérifier');
+          non.push(options.implantationDansBande
+            ? 'Côté voie présumé d’après le cadastre (limite sans parcelle mitoyenne), à confirmer ; les bâtiments du volume d’étude sont contenus dans la bande principale (vérifié par le calcul)'
+            : 'Côté voie présumé d’après le cadastre (limite sans parcelle mitoyenne) ; le volume n’est pas encore contraint à rester dans la bande principale — implantation à vérifier');
           continue;
         }
       }

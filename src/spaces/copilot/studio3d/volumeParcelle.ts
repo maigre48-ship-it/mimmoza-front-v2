@@ -24,8 +24,17 @@
 //
 // Ce volume n'est JAMAIS présenté comme conforme : côté voie, prospects entre
 // bâtiments, stationnement, servitudes et OAP ne sont pas vérifiés. Aucune I/O ici.
+//
+// Lot C7b — bande principale (paramètre FACULTATIF `bande`, PLU « par bande ») : quand le côté voie est
+// identifié (coteVoie.ts) et la profondeur de bande lue, le volume est orienté PARALLÈLEMENT À LA VOIE et tient
+// tout entier dans la bande principale (étapes 2 et 4 remplacées ; reculs, CES, niveaux inchangés). Bande
+// inutilisable : calcul habituel, raison écrite dans `bande.raison` et dans les alertes. Sans le paramètre :
+// résultat strictement identique à avant. Rien n'est construit en bande secondaire.
 
 import type { JarvisDraft } from './jarvisDraft.ts';
+import { distanceVoie, preparerBande, rectangleDansBande, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
+
+export type { BandeVoie, BandeVolume } from './bandePrincipale.ts';
 
 export type Position = number[];
 export type GeometrieParcelle =
@@ -238,6 +247,11 @@ export interface VolumePropose {
   batiments?: BatimentPropose[];
   voies?: VoiePropose[];
   kpi?: KpiImplantation;
+  /**
+   * Lot C7b : présent seulement si une bande principale a été demandée. `appliquee` : l'emprise est dans la
+   * bande, parallèle à la voie ; `non-appliquee` : calcul habituel, la raison est dans `raison`.
+   */
+  bande?: BandeVolume;
 }
 
 const M_PAR_DEGRE = 111_320;
@@ -397,6 +411,61 @@ function plusGrandRectangle(anneaux: PointLocal[][], recul: number, epaisseurMax
   return meilleur;
 }
 
+/**
+ * Lot C7b : plus grand rectangle parallèle à la voie (repère tourné : u le long de la voie), à distance ≥ recul
+ * des limites ET entièrement dans la bande principale. Grille de départs fixe, donc déterministe ; à surface
+ * égale, le rectangle le plus proche de la voie.
+ */
+function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisseurMax: number, coteMin: number, facades: FacadeLocale[], profondeurM: number): Rect | null {
+  const segments = segmentsDe(anneaux);
+  const us = anneaux[0].map(p => p.x), vs = anneaux[0].map(p => p.y);
+  const fu = facades.flatMap(f => [f.a.x, f.b.x]), fv = facades.flatMap(f => [f.a.y, f.b.y]);
+  // Zone utile : la parcelle moins le recul, réduite à ce qui peut être à moins de `profondeurM` d'une façade.
+  const u0 = Math.max(Math.min(...us) + recul, Math.min(...fu) - profondeurM), u1 = Math.min(Math.max(...us) - recul, Math.max(...fu) + profondeurM);
+  const v0 = Math.max(Math.min(...vs) + recul, Math.min(...fv) - profondeurM), v1 = Math.min(Math.max(...vs) - recul, Math.max(...fv) + profondeurM);
+  const largeurMax = u1 - u0, hauteurMax = v1 - v0;
+  if (largeurMax < coteMin || hauteurMax < coteMin) return null;
+  // Épaisseurs essayées : celles du calcul habituel, et la profondeur de bande moins le recul (à 0,5 m et 1 m près).
+  const epaisseurs = [...new Set([epaisseurMax, epaisseurMax * 0.75, epaisseurMax * 0.5, profondeurM - recul, profondeurM - recul - 0.5, profondeurM - recul - 1]
+    .map(e => arrondiInf(Math.min(e, epaisseurMax, hauteurMax))).filter(e => e >= coteMin))].sort((a, b) => b - a);
+  const tient = (r: Rect) => {
+    if (!rectTient(anneaux, segments, r, recul)) return false;
+    const x0 = r.cu - r.w / 2, x1 = r.cu + r.w / 2, y0 = r.cv - r.d / 2, y1 = r.cv + r.d / 2;
+    return rectangleDansBande([{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }], facades, profondeurM);
+  };
+  // Le plus loin que le bord peut aller (de `depuis` vers `jusque`) sans que le rectangle cesse de tenir.
+  const pousser = (depuis: number, jusque: number, essai: (bord: number) => boolean) => {
+    if (essai(jusque)) return jusque;
+    let bas = depuis, haut = jusque;
+    for (let k = 0; k < 24 && Math.abs(haut - bas) > 0.01; k++) { const m = (bas + haut) / 2; if (essai(m)) bas = m; else haut = m; }
+    return bas;
+  };
+  // Grille de départs fixe : environ 2 m le long de la voie, 0,25 m en profondeur ; chaque départ est élargi
+  // vers la gauche puis vers la droite (le rectangle n'est pas forcément centré sur son départ).
+  const NU = Math.max(3, Math.min(25, Math.ceil(largeurMax / 2))), NV = Math.max(3, Math.min(120, Math.ceil(hauteurMax / 0.25)));
+  let meilleur: Rect | null = null, distanceMeilleur = Infinity;
+  for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
+    const su = u0 + largeurMax * (i + 0.5) / NU, cv = v0 + hauteurMax * (j + 0.5) / NV;
+    if (distanceVoie({ x: su, y: cv }, facades) > profondeurM || !dansPolygone(anneaux, su, cv)) continue;
+    for (const d of epaisseurs) {
+      if (meilleur && largeurMax * d < meilleur.w * meilleur.d - 1e-6) continue;
+      const entre = (g: number, dr: number): Rect => ({ cu: (g + dr) / 2, cv, w: dr - g, d });
+      // Départ : le plus petit rectangle admis, calé sur le départ et ramené dans la zone utile.
+      const g0 = Math.max(u0, Math.min(su - coteMin / 2, u1 - coteMin));
+      if (!tient(entre(g0, g0 + coteMin))) continue;
+      const gauche = pousser(g0, u0, g => tient(entre(g, g0 + coteMin)));
+      const droite = pousser(g0 + coteMin, u1, dr => tient(entre(gauche, dr)));
+      const w = arrondiInf(droite - gauche);
+      if (w < coteMin) continue;
+      const r = entre(gauche, gauche + w);
+      const distance = distanceVoie({ x: r.cu, y: r.cv }, facades);
+      const aire = w * d, aireMeilleur = meilleur ? meilleur.w * meilleur.d : -1;
+      if (aire > aireMeilleur + 1e-6 || (Math.abs(aire - aireMeilleur) <= 1e-6 && distance < distanceMeilleur - 1e-9)) { meilleur = r; distanceMeilleur = distance; }
+    }
+  }
+  return meilleur;
+}
+
 /** Normalise un ratio PLU : seuls les ratios entre 0 et 1 sont acceptés (40 → refusé, comme ailleurs dans l'app). */
 export function ratioEmprise(v: unknown): number | null {
   const n = nombre(v);
@@ -432,10 +501,59 @@ export function regleValide(r: ReglePlu): boolean {
   }
 }
 
+/**
+ * Volume d'étude proposé sur la parcelle.
+ * `bande` (facultatif, lot C7b) : bande principale d'un PLU « par bande ». Absente : calcul habituel, résultat
+ * inchangé. Présente et utilisable : volume dans la bande, parallèle à la voie. Présente mais inutilisable
+ * (côté voie non identifié, bande trop petite…) : calcul habituel, avec la raison dans `bande.raison` et dans
+ * les alertes — jamais d'exception, jamais de valeur supposée.
+ */
 export function calculerVolumeParcelle(
   geometrie: GeometrieParcelle | null | undefined,
   programme: ProgrammeVolume,
   regles: ReglesPluVolume = REGLES_INCONNUES,
+  bande?: BandeVoie | null,
+): VolumePropose {
+  if (bande === undefined || bande === null) return calculerVolume(geometrie, programme, regles, null);
+  const H = HYPOTHESES_VOLUME;
+  const profondeurLue = typeof bande.profondeurM === 'number' && Number.isFinite(bande.profondeurM) && bande.profondeurM > 0 ? bande.profondeurM : null;
+  const plafondLu = typeof bande.empriseMaxM2 === 'number' && Number.isFinite(bande.empriseMaxM2) && bande.empriseMaxM2 > 0 ? bande.empriseMaxM2 : null;
+  const sansBande = (raison: string): VolumePropose => {
+    const v = calculerVolume(geometrie, programme, regles, null);
+    const texte = `Bande principale non appliquée : ${raison}${v.emprise ? ' Volume placé sans tenir compte de la bande.' : ''}`;
+    return { ...v, alertes: [...v.alertes, texte], bande: { statut: 'non-appliquee', raison: texte, profondeurM: profondeurLue, longueurFacadeM: null, angleVoieDeg: null, distanceMaxVoieM: null, empriseMaxM2: plafondLu } };
+  };
+  const proj = projeterParcelle(geometrie);
+  if (!proj || proj.anneaux[0].length < 3) return sansBande('contour cadastral illisible.');
+  const prep = preparerBande(bande, proj.origine, proj.anneaux[0], H.coteMinM);
+  if (!prep.ok) return sansBande(prep.raison);
+  const b = prep.bande;
+  const v = calculerVolume(geometrie, programme, regles, b);
+  if (!v.emprise) {
+    return sansBande(v.statut === 'trop-petite'
+      ? `aucun rectangle de ${H.coteMinM} × ${H.coteMinM} m ne tient à la fois à ${fr(v.reculM, 1)} m des limites et à moins de ${fr(b.profondeurM, 1)} m du côté voie${b.empriseMaxM2 !== null ? ` (emprise maximale ${fr(b.empriseMaxM2)} m²)` : ''}.`
+      : 'aucun volume proposé sur cette parcelle.');
+  }
+  const distanceMax = Math.max(...v.emprise.coins.map(p => distanceVoie(p, b.facades)));
+  return {
+    ...v,
+    hypotheses: [...v.hypotheses,
+      ...(b.empriseMaxM2 !== null ? [`Emprise au sol bornée à ${fr(b.empriseMaxM2)} m² : maximum de la bande principale.`] : []),
+      `Bande secondaire (au-delà de ${fr(b.profondeurM, 1)} m depuis la voie) : non construite dans ce volume d’étude.`],
+    bande: {
+      statut: 'appliquee', raison: null, profondeurM: b.profondeurM, longueurFacadeM: b.longueurFacadeM,
+      angleVoieDeg: Math.round(b.angle * 180 / Math.PI * 10) / 10,
+      distanceMaxVoieM: Math.ceil(distanceMax * 100 - 1e-6) / 100, empriseMaxM2: b.empriseMaxM2,
+    },
+  };
+}
+
+/** Le calcul lui-même. `bande` null : comportement d'origine, à l'identique. */
+function calculerVolume(
+  geometrie: GeometrieParcelle | null | undefined,
+  programme: ProgrammeVolume,
+  regles: ReglesPluVolume,
+  bande: BandePreparee | null,
 ): VolumePropose {
   const H = HYPOTHESES_VOLUME;
   const valides = (regles.regles ?? []).filter(regleValide);
@@ -485,9 +603,13 @@ export function calculerVolumeParcelle(
       ? 'Hypothèse — règlement PLU lu, aucune règle chiffrée reprise'
       : 'Hypothèse — règlement PLU non lu';
   const hypotheses = [
-    reculConnu ? `Recul appliqué sur toutes les limites : le plus fort des reculs PLU (côté voie non identifié).` : `Recul de ${fr(H.reculDefautM)} m sur toutes les limites (valeur par défaut).`,
+    reculConnu ? `Recul appliqué sur toutes les limites : le plus fort des reculs PLU (côté voie non identifié).`
+      : bande ? `Recul de ${fr(H.reculDefautM)} m sur toutes les limites, côté voie compris (valeur par défaut).`
+      : `Recul de ${fr(H.reculDefautM)} m sur toutes les limites (valeur par défaut).`,
     rCes ? `Emprise au sol bornée à ${fr(cesRetenu * 100, 1)} % de la parcelle (règle PLU).` : `Emprise au sol bornée à ${fr(cesRetenu * 100)} % de la parcelle (valeur par défaut).`,
-    `Bâtiment d’épaisseur ${fr(epaisseurMax, 1)} m au plus${rEpaisseur ? ' (règle PLU)' : ''}, orienté selon le grand côté de la parcelle.`,
+    bande
+      ? `Bâtiment d’épaisseur ${fr(epaisseurMax, 1)} m au plus${rEpaisseur ? ' (règle PLU)' : ''}, implanté dans la bande principale (${fr(bande.profondeurM, 1)} m depuis le côté voie présumé), parallèlement à la voie.`
+      : `Bâtiment d’épaisseur ${fr(epaisseurMax, 1)} m au plus${rEpaisseur ? ' (règle PLU)' : ''}, orienté selon le grand côté de la parcelle.`,
     `Hauteur d’étage ${fr(H.hauteurEtageM)} m, toit plat ; SDP estimée ≈ emprise × niveaux.`,
   ];
   const lignesRegles = () => [...appliquees.entries()].map(([r, effet]) =>
@@ -505,18 +627,21 @@ export function calculerVolumeParcelle(
   if (!(surface > 1)) return vide('contour-invalide', contour, proj.origine, 0, ['Contour cadastral de surface nulle : aucun volume proposé.']);
   if (niveauxMax < 1) return vide('hauteur-insuffisante', contour, proj.origine, surface, [`Hauteur PLU de ${fr(hauteurMax ?? 0, 1)} m inférieure à un étage de ${H.hauteurEtageM} m : aucun volume proposé.`]);
 
-  // Repère tourné : u le long du grand axe de la parcelle.
-  const angle = orientationParcelle(contour);
+  // Repère tourné : u le long du grand axe de la parcelle — ou le long de la voie si une bande est appliquée.
+  const angle = bande ? bande.angle : orientationParcelle(contour);
   const c = Math.cos(-angle), s = Math.sin(-angle);
   const tourner = (p: PointLocal) => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c });
   const anneauxUV = proj.anneaux.map(r => r.map(tourner));
-  const empriseMaxSurface = ratioEmpriseRetenu * surface;
+  const facadesUV = bande ? bande.facades.map(f => ({ a: tourner(f.a), b: tourner(f.b) })) : null;
+  const empriseMaxSurface = bande && bande.empriseMaxM2 !== null ? Math.min(ratioEmpriseRetenu * surface, bande.empriseMaxM2) : ratioEmpriseRetenu * surface;
   const cacheRect = new Map<string, Rect | null>();
   /** Emprise possible pour n niveaux : le recul peut dépendre de la hauteur (règle H/k). */
   const evaluer = (n: number) => {
     const reculM = Math.round(reculPour(n * H.hauteurEtageM) * 100) / 100;
     const cle = reculM.toFixed(2);
-    if (!cacheRect.has(cle)) cacheRect.set(cle, plusGrandRectangle(anneauxUV, reculM, epaisseurMax, H.coteMinM));
+    if (!cacheRect.has(cle)) cacheRect.set(cle, bande && facadesUV
+      ? plusGrandRectangleBande(anneauxUV, reculM, epaisseurMax, H.coteMinM, facadesUV, bande.profondeurM)
+      : plusGrandRectangle(anneauxUV, reculM, epaisseurMax, H.coteMinM));
     const rect = cacheRect.get(cle);
     if (!rect) return null;
     let w = rect.w, d = rect.d;
@@ -569,7 +694,9 @@ export function calculerVolumeParcelle(
   if (rVoie) noter(rVoie, 'recul appliqué');
   if (rLimites) noter(rLimites, 'recul appliqué');
   if (rFormule) noter(rFormule, `recul recalculé pour H = ${fr(niveaux * H.hauteurEtageM)} m : ${fr(Math.max(rFormule.minimumM ?? 0, niveaux * H.hauteurEtageM / rFormule.valeur), 1)} m`);
-  if (reculConnu) hypotheses[0] = `Recul de ${fr(reculM, 1)} m sur toutes les limites : le plus fort des reculs PLU pour cette hauteur (côté voie non identifié).`;
+  if (reculConnu) hypotheses[0] = bande
+    ? `Recul de ${fr(reculM, 1)} m sur toutes les limites, côté voie compris : le plus fort des reculs PLU pour cette hauteur (recul à la voie et reculs aux limites non différenciés).`
+    : `Recul de ${fr(reculM, 1)} m sur toutes les limites : le plus fort des reculs PLU pour cette hauteur (côté voie non identifié).`;
   if (hauteurMax === null && !rNiveaux) alertes.push(sdpVisee !== null ? 'Hauteur maximale du PLU inconnue : niveaux déduits du seul programme.' : 'Hauteur maximale du PLU inconnue : hauteur indicative.');
 
   const surfaceEmprise = w * d;

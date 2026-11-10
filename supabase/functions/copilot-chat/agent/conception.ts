@@ -19,6 +19,7 @@
 
 import { TAILLE_MAX_PIECE_JOINTE } from '../../_shared/documents/piecesJointes.ts';
 import { estConditionBande, valeurParBande } from '../../../../src/spaces/copilot/studio3d/reglesParBande.ts';
+import { chercherVoisinesParcelle, type VoisinesParcelle } from './voisines-parcelle.ts';
 
 export type RegleCle =
   | 'hauteur_max_m' | 'niveaux_max' | 'emprise_sol_max_pct' | 'recul_voie_m' | 'recul_limites_m'
@@ -1078,9 +1079,18 @@ export interface ParcelleConception {
   geometrie: { type: 'Polygon'; coordinates: number[][][] } | { type: 'MultiPolygon'; coordinates: number[][][][] };
   surface_m2: number | null;
   source: string;
+  /**
+   * Lot C7b : parcelles voisines (même source), pour situer la voie et mesurer les bandes de constructibilité.
+   * Absent d'une conception enregistrée avant ce lot : le volume garde alors l'emprise prudente du lot C6.
+   */
+  voisines?: VoisinesParcelle;
 }
 
-/** Contour cadastral réel via API Carto IGN (même requête que le chat). `fetchFn` injectable. */
+/**
+ * Contour cadastral réel via API Carto IGN (même requête que le chat). `fetchFn` injectable.
+ * Lot C7b : les parcelles voisines sont demandées dans la foulée (voisines-parcelle.ts) ; leur échec ne
+ * fait jamais échouer le contour (elles sont alors « indisponibles », avec la raison).
+ */
 export async function chercherContourParcelle(iduBrut: string, fetchFn: typeof fetch): Promise<ParcelleConception | null> {
   const idu = iduBrut.replace(/\s/g, '').toUpperCase();
   const m = /^(2[AB]\d{3}|\d{5})(\d{3})([0-9A-Z]{2})(\d{4})$/.exec(idu);
@@ -1099,11 +1109,13 @@ export async function chercherContourParcelle(iduBrut: string, fetchFn: typeof f
       const f = Array.isArray(fc?.features) ? fc.features[0] : null;
       if (!f?.geometry || !['Polygon', 'MultiPolygon'].includes(f.geometry.type)) continue;
       const contenance = Number(f.properties?.contenance);
+      const voisines = await chercherVoisinesParcelle(idu, f.geometry, fetchFn);   // ne lève jamais
       return {
         idu,
         geometrie: f.geometry,
         surface_m2: Number.isFinite(contenance) && contenance > 0 ? contenance : null,
         source: 'API Carto IGN — cadastre (contenance cadastrale)',
+        voisines,
       };
     } catch { /* essai suivant */ }
   }

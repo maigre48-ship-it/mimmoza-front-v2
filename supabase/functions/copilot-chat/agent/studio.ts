@@ -42,6 +42,11 @@ import {
 } from './studio-front.ts';
 import { controlerVolume, lireRegles, niveauxDuGabarit, reglesVolume, type ControleVolume, type RegleLue } from './studio-front.ts';
 import { boitesApercu } from './studio-front.ts';
+// Lot C7b : côté voie et bandes de constructibilité, d'après les parcelles voisines conservées avec la conception.
+import { bandePourMoteur, bandesDeLaConception, noteBandesNonMesurees, type BandesConception } from './voisines-parcelle.ts';
+import type { MesureBandes } from '../../../../src/spaces/copilot/studio3d/coteVoie.ts';
+// Lot C7c : revérification géométrique de la bande principale sur le volume final (forme choisie comprise).
+import { verifierBandeVolume, type BandeVolume } from '../../../../src/spaces/copilot/studio3d/bandePrincipale.ts';
 // Lot formes-batiment : formes du bâtiment (L, U, cour, redans, plots) calculées, vérifiées et comparées par le moteur.
 import {
   appliquerFormeDetail, comparerFormes, evaluerSaisie, FORMES, NOMS_FORME_AILES, saisieDepuisBloc, saisieDepuisVolume,
@@ -141,6 +146,8 @@ export interface EntreePreparation {
   programme: unknown;
   programme_volume: ProgrammeVolume;
   gabarit_niveaux: number | null;
+  /** Lot C7b : bandes mesurées depuis le côté voie présumé. Absent si non mesurées (empreinte alors inchangée). */
+  bandes?: MesureBandes;
 }
 
 export interface ResumePreparation {
@@ -235,18 +242,66 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
   const regles = lireRegles(c.regles_plu);
   const pv = programmeVolume(c.programme);
   const gabarit = niveauxDuGabarit(estObj(c.programme) ? c.programme.gabarit : null);
-  const rv = reglesVolume(regles, gabarit);
-  const moteur = calculerVolumeProgramme(parcelle.geometrie, pv, rv);
+  // Lot C7b : règle d'emprise PAR BANDE → côté voie cherché sur le cadastre (parcelles voisines de la conception),
+  // bandes mesurées à la profondeur lue dans la règle. Non mesurées : emprise prudente du lot C6, raison dite.
+  const bandes: BandesConception = bandesDeLaConception(c.parcelle, regles);
+  const noteBandes = noteBandesNonMesurees(bandes);
+  // Lot C7c — cohérence de bout en bout : le plafond « bande principale » (45 % à Montreuil) n'est utilisé QUE
+  // si les bâtiments sont réellement dans la bande principale. Le moteur reçoit la bande (côté voie, profondeur,
+  // plafond en m²) ; s'il répond « non appliquée », ou si la forme choisie sort de la bande, tout est recalculé
+  // avec le plafond prudent du lot C6 (taux le plus contraignant sur toute la parcelle) et la raison est notée.
+  const demande = bandes.mesure ? bandePourMoteur(bandes) : null;
+  /** Calcul prudent : règles sans bandes mesurées, implantation habituelle, raison notée. */
+  const prudent = (raison: string | null) => {
+    const rv = reglesVolume(regles, gabarit, null);
+    if (noteBandes) rv.nonAppliquees.push(noteBandes);
+    if (raison) rv.nonAppliquees.push(raison);
+    const v = calculerVolumeProgramme(parcelle.geometrie, pv, rv);
+    // La bande a été demandée et écartée : le volume le porte (statut et raison), pour les contrôles et la suite.
+    const etat: BandeVolume | null = raison ? { statut: 'non-appliquee', raison, profondeurM: bandes.profondeurM, longueurFacadeM: null, angleVoieDeg: null, distanceMaxVoieM: null, empriseMaxM2: demande?.empriseMaxM2 ?? null } : null;
+    return etat ? { ...v, bande: etat } : v;
+  };
+  const sansRepli = (texte: string) => texte.replace(/^Bande principale non appliquée : /u, '').replace(/\s*(?:Volume placé|Bâtiments placés) sans tenir compte de la bande\.$/u, '');
+  const mesuree = bandes.mesure ? `Bande principale mesurée (${bandes.mesure.bandePrincipaleM2} m² à moins de ${String(bandes.mesure.profondeurM).replace('.', ',')} m de la voie) mais non retenue pour ce volume` : '';
+  const plafondPrudent = 'plafond d’emprise prudent appliqué à toute la parcelle';
+  let moteur: VolumePropose;
+  let dansBande = false;
+  if (bandes.mesure && demande) {
+    const rv = reglesVolume(regles, gabarit, bandes.mesure, { implantationDansBande: true });
+    const v = calculerVolumeProgramme(parcelle.geometrie, pv, rv, demande);
+    if (v.bande?.statut === 'appliquee' && verifierBandeVolume(v).prouvee) { moteur = v; dansBande = true; }
+    else moteur = prudent(`${mesuree} — ${sansRepli(v.bande?.statut === 'non-appliquee' && v.bande.raison ? v.bande.raison : 'implantation dans la bande non prouvée.')} ${plafondPrudent[0].toUpperCase()}${plafondPrudent.slice(1)}.`);
+  } else if (bandes.mesure) {
+    moteur = prudent(`${mesuree} — maximum d’emprise de la bande principale non calculable : ${plafondPrudent}.`);
+  } else moteur = prudent(null);
   if (!moteur.emprise || moteur.niveaux < 1) {
     return { ok: false, raison: `Aucun volume ne tient sur la parcelle avec les règles connues : ${moteur.alertes[0] ?? moteur.mentionPlu ?? moteur.statut}.` };
   }
   // Lot formes-batiment : forme choisie dans la fiche (saisie relue et RÉÉVALUÉE ici) ou demandée (placée par le moteur).
-  const pf: PreparationFiche = { idu: c.idu, commune: c.commune, volume: moteur, regles, programme: pv, gabaritNiveaux: gabarit };
-  const f = appliquerChoixForme(pf, choix);
+  let pf: PreparationFiche = { idu: c.idu, commune: c.commune, volume: moteur, regles, programme: pv, gabaritNiveaux: gabarit };
+  let f = appliquerChoixForme(pf, choix);
+  // Lot C7c : une forme choisie remplace les bâtiments du moteur. Si elle n'est pas PROUVÉE dans la bande
+  // principale (ou si elle échoue sur le volume en bande), on repart du calcul prudent : jamais de plafond
+  // « bande principale » avec des bâtiments hors bande.
+  if (dansBande && (!f.ok || f.volume !== moteur)) {
+    const preuve = f.ok ? verifierBandeVolume(f.volume) : null;
+    if (f.ok && preuve?.prouvee) {
+      f = { ...f, volume: { ...f.volume, bande: f.volume.bande ? { ...f.volume.bande, distanceMaxVoieM: preuve.distanceMaxVoieM } : f.volume.bande } };
+    } else {
+      moteur = prudent(`${mesuree} — forme choisie non contenue dans la bande principale${preuve?.raison ? ` (${preuve.raison})` : ''} : ${plafondPrudent}.`);
+      dansBande = false;
+      if (!moteur.emprise || moteur.niveaux < 1) {
+        return { ok: false, raison: `Aucun volume ne tient sur la parcelle avec les règles connues : ${moteur.alertes[0] ?? moteur.mentionPlu ?? moteur.statut}.` };
+      }
+      pf = { ...pf, volume: moteur };
+      f = appliquerChoixForme(pf, choix);
+    }
+  }
   if (!f.ok) return { ok: false, raison: f.raison };
   const volume = f.volume;
   const controles = controlerVolume(volume, regles, volume.logementsEstimes ?? pv.logements);
-  const entree: EntreePreparation = { parcelle, commune: c.commune, regles, programme: c.programme ?? null, programme_volume: pv, gabarit_niveaux: gabarit };
+  const entree: EntreePreparation = { parcelle, commune: c.commune, regles, programme: c.programme ?? null, programme_volume: pv, gabarit_niveaux: gabarit,
+    ...(bandes.mesure ? { bandes: bandes.mesure } : {}) };
   // Sans choix de forme, empreinte inchangée (mêmes lignes qu'avant ce lot) ; avec, la forme saisie y entre.
   const empreinte = await sha256Hex(jsonCanonique({ version: VERSION_CALCUL, conception_id: c.id, entree, ...(f.cle ? { forme: f.cle } : {}) }));
   return { ok: true, entree, volume, resume: { ...resumerVolume(volume, controles, pv), forme: f.resume }, empreinte };
