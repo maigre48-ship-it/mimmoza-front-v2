@@ -18,6 +18,7 @@
 
 import { HYPOTHESES_VOLUME, libelleNiveaux, regleValide, type ReglePlu, type ReglesPluVolume, type VolumePropose } from './volumeParcelle.ts';
 import { estConditionBande, mentionBandes, optionBandePrincipale, optionBandeSecondaire, profondeurBandePrincipaleM, type OptionBande } from './reglesParBande.ts';
+import type { MesureBandes } from './coteVoie.ts';
 
 type Obj = Record<string, unknown>;
 const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -200,7 +201,7 @@ const CLES_VOLUME: Record<string, ReglePlu['cle']> = {
  * devient un plafond de 100 % (aucun plafond ; la pleine terre borne l'emprise), au lieu du 40 % par défaut.
  * Le gabarit du programme (R+n), s'il est fixé, plafonne les niveaux (choix du projet, pas une règle PLU).
  */
-export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null): ReglesPluVolume {
+export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null, bandes: MesureBandes | null = null): ReglesPluVolume {
   const out: ReglePlu[] = [];
   const non: string[] = [];
   for (const r of regles) {
@@ -231,6 +232,21 @@ export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null):
       const p = optionBandePrincipale(alts);
       const s = optionBandeSecondaire(alts);
       const prof = profondeurBandePrincipaleM(alts, r.texte);
+      // Lot C7 : côté voie identifié d'après le cadastre ET profondeur de bande lue → l'emprise de la bande
+      // principale est mesurée (m²), puis rapportée à la parcelle. La bande secondaire n'est pas construite par
+      // le volume d'étude : on ne lui prête pas la hauteur de la bande principale.
+      if (bandes && p && prof && Math.abs(bandes.profondeurM - prof) < 0.01 && p.valeur > 0 && p.valeur <= 100 && bandes.surfaceParcelleM2 > 0) {
+        const empriseM2 = Math.floor(bandes.bandePrincipaleM2 * p.valeur / 100);
+        const ratio = Math.floor(empriseM2 / bandes.surfaceParcelleM2 * 1000) / 1000;
+        if (ratio > 0 && ratio <= 1) {
+          out.push({ cle: 'emprise_max_ratio', valeur: ratio, ...base, source: `${r.source} — ${fr(p.valeur, 1)} % de la bande principale de ${fr(prof, 1)} m (${fr(bandes.bandePrincipaleM2)} m² mesurés depuis le côté voie présumé)` });
+          non.push(`Emprise par bande : ${fr(p.valeur, 1)} % de la bande principale (${fr(bandes.bandePrincipaleM2)} m² à moins de ${fr(prof, 1)} m de la voie) = ${fr(empriseM2)} m², ` +
+            `soit ${fr(ratio * 100, 1)} % de la parcelle de ${fr(bandes.surfaceParcelleM2)} m²`);
+          non.push(`Bande secondaire (${fr(bandes.bandeSecondaireM2)} m²${s ? `, emprise ${fr(s.valeur, 1)} %` : ''}) : non construite dans le volume d’étude`);
+          non.push('Côté voie présumé d’après le cadastre (limite sans parcelle mitoyenne) ; le volume n’est pas encore contraint à rester dans la bande principale — implantation à vérifier');
+          continue;
+        }
+      }
       const min = Math.min(...alts.map((a) => a.valeur));
       if (min > 0 && min <= 100) {
         out.push({ cle: 'emprise_max_ratio', valeur: min / 100, ...base, source: `${r.source} — emprise par bande, côté voie non identifié : taux le plus contraignant appliqué à la parcelle` });
