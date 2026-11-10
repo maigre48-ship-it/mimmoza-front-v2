@@ -39,14 +39,22 @@
 // bande, ou preuve manquante : implantation habituelle sur toute la parcelle, et le résultat le dit
 // (`bande.statut: 'non-appliquee'`, raison dans `bande.raison` et dans les alertes) — l'appelant doit alors
 // revenir au plafond d'emprise prudent. Sans le paramètre : résultat strictement identique à avant.
+//
+// Lot C10 —
+//   · plafond d'emprise STRICT partout (défaut C) : la longueur d'un bâtiment collectif n'est plus jamais arrondie
+//     au-dessus de l'emprise autorisée (avant : 168 m² pour 163,2 m² autorisés à Montreuil). Hors bande, c'est le
+//     seul changement de résultat de ce lot ;
+//   · recul différencié dans la bande (défaut B) : si le recul à la voie est établi par une règle lue (règle
+//     chiffrée, ou alignement explicite dans `bande.implantation`), il s'applique aux limites présumées sur voie et
+//     le recul aux limites séparatives aux autres. Non établi : recul uniforme d'origine, côté voie compris.
 
 import {
-  calculerVolumeParcelle, HYPOTHESES_VOLUME, orientationParcelle, projeterParcelle, rectTient, regleValide, segmentsDe, versWgs84,
+  calculerVolumeParcelle, HYPOTHESES_VOLUME, hypotheseReculsDifferencies, hypothesesImplantation, orientationParcelle, projeterParcelle, rectTient, regleValide, reculsRetenus, segmentsDe, versWgs84,
   REGLES_INCONNUES,
   type BatimentPropose, type CleReglePlu, type ComposanteProgramme, type FormeBatie, type GeometrieParcelle, type KpiImplantation,
   type PointLocal, type ProgrammeVolume, type ReglePlu, type ReglesPluVolume, type Segment, type VoiePropose, type VolumePropose,
 } from './volumeParcelle.ts';
-import { distanceVoie, preparerBande, rectangleDansBande, verifierBandeVolume, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
+import { distanceVoie, marquerSegmentsVoie, mesurerReculsVolume, preparerBande, rectangleDansBande, verifierBandeVolume, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
 
 /** Bâtiments au plus dans Studio (ARCHITECTURE_LIMITS.maxBuildings, mimmozia-studio/src/core/architecture/defaults.ts). */
 export const LIMITE_BATIMENTS_STUDIO = 12;
@@ -88,8 +96,17 @@ interface Contraintes {
   epaisseurMax: number;
   reculPour: (hauteurM: number) => number;
   reculConnu: boolean;
+  /**
+   * Lot C10 : recul côté voie quand les reculs sont différenciés (m, 0 = alignement) ; `reculPour` donne alors
+   * le recul aux limites AUTRES que la voie. null (toujours, sans le second paramètre) : `reculPour` vaut partout.
+   */
+  reculVoieM: number | null;
 }
-export function contraintesPlu(regles: ReglesPluVolume): Contraintes {
+/**
+ * `implantation` (lot C10, facultatif) : implantation de la bande préparée, à passer SEULEMENT quand les limites
+ * sur voie ont été retrouvées sur le contour. Absente : contraintes d'origine, recul uniforme.
+ */
+export function contraintesPlu(regles: ReglesPluVolume, implantation: { reculVoieM: number | null } | null = null): Contraintes {
   const H = HYPOTHESES_VOLUME;
   const valides = (regles.regles ?? []).filter(regleValide);
   const plus = (cle: CleReglePlu, sens: 'min' | 'max'): ReglePlu | null => {
@@ -112,6 +129,12 @@ export function contraintesPlu(regles: ReglesPluVolume): Contraintes {
     reculConnu,
     reculPour: (h: number) => Math.round((!reculConnu ? H.reculDefautM : Math.max(rVoie?.valeur ?? 0, rLimites?.valeur ?? 0,
       rFormule ? Math.max(rFormule.minimumM ?? 0, h / rFormule.valeur) : 0)) * 100) / 100,
+    reculVoieM: null,
+    // Lot C10 : recul à la voie établi → recul « limites » pour les autres limites, recul « voie » à part.
+    ...(() => {
+      const rc = implantation ? reculsRetenus(valides, implantation) : null;
+      return rc && rc.voieM !== null ? { reculVoieM: rc.voieM, reculPour: (h: number) => Math.round(rc.limitesPour(h) * 100) / 100 } : {};
+    })(),
   };
 }
 
@@ -122,19 +145,32 @@ interface Cadre {
   anneaux: PointLocal[][]; segments: Segment[]; u0: number; u1: number; v0: number; v1: number;
   /** Lot C7c : bande principale dans le repère tourné (façades sur voie, profondeur) ; null = pas de bande. */
   bande: { facades: FacadeLocale[]; profondeurM: number } | null;
+  /** Lot C10 : recul côté voie (segments sur voie marqués dans `segments`) ; null = recul uniforme. */
+  reculVoieM: number | null;
+  /**
+   * Lot C10 : plus grand v qu'un point de la bande principale peut atteindre (v le plus haut d'une façade +
+   * profondeur de bande) ; +∞ sans bande. Une rangée qui finit au-delà ne peut pas être dans la bande : inutile
+   * de la chercher (même résultat, calcul plus court sur les parcelles profondes).
+   */
+  vMaxBande: number;
 }
 
 /** Lot C7c : bande principale à respecter par l'implantation (repère local de la parcelle). */
-interface BandeImplantation { facades: FacadeLocale[]; profondeurM: number; empriseMaxM2: number | null }
+interface BandeImplantation { facades: FacadeLocale[]; profondeurM: number; empriseMaxM2: number | null; /** Lot C10 : recul côté voie, null = uniforme. */ reculVoieM?: number | null }
 
 function cadreTourne(anneaux: PointLocal[][], angle: number, bande: BandeImplantation | null = null): Cadre {
   const c = Math.cos(-angle), s = Math.sin(-angle);
   const t = (p: PointLocal) => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c });
   const a = anneaux.map(r => r.map(t));
   const us = a[0].map(p => p.x), vs = a[0].map(p => p.y);
+  const segments = segmentsDe(a);
+  const facades = bande ? bande.facades.map(f => ({ a: t(f.a), b: t(f.b) })) : null;
+  // Lot C10 : les limites sur voie sont marquées ; si une façade n'est pas retrouvée sur le contour, recul uniforme.
+  const reculVoieM = bande && facades && bande.reculVoieM !== undefined && bande.reculVoieM !== null && marquerSegmentsVoie(segments, facades) ? bande.reculVoieM : null;
   return {
-    anneaux: a, segments: segmentsDe(a), u0: Math.min(...us), u1: Math.max(...us), v0: Math.min(...vs), v1: Math.max(...vs),
-    bande: bande ? { facades: bande.facades.map(f => ({ a: t(f.a), b: t(f.b) })), profondeurM: bande.profondeurM } : null,
+    anneaux: a, segments, u0: Math.min(...us), u1: Math.max(...us), v0: Math.min(...vs), v1: Math.max(...vs),
+    bande: bande && facades ? { facades, profondeurM: bande.profondeurM } : null, reculVoieM,
+    vMaxBande: bande && facades ? Math.max(...facades.flatMap(f => [f.a.y, f.b.y])) + bande.profondeurM : Infinity,
   };
 }
 
@@ -142,7 +178,12 @@ function cadreTourne(anneaux: PointLocal[][], angle: number, bande: BandeImplant
 const TOLERANCE_M = 0.01;
 /** Rectangle [ua, ub] × [va, vb] à ≥ recul de toutes les limites (à 1 cm près). */
 const tient = (k: Cadre, ua: number, ub: number, va: number, vb: number, recul: number) =>
-  ub - ua > 0 && vb - va > 0 && rectTient(k.anneaux, k.segments, { cu: (ua + ub) / 2, cv: (va + vb) / 2, w: ub - ua, d: vb - va }, Math.max(1e-6, recul - TOLERANCE_M));
+  ub - ua > 0 && vb - va > 0 && rectTient(k.anneaux, k.segments, { cu: (ua + ub) / 2, cv: (va + vb) / 2, w: ub - ua, d: vb - va }, Math.max(1e-6, recul - TOLERANCE_M),
+    k.reculVoieM !== null ? Math.max(1e-6, k.reculVoieM - TOLERANCE_M) : undefined);
+/** Lot C10 : recul à tenir depuis le bord côté voie du cadre (v0) — recul « voie » s'il est différencié, sinon le recul courant. */
+const reculCoteVoie = (k: Cadre, recul: number) => k.reculVoieM !== null ? k.reculVoieM : recul;
+/** Lot C10 : pas de recherche d'une rangée en profondeur — 1 m à l'origine ; 0,25 m quand le bâtiment peut venir à l'alignement. */
+const pasRangee = (k: Cadre) => k.reculVoieM !== null ? 0.25 : 1;
 
 /**
  * Lot C7c : le rectangle BÂTI [ua, ub] × [va, vb] est-il entièrement dans la bande principale du cadre ?
@@ -228,11 +269,11 @@ function implanterMaisons(k: Cadre, c: ComposanteProgramme, idx: number, o: {
     placees += n; emprise += (r.ub - r.ua) * (r.vb - r.va);
   };
   let v = o.vDebut;
-  while (placees < c.nombre && batiments.length < o.maxBatiments && v + p <= k.v1 - o.recul + 1e-9) {
+  while (placees < c.nombre && batiments.length < o.maxBatiments && v + p <= k.v1 - o.recul + 1e-9 && v + p <= k.vMaxBande + 1e-9) {
     // Rangée A (jardin côté v bas), voie, rangée B (jardin côté v haut).
     const avantA = batiments.length;
     remplirRangee(k, v, v + p, o.recul, HP.ecartPignonsMaisonsM, choisir, o.jardinDebut || v > o.vDebut ? { sens: -1, profondeurM: jardin } : null, poser);
-    if (batiments.length === avantA) { v += 1; continue; }
+    if (batiments.length === avantA) { v += pasRangee(k); continue; }
     const vVoie = v + p + HP.reculVoieM, vB = vVoie + HP.voieM + HP.reculVoieM;
     const avantB = batiments.length;
     if (placees < c.nombre) remplirRangee(k, vB, vB + p, o.recul, HP.ecartPignonsMaisonsM, choisir, { sens: 1, profondeurM: jardin }, poser);
@@ -261,25 +302,26 @@ function implanterCollectif(k: Cadre, c: ComposanteProgramme, idx: number, ct: C
   const essai = (n: number, longueurCible: number, empriseVisee: number, strict: boolean): EssaiCollectif => {
     const H = n * HYPOTHESES_VOLUME.hauteurEtageM, recul = ct.reculPour(H);
     const batiments: BatUV[] = [];
-    let emprise = 0, v = Math.max(o.vDebut, k.v0 + recul), vFin = o.vDebut;
+    let emprise = 0, v = Math.max(o.vDebut, k.v0 + reculCoteVoie(k, recul)), vFin = o.vDebut;
     const choisir = (dispo: number) => {
       const reste = empriseVisee - emprise;
       if (reste <= 1e-6 || batiments.length >= o.maxBatiments) return null;
       let L = Math.min(longueurCible, HP.longueurBarreMaxM, demi(dispo));
       if (reste / d < L) L = Math.max(HP.longueurMinCollectifM, demiSup(reste / d));
       else if (strict && L < longueurCible - 1e-9) return null; // pas de chute : rangée suivante
-      // Lot C7c : dans la bande principale, le plafond d'emprise est STRICT (la longueur n'est jamais arrondie au-dessus).
-      if (k.bande) L = Math.min(L, demi((o.empriseLibre - emprise + 1e-6) / d));
+      // Lot C7c puis C10 : le plafond d'emprise est STRICT, dans la bande comme hors bande (la longueur n'est
+      // jamais arrondie au-dessus de l'emprise encore autorisée ; trop court pour un bâtiment : rien n'est posé).
+      L = Math.min(L, demi((o.empriseLibre - emprise + 1e-6) / d));
       if (L > dispo + 1e-9 || L < HP.longueurMinCollectifM) return null;
       return { longueur: L, info: 0 };
     };
-    while (emprise < empriseVisee - 1e-6 && batiments.length < o.maxBatiments && v + d <= k.v1 - recul + 1e-9) {
+    while (emprise < empriseVisee - 1e-6 && batiments.length < o.maxBatiments && v + d <= k.v1 - recul + 1e-9 && v + d <= k.vMaxBande + 1e-9) {
       const avant = batiments.length;
       remplirRangee(k, v, v + d, recul, Math.max(H / 2, HP.distancePignonsMinM), choisir, null, r => {
         batiments.push({ ...r, forme: residence ? 'residence' : 'barre', niveaux: n, unites: 0, uniteLibelle: residence && c.unite === 'lits' ? 'lit' : 'logement', composante: idx });
         emprise += (r.ub - r.ua) * (r.vb - r.va);
       });
-      if (batiments.length === avant) { v += 1; continue; }
+      if (batiments.length === avant) { v += pasRangee(k); continue; }
       vFin = v + d;
       v += d + Math.max(H, HP.distanceFacadesMinM);
     }
@@ -305,7 +347,11 @@ function implanterCollectif(k: Cadre, c: ComposanteProgramme, idx: number, ct: C
     if (atteintN) return atteintN;
   }
   // Programme hors d'atteinte : la plus grande capacité (niveaux max, barres longues, emprise libre).
-  for (const n of [...new Set([nMax, depart])]) {
+  // Lot C10 : dans la bande principale, TOUS les nombres de niveaux sont essayés — avec un recul aux limites en
+  // H/k, une hauteur intermédiaire loge souvent plus que le maximum (recul trop fort) ou que R+2 (trop bas).
+  // Hors bande : les deux essais d'origine, inchangés.
+  const hauteursEssayees = k.bande ? Array.from({ length: nMax - depart + 1 }, (_, i) => nMax - i) : [...new Set([nMax, depart])];
+  for (const n of hauteursEssayees) {
     const r = essai(n, HP.longueurBarreMaxM, o.empriseLibre, false);
     if (r.batiments.length && (!meilleur || r.sdp > meilleur.sdp)) meilleur = r;
   }
@@ -379,7 +425,7 @@ function implanter(anneaux: PointLocal[][], angle: number, composantes: Composan
       const recul = ct.reculPour(niveaux * HYPOTHESES_VOLUME.hauteurEtageM);
       for (const taille of tailles) {
         const e = implanterMaisons(k, c, i, { niveaux, taille, tailleMin: 1, maxBatiments, recul, empriseLibre: libre,
-          vDebut: premier ? k.v0 + recul : vCurseur, jardinDebut: premier });
+          vDebut: premier ? k.v0 + reculCoteVoie(k, recul) : vCurseur, jardinDebut: premier });
         if (!meilleur || e.placees > meilleur.e.placees) meilleur = { e, niveaux, taille };
         if (e.placees >= c.nombre) break;
       }
@@ -487,7 +533,9 @@ function angleRangeesBande(contour: PointLocal[], bande: BandePreparee): number 
  */
 function epaisseursBande(ct: Contraintes, profondeurM: number): number[] {
   const H = HYPOTHESES_VOLUME, ep = ct.epaisseurMax;
-  const reculs = [...new Set(Array.from({ length: Math.max(1, ct.niveauxMax) }, (_, i) => ct.reculPour((i + 1) * H.hauteurEtageM)))].slice(0, 3);
+  // Lot C10 : c'est le recul côté VOIE qui borne l'épaisseur dans la bande (recul uniforme quand il n'est pas différencié).
+  const reculs = ct.reculVoieM !== null ? [ct.reculVoieM]
+    : [...new Set(Array.from({ length: Math.max(1, ct.niveauxMax) }, (_, i) => ct.reculPour((i + 1) * H.hauteurEtageM)))].slice(0, 3);
   const candidats = [ep, ep * 0.75, ep * 0.5, ...reculs.flatMap(r => [profondeurM - r, profondeurM - r - 0.5, profondeurM - r - 1])]
     .map(e => demi(Math.min(e, ep))).filter(e => e >= H.coteMinM);
   const liste = [...new Set(candidats)].sort((a, b) => b - a).slice(0, 8);
@@ -508,7 +556,10 @@ function implantationProgramme(
   const composantes = (programme.composantes ?? []).filter(c => c.nombre >= 1);
   if (!composantes.length || base.statut === 'contour-invalide' || base.statut === 'hauteur-insuffisante') return { volume: base };
   const proj = projeterParcelle(geometrie)!;
-  const ct = contraintesPlu(regles);
+  // Lot C10 : reculs différenciés seulement dans la bande, si chaque façade sur voie est une arête du contour.
+  const differencie = !!bande && marquerSegmentsVoie(segmentsDe(proj.anneaux), bande.facades);
+  const ct = contraintesPlu(regles, differencie && bande ? bande.implantation : null);
+  const rc = bande ? reculsRetenus(regles.regles ?? [], differencie ? bande.implantation : null) : null;
   const angle = orientationParcelle(proj.anneaux[0]);
   const surface = base.surfaceParcelleM2;
   let essais: Implantation[];
@@ -518,7 +569,7 @@ function implantationProgramme(
   else {
     // Une seule orientation : celle de la voie. Plusieurs épaisseurs de collectif (une seule s'il n'y a que des maisons).
     const a = angleRangeesBande(proj.anneaux[0], bande);
-    const dansLaBande: BandeImplantation = { facades: bande.facades, profondeurM: bande.profondeurM, empriseMaxM2: bande.empriseMaxM2 };
+    const dansLaBande: BandeImplantation = { facades: bande.facades, profondeurM: bande.profondeurM, empriseMaxM2: bande.empriseMaxM2, reculVoieM: ct.reculVoieM };
     epaisseursEssais = composantes.some(c => c.type !== 'maisons') ? epaisseursBande(ct, bande.profondeurM) : [ct.epaisseurMax];
     essais = epaisseursEssais.map(e => implanter(proj.anneaux, a, composantes, { ...ct, epaisseurMax: e }, surface, dansLaBande));
   }
@@ -578,7 +629,8 @@ function implantationProgramme(
     })()
     : `${c.libelle} : ${c.type === 'residence' ? `${fr(HP.sdpUniteResidenceM2)} m² de SDP par ${c.unite === 'lits' ? 'lit' : 'logement'} (chambres, communs, services), épaisseur ${fr(Math.min(HP.epaisseurResidenceM, epaisseurCollectif), 1)} m` : `${fr(HP.sdpLogementCollectifM2)} m² de SDP par logement, plots ou barres de ${fr(epaisseurCollectif, 1)} m d’épaisseur et ${fr(HP.longueurBarreMaxM)} m de long au plus`}.`);
   const hypotheses = [
-    bande
+    bande && rc && ct.reculVoieM !== null ? hypotheseReculsDifferencies(rc, bande, retenue.reculM)
+    : bande
       ? (ct.reculConnu ? `Recul de ${fr(retenue.reculM, 1)} m sur toutes les limites, côté voie compris : le plus fort des reculs PLU (recul à la voie et reculs aux limites non différenciés).` : `Recul de ${fr(HYPOTHESES_VOLUME.reculDefautM)} m sur toutes les limites, côté voie compris (valeur par défaut).`)
       : ct.reculConnu ? `Recul de ${fr(retenue.reculM, 1)} m sur toutes les limites : le plus fort des reculs PLU (côté voie non identifié).` : `Recul de ${fr(HYPOTHESES_VOLUME.reculDefautM)} m sur toutes les limites (valeur par défaut).`,
     `Emprise au sol totale bornée à ${fr(ct.ratioEmprise * 100, 1)} % de la parcelle${regles.regles.length ? '' : ' (valeur par défaut)'} ; voies et stationnements non comptés.`,
@@ -588,7 +640,8 @@ function implantationProgramme(
     ...(composantes.some(c => c.type !== 'maisons') ? [`Collectif : façades en vis-à-vis à ≥ max(H, ${fr(HP.distanceFacadesMinM)} m), pignons à ≥ max(H/2, ${fr(HP.distancePignonsMinM)} m) ; R+${HP.niveauxCollectifDepart - 1} d’abord, plus haut si nécessaire.`] : []),
     ...(bande
       ? [`Implantation en rangées parallèles à la voie, dans la bande principale (${fr(bande.profondeurM, 1)} m depuis le côté voie présumé) : chaque bâtiment y est contenu en entier ; hauteur d’étage ${fr(HYPOTHESES_VOLUME.hauteurEtageM)} m, toit plat.`,
-        `Bande secondaire (au-delà de ${fr(bande.profondeurM, 1)} m depuis la voie) : non construite dans ce volume d’étude.`]
+        `Bande secondaire (au-delà de ${fr(bande.profondeurM, 1)} m depuis la voie) : non construite dans ce volume d’étude.`,
+        ...hypothesesImplantation(bande)]
       : [`Implantation en rangées parallèles au ${Math.abs(retenue.angle - angle) < 1e-9 ? 'grand côté' : 'petit côté'} de la parcelle (deux orientations essayées) ; hauteur d’étage ${fr(HYPOTHESES_VOLUME.hauteurEtageM)} m, toit plat.`]),
     `Studio : ${LIMITE_BATIMENTS_STUDIO} bâtiments au plus.`,
   ];
@@ -610,10 +663,23 @@ function implantationProgramme(
     angleVoieDeg: Math.round(bande.angle * 180 / Math.PI * 10) / 10,
     distanceMaxVoieM: Math.ceil(Math.max(...batiments.flatMap(b => b.coins.map(p => distanceVoie(p, bande.facades)))) * 100 - 1e-6) / 100,
     empriseMaxM2: bande.empriseMaxM2, facades: copieFacades(bande),
+    ...(ct.reculVoieM !== null ? { reculVoieM: ct.reculVoieM, reculLimitesM: retenue.reculM } : {}),
   };
   const dansLaBande: VolumePropose = { ...volume, bande: etat };
   const preuve = verifierBandeVolume(dansLaBande);
   if (!preuve.prouvee) return { raison: `implantation dans la bande non prouvée (${preuve.raison}).` };
   if (empriseTotale > ct.ratioEmprise * surface + 1e-6) return { raison: `emprise de ${fr(empriseTotale)} m² au-dessus du plafond de ${fr(ct.ratioEmprise * surface)} m² (${fr(ct.ratioEmprise * 100, 1)} % de la parcelle).` };
+  // Lot C10 — reculs différenciés : distances RÉELLES des bâtiments au côté voie et aux autres limites, remesurées
+  // sur le résultat (indépendamment du placement, à 2 cm près). Preuve manquante : repli, jamais un volume douteux.
+  if (ct.reculVoieM !== null) {
+    for (const b of batiments) {
+      // Bâtiment par bâtiment : le recul aux limites dépend de la hauteur de chacun (règle H/k).
+      const m = mesurerReculsVolume({ bande: etat, contour: dansLaBande.contour, emprise: null, batiments: [b] });
+      const exige = ct.reculPour(b.hauteurM);
+      if (!m) return { raison: 'reculs à la voie et aux limites non mesurables sur le volume obtenu.' };
+      if (m.voieM < ct.reculVoieM - 0.02) return { raison: `bâtiment à ${fr(m.voieM, 2)} m du côté voie pour ${fr(ct.reculVoieM, 2)} m exigés.` };
+      if (m.limitesM !== null && m.limitesM < exige - 0.02) return { raison: `bâtiment à ${fr(m.limitesM, 2)} m d’une limite séparative pour ${fr(exige, 2)} m exigés.` };
+    }
+  }
   return { volume: dansLaBande };
 }

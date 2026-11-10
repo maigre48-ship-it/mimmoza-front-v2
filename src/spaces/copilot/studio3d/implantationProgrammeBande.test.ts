@@ -75,9 +75,12 @@ const ecartAxes = (a: number, b: number) => { const e = Math.abs(a - b) % 180; r
 
 // ─────────────────────────────── Non-régression : sans le paramètre ───────────────────────────────
 
-test('sans bande : résultats strictement identiques à ceux du moteur avant le lot (20 cas relevés, dont la parcelle réelle)', () => {
+// Lot C10 : 19 cas sur 20 sont toujours ceux relevés avant le lot C7c ; le 20e (plafond prudent 20 % sur la parcelle
+// réelle) a été recalculé — plafond d'emprise strict, 160 m² au lieu de 168 m² pour 163,2 m² autorisés (`_ecarts_c10`).
+test('sans bande : résultats identiques à la référence (20 cas relevés, dont la parcelle réelle ; un seul écart voulu, consigné)', () => {
   const ref = lire('implantation-programme-reference-c7c.json');
   assert.equal(ref.cas.length, 20);
+  assert.deepEqual(ref._ecarts_c10.ecarts.map((e: { cas: string }) => e.cas), ['parcelle réelle, 40 logements, hauteur 19,5 m, 6 niveaux, emprise 20 % (plafond prudent)']);
   let multi = 0;
   for (const c of ref.cas) {
     const v = c.regles ? calculerVolumeProgramme(c.geometrie, c.programme, c.regles) : calculerVolumeProgramme(c.geometrie, c.programme);
@@ -260,12 +263,23 @@ test('contrôles, bande non appliquée : plafond prudent, « côté voie non ide
   const controles = controlerVolume(v, REGLES_CONCEPTION, v.logementsEstimes);
   const emprise = controles.find(c => c.cle === 'emprise_sol_max_pct')!;
   assert.equal(emprise.verdict, 'a_verifier');
-  assert.equal(emprise.valeur_volume, '20,6 %');
+  // Lot C10 (défaut C) : le moteur ne dépasse plus le plafond qu'il affiche (avant : 168 m², « 20,6 % » pour 20 %).
+  assert.equal(emprise.valeur_volume, '19,6 %');
+  assert.equal(v.kpi?.empriseTotaleM2, 160);
   assert.match(emprise.regle!, /^20 % de la parcelle \(plafond prudent\) — règle par bande — bande principale de 18 m depuis la voie : 80 % ; bande secondaire : 20 % \(/);
-  assert.match(emprise.explication, /au-dessus du plafond prudent de 20 %.*admissible seulement pour la part d’emprise située dans la bande principale \(80 %\), ce que le calcul ne prouve pas ici\./);
+  assert.match(emprise.explication, /^19,6 % de la parcelle : sous le plafond prudent de 20 %/);
   assert.match(emprise.explication, /\(bande principale non demandée pour ce volume\)/);
   assert.doesNotMatch(JSON.stringify(emprise), /80 % max\./);
-  assert.match(controles.find(c => c.cle === 'hauteur_max_m')!.explication, /Condition complémentaire non vérifiée : .*côté voie non identifié par le volume\./);
+  // Lot C10 (défaut D) : hauteur du calcul prudent = la plus contraignante des bandes (13,5 m, 4 niveaux), et le contrôle le dit.
+  assert.equal(v.niveaux, 4);
+  const hauteur = controles.find(c => c.cle === 'hauteur_max_m')!;
+  assert.equal(hauteur.verdict, 'a_verifier');
+  assert.match(hauteur.regle!, /^13,5 m max\. \(valeur la plus contraignante des bandes\)/);
+  assert.match(hauteur.explication, /^≈ 12 m : sous la valeur la plus contraignante des bandes \(13,5 m max\.\)/);
+  // Au-dessus du plafond prudent (volume modifié dans la fiche) : toujours dit, jamais présenté comme admis.
+  const dessus: VolumePropose = { ...v, kpi: { ...v.kpi!, empriseTotaleM2: 168 } };
+  assert.match(controlerVolume(dessus, REGLES_CONCEPTION, 10).find(c => c.cle === 'emprise_sol_max_pct')!.explication,
+    /au-dessus du plafond prudent de 20 %.*admissible seulement pour la part d’emprise située dans la bande principale \(80 %\), ce que le calcul ne prouve pas ici\./);
   // Sous le plafond prudent : dit comme tel.
   const petit: VolumePropose = { ...v, kpi: { ...v.kpi!, empriseTotaleM2: 150 } };
   assert.match(controlerVolume(petit, REGLES_CONCEPTION, 10).find(c => c.cle === 'emprise_sol_max_pct')!.explication, /^18,4 % de la parcelle : sous le plafond prudent de 20 %/);

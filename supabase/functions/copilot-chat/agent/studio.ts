@@ -47,6 +47,8 @@ import { bandePourMoteur, bandesDeLaConception, noteBandesNonMesurees, type Band
 import type { MesureBandes } from '../../../../src/spaces/copilot/studio3d/coteVoie.ts';
 // Lot C7c : revérification géométrique de la bande principale sur le volume final (forme choisie comprise).
 import { verifierBandeVolume, type BandeVolume } from '../../../../src/spaces/copilot/studio3d/bandePrincipale.ts';
+// Lot C10 : ce que les règles lues établissent du recul à la voie (alignement explicite seulement).
+import { implantationDesRegles } from '../../../../src/spaces/copilot/studio3d/controlesVolume.ts';
 // Lot formes-batiment : formes du bâtiment (L, U, cour, redans, plots) calculées, vérifiées et comparées par le moteur.
 import {
   appliquerFormeDetail, comparerFormes, evaluerSaisie, FORMES, NOMS_FORME_AILES, saisieDepuisBloc, saisieDepuisVolume,
@@ -60,8 +62,13 @@ export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVol
 export { niveauxDuGabarit, reglesVolume } from './studio-front.ts';
 
 export const SOURCE_STUDIO = 'MimmozIA · Studio 3D';
-/** Version du calcul (entre dans l'empreinte) : à incrémenter si la conversion conception → volume change. */
-export const VERSION_CALCUL = 'e1-studio-1';
+/**
+ * Version du calcul (entre dans l'empreinte) : à incrémenter si la conversion conception → volume change.
+ * `e1-studio-2` (lot C10) : pour une même conception, le volume peut changer — plafond d'emprise strict (plus
+ * d'arrondi au-dessus du plafond), hauteur / niveaux / pleine terre les plus contraignants quand la bande
+ * principale n'est pas appliquée, recul différencié voie / limites quand la bande l'est.
+ */
+export const VERSION_CALCUL = 'e1-studio-2';
 export const TYPES_RENDU = ['film', 'visite360', 'image'] as const;
 export type TypeRendu = typeof TYPES_RENDU[number];
 /** Durée de validité d'un devis de rendu. */
@@ -250,7 +257,10 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
   // si les bâtiments sont réellement dans la bande principale. Le moteur reçoit la bande (côté voie, profondeur,
   // plafond en m²) ; s'il répond « non appliquée », ou si la forme choisie sort de la bande, tout est recalculé
   // avec le plafond prudent du lot C6 (taux le plus contraignant sur toute la parcelle) et la raison est notée.
-  const demande = bandes.mesure ? bandePourMoteur(bandes) : null;
+  // Lot C10 : la bande porte aussi l'implantation établie par les règles LUES (recul à la voie de 0 m = alignement,
+  // seulement s'il est écrit, confirmé et cité ; sinon le moteur garde son recul prudent côté voie et le dit).
+  const bandeMoteur = bandes.mesure ? bandePourMoteur(bandes) : null;
+  const demande = bandeMoteur ? { ...bandeMoteur, implantation: implantationDesRegles(regles) } : null;
   /** Calcul prudent : règles sans bandes mesurées, implantation habituelle, raison notée. */
   const prudent = (raison: string | null) => {
     const rv = reglesVolume(regles, gabarit, null);
@@ -288,7 +298,9 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
     if (f.ok && preuve?.prouvee) {
       f = { ...f, volume: { ...f.volume, bande: f.volume.bande ? { ...f.volume.bande, distanceMaxVoieM: preuve.distanceMaxVoieM } : f.volume.bande } };
     } else {
-      moteur = prudent(`${mesuree} — forme choisie non contenue dans la bande principale${preuve?.raison ? ` (${preuve.raison})` : ''} : ${plafondPrudent}.`);
+      // Lot C10 : la forme est maintenant cherchée DANS la bande (formesBatiment.placerForme) ; si elle n'y tient pas, la raison du placement est reprise.
+      const pourquoi = preuve?.raison ?? (!f.ok && f.raison ? f.raison.replace(/[.\s]+$/u, '') : null);
+      moteur = prudent(`${mesuree} — forme choisie non contenue dans la bande principale${pourquoi ? ` (${pourquoi})` : ''} : ${plafondPrudent}.`);
       dansBande = false;
       if (!moteur.emprise || moteur.niveaux < 1) {
         return { ok: false, raison: `Aucun volume ne tient sur la parcelle avec les règles connues : ${moteur.alertes[0] ?? moteur.mentionPlu ?? moteur.statut}.` };

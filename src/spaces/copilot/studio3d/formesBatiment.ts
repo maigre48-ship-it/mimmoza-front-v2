@@ -23,11 +23,19 @@
 // (orientations du moteur, grille de centres, centre le plus « au milieu » des positions
 // possibles). Distances entre façades d'une cour : max(H, 8 m), HYPOTHÈSE du moteur.
 // Rien n'est présenté comme conforme.
+//
+// Lot C10 — cohérence avec le serveur pour un PLU « par bande ». Le contexte dit si le volume du moteur est dans
+// la bande principale (`ContexteForme.bande`, rempli par ficheDimensions.contexteForme quand c'est PROUVÉ) :
+//   · oui : la forme est placée DANS la bande principale (chaque aile, chaque plot), avec les règles de cette
+//     bande (hauteur, niveaux) et son plafond d'emprise en m² ; si elle n'y tient pas, c'est dit — elle n'est
+//     pas posée ailleurs avec ces règles ;
+//   · non : plafond prudent (reglesVolume sans bandes : valeurs les plus contraignantes), comme le serveur.
 // =============================================================================
 
 import { contraintesPlu, HYPOTHESES_PROGRAMME, LIMITE_BATIMENTS_STUDIO } from './implantationProgramme.ts';
 import { reglesVolume, type RegleLue } from './controlesVolume.ts';
-import { HYPOTHESES_VOLUME, rectTient, segmentsDe, type FormeAiles, type PointLocal } from './volumeParcelle.ts';
+import { HYPOTHESES_VOLUME, rectTient, segmentsDe, type FormeAiles, type PointLocal, type ReglePlu } from './volumeParcelle.ts';
+import { rectangleDansBande, type FacadeLocale } from './bandePrincipale.ts';
 
 const HP = HYPOTHESES_PROGRAMME;
 const demiSup = (v: number) => Math.ceil(v * 2 - 1e-9) / 2;
@@ -221,6 +229,11 @@ export interface ContexteForme {
   gabaritNiveaux: number | null;
   /** SDP visée (m²) : logements visés × 70 m², sinon la SDP du volume du moteur. */
   sdpViseeM2: number;
+  /**
+   * Lot C10 : bande principale dans laquelle le volume du moteur est PROUVÉ (côté voie dans le repère local,
+   * profondeur, plafond d'emprise en m²). Absente ou null : pas de bande, plafond prudent.
+   */
+  bande?: { facades: readonly FacadeLocale[]; profondeurM: number; empriseMaxM2: number | null } | null;
 }
 
 /** Un bâtiment placé : rectangle (plots) ou bâtiment à ailes. */
@@ -324,19 +337,28 @@ function gabarits(forme: FormeCalculee, E: number, e: number, n: number): Gabari
   return out;
 }
 
-interface Cadre { anneaux: PointLocal[][]; segments: ReturnType<typeof segmentsDe>; a: number; u0: number; u1: number; v0: number; v1: number }
-function cadre(contour: PointLocal[], angleDeg: number): Cadre {
+interface Cadre {
+  anneaux: PointLocal[][]; segments: ReturnType<typeof segmentsDe>; a: number; u0: number; u1: number; v0: number; v1: number;
+  /** Lot C10 : bande principale dans le repère du cadre ; null = pas de bande. */
+  bande: { facades: FacadeLocale[]; profondeurM: number } | null;
+}
+function cadre(contour: PointLocal[], angleDeg: number, bande: ContexteForme['bande'] = null): Cadre {
   const a = angleDeg * Math.PI / 180;
   const anneau = contour.map((p) => tourner(p, a));
   const us = anneau.map((p) => p.x), vs = anneau.map((p) => p.y);
   const anneaux = [anneau];
-  return { anneaux, segments: segmentsDe(anneaux), a, u0: Math.min(...us), u1: Math.max(...us), v0: Math.min(...vs), v1: Math.max(...vs) };
+  return { anneaux, segments: segmentsDe(anneaux), a, u0: Math.min(...us), u1: Math.max(...us), v0: Math.min(...vs), v1: Math.max(...vs),
+    bande: bande ? { facades: bande.facades.map((f) => ({ a: tourner(f.a, a), b: tourner(f.b, a) })), profondeurM: bande.profondeurM } : null };
 }
 
 /** Tolérance de 1 cm sur le recul, comme le moteur (implantationProgramme.TOLERANCE_M). */
 const TOLERANCE_M = 0.01;
+/** Lot C10 : avec une bande principale, chaque pièce (aile, plot) doit aussi y être contenue en entier (preuve sans faux « oui »). */
 const tient = (k: Cadre, cu: number, cv: number, pieces: readonly Piece[], recul: number) =>
-  pieces.every((p) => rectTient(k.anneaux, k.segments, { cu: cu + p.du, cv: cv + p.dv, w: p.lu, d: p.lv }, Math.max(1e-6, recul - TOLERANCE_M)));
+  pieces.every((p) => rectTient(k.anneaux, k.segments, { cu: cu + p.du, cv: cv + p.dv, w: p.lu, d: p.lv }, Math.max(1e-6, recul - TOLERANCE_M))
+    && (!k.bande || rectangleDansBande([
+      { x: cu + p.du - p.lu / 2, y: cv + p.dv - p.lv / 2 }, { x: cu + p.du + p.lu / 2, y: cv + p.dv - p.lv / 2 },
+      { x: cu + p.du + p.lu / 2, y: cv + p.dv + p.lv / 2 }, { x: cu + p.du - p.lu / 2, y: cv + p.dv + p.lv / 2 }], k.bande.facades, k.bande.profondeurM)));
 
 /** Positions possibles du gabarit (grille de centres) ; null si aucune. Retient la plus centrale. */
 function poser(k: Cadre, g: Gabarit, recul: number): { cu: number; cv: number; places: number } | null {
@@ -359,17 +381,26 @@ const ORIENTATIONS: Record<FormeCalculee, number[]> = { l: [0, 90, 180, 270], u:
  * la plus grande emprise qui tient au nombre maximal de niveaux (atteint = false).
  */
 export function placerForme(ctx: ContexteForme, forme: FormeCalculee): PlacementForme {
-  const ct = contraintesPlu(reglesVolume([...ctx.regles], ctx.gabaritNiveaux));
-  const e = Math.max(HYPOTHESES_VOLUME.coteMinM, ct.epaisseurMax);
+  const bande = ctx.bande ?? null;
+  // Lot C10 — sans bande prouvée : plafond prudent (valeurs les plus contraignantes des bandes), comme le serveur.
+  // Dans la bande : hauteur et niveaux de la bande principale, plafond d'emprise de la bande en m² (la pleine
+  // terre de la bande principale borne aussi l'emprise ; le taux d'emprise « prudent » ne s'applique plus).
+  const rv = reglesVolume([...ctx.regles], ctx.gabaritNiveaux, null, bande ? { implantationDansBande: true } : {});
+  const sansTaux: ReglePlu = { cle: 'emprise_max_ratio', valeur: 1, source: 'bande principale : plafond en m²', reference: null, statut: 'lue' };
+  const ct = contraintesPlu(bande && bande.empriseMaxM2 !== null ? { ...rv, regles: [...rv.regles.filter((r) => r.cle !== 'emprise_max_ratio'), sansTaux] } : rv);
+  const eMax = Math.max(HYPOTHESES_VOLUME.coteMinM, ct.epaisseurMax);
   const nMax = Math.max(1, ct.niveauxMax);
   const depart = Math.min(HP.niveauxCollectifDepart, nMax);
-  const empriseMax = ct.ratioEmprise * ctx.surfaceParcelleM2;
+  const empriseMax = bande && bande.empriseMaxM2 !== null ? Math.min(bande.empriseMaxM2, ct.ratioEmprise * ctx.surfaceParcelleM2) : ct.ratioEmprise * ctx.surfaceParcelleM2;
   const cadres = new Map<number, Cadre>();
-  const cadreDe = (deg: number) => { const c = ((Math.round(deg * 10) % 3600) + 3600) % 3600; if (!cadres.has(c)) cadres.set(c, cadre(ctx.contour, c / 10)); return cadres.get(c)!; };
+  const cadreDe = (deg: number) => { const c = ((Math.round(deg * 10) % 3600) + 3600) % 3600; if (!cadres.has(c)) cadres.set(c, cadre(ctx.contour, c / 10, bande)); return cadres.get(c)!; };
+  /** Épaisseurs essayées : celle du moteur ; dans la bande, aussi ce qui tient entre le recul et le fond de bande (comme le moteur). */
+  const epaisseurs = (recul: number): number[] => !bande ? [eMax] : [...new Set([eMax, bande.profondeurM - recul, bande.profondeurM - recul - 1]
+    .map((x) => Math.floor(Math.min(x, eMax) * 2 + 1e-9) / 2).filter((x) => x >= HYPOTHESES_VOLUME.coteMinM))].sort((a, b) => b - a);
   const essayer = (n: number, E: number) => {
     const recul = ct.reculPour(n * HYPOTHESES_VOLUME.hauteurEtageM);
     let meilleur: { g: Gabarit; deg: number; pose: NonNullable<ReturnType<typeof poser>> } | null = null;
-    for (const g of gabarits(forme, E, e, n)) {
+    for (const e of epaisseurs(recul)) for (const g of gabarits(forme, E, e, n)) {
       if (g.emprise > empriseMax + 1e-6) continue;
       if (meilleur && g.emprise > meilleur.g.emprise + 1e-6) continue;
       for (const o of ORIENTATIONS[forme]) {
@@ -395,7 +426,9 @@ export function placerForme(ctx: ContexteForme, forme: FormeCalculee): Placement
     if (r) return { forme, corps: r.corps, niveaux: nMax, reculM: r.recul, atteint: false, raison: null };
   }
   return { forme, corps: [], niveaux: depart, reculM: ct.reculPour(depart * HYPOTHESES_VOLUME.hauteurEtageM), atteint: false,
-    raison: 'Cette forme ne tient pas dans la parcelle avec les reculs et l’épaisseur du moteur.' };
+    raison: bande
+      ? `Cette forme ne tient pas dans la bande principale (${String(bande.profondeurM).replace('.', ',')} m depuis le côté voie présumé) avec les reculs et l’épaisseur du moteur.`
+      : 'Cette forme ne tient pas dans la parcelle avec les reculs et l’épaisseur du moteur.' };
 }
 
 // ── Aperçu 3D du brief (carte « Brief créatif ») ──────────────────────────────────

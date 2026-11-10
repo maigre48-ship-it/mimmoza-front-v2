@@ -11,6 +11,11 @@
 //
 // Les imports ci-dessous sont des types seulement : volumeParcelle.ts peut importer ce module sans boucle.
 // Rien n'est supposé : une bande inutilisable est refusée avec sa raison, jamais « réparée ».
+//
+// Lot C10 — recul différencié : le règlement distingue l'implantation par rapport aux VOIES et par rapport aux
+// LIMITES SÉPARATIVES. Quand le côté voie est identifié, ce module dit quelles limites du contour sont « sur voie »
+// (marquerSegmentsVoie) et mesure, sur un volume donné, la distance réelle des bâtiments au côté voie et aux autres
+// limites (mesurerReculsVolume) — mesure indépendante du placement, utilisée par les contrôles et par les tests.
 // =============================================================================
 
 import type { PointLocal } from './volumeParcelle.ts';
@@ -27,6 +32,29 @@ export interface BandeVoie {
    * Absente : seul le coefficient d'emprise des règles borne l'emprise.
    */
   empriseMaxM2?: number | null;
+  /**
+   * Lot C10 : implantation par rapport à la voie et aux limites, telle que les règles LUES l'établissent.
+   * Absente : le recul à la voie n'est différencié que si une règle chiffrée `recul_voie_m` figure dans les règles.
+   */
+  implantation?: ImplantationVoie | null;
+}
+
+/**
+ * Lot C10 — ce que les règles lues disent de l'implantation. Rien n'est supposé ici : l'appelant ne renseigne
+ * `reculVoieM` que pour une valeur LUE (0 = implantation à l'alignement explicitement permise par la règle).
+ */
+export interface ImplantationVoie {
+  /** Recul minimal à la voie, en mètres, lu dans la règle ; 0 = alignement permis. null / absent : non établi (recul prudent conservé côté voie). */
+  reculVoieM?: number | null;
+  /** Règle d'où vient `reculVoieM` (source, article), affichée dans les hypothèses. */
+  sourceVoie?: string | null;
+  /**
+   * Implantation EN LIMITE SÉPARATIVE permise par la règle lue (« sur limites ou en retrait »). Paramètre accepté
+   * mais NON APPLIQUÉ par le moteur tant que cette lecture n'est pas fiable : le retrait est conservé, et dit.
+   */
+  limiteSeparativePermise?: boolean | null;
+  /** Phrase affichée telle quelle dans les hypothèses (ex. « recul à la voie non réglementé : alignement non supposé »). */
+  note?: string | null;
 }
 
 /** Ce que le volume dit de la bande demandée (présent seulement quand une bande a été demandée). */
@@ -49,6 +77,13 @@ export interface BandeVolume {
    * un volume modifié dans la fiche garde ce champ, mais ses bâtiments peuvent être sortis de la bande.
    */
   facades?: FacadeLocale[];
+  /**
+   * Lot C10 : présents seulement quand les reculs sont DIFFÉRENCIÉS (recul à la voie établi par une règle lue).
+   * `reculVoieM` : recul appliqué sur les limites présumées sur voie (0 = à l'alignement) ; `reculLimitesM` :
+   * recul appliqué sur toutes les autres limites (égal à `reculM` du volume).
+   */
+  reculVoieM?: number;
+  reculLimitesM?: number;
 }
 
 export interface FacadeLocale { a: PointLocal; b: PointLocal }
@@ -60,7 +95,12 @@ export interface BandePreparee {
   /** Direction de la voie en radians, dans [0, π). */
   angle: number;
   empriseMaxM2: number | null;
+  /** Lot C10 : implantation relue (valeurs hors bornes écartées, avec la raison dans `note`). */
+  implantation: { reculVoieM: number | null; sourceVoie: string | null; limiteSeparativePermise: boolean; notes: string[] };
 }
+
+/** Lot C10 : recul à la voie accepté par le moteur (m). Au-delà, la valeur est écartée et le recul prudent est gardé. */
+export const RECUL_VOIE_MAX_M = 50;
 
 export type PreparationBande = { ok: true; bande: BandePreparee } | { ok: false; raison: string };
 
@@ -146,7 +186,45 @@ export function preparerBande(
   const angle = directionVoie(facades);
   if (angle === null) return non('côté voie illisible.');
   const longueurFacadeM = Math.round(facades.reduce((s, f) => s + Math.hypot(f.b.x - f.a.x, f.b.y - f.a.y), 0) * 100) / 100;
-  return { ok: true, bande: { facades, profondeurM: p, longueurFacadeM, angle, empriseMaxM2 } };
+  // Lot C10 : implantation relue sans confiance ; une valeur illisible n'est jamais « réparée » : elle est écartée et dite.
+  const im = bande.implantation;
+  const notes: string[] = [];
+  let reculVoieM: number | null = null;
+  if (im && im.reculVoieM !== undefined && im.reculVoieM !== null) {
+    if (typeof im.reculVoieM === 'number' && Number.isFinite(im.reculVoieM) && im.reculVoieM >= 0 && im.reculVoieM <= RECUL_VOIE_MAX_M) reculVoieM = im.reculVoieM;
+    else notes.push('Recul à la voie fourni illisible ou hors bornes : non appliqué, recul prudent conservé côté voie.');
+  }
+  if (im && typeof im.note === 'string' && im.note.trim()) notes.push(im.note.trim().slice(0, 300));
+  const implantation = {
+    reculVoieM, sourceVoie: im && typeof im.sourceVoie === 'string' && im.sourceVoie.trim() ? im.sourceVoie.trim().slice(0, 200) : null,
+    limiteSeparativePermise: im?.limiteSeparativePermise === true, notes,
+  };
+  return { ok: true, bande: { facades, profondeurM: p, longueurFacadeM, angle, empriseMaxM2, implantation } };
+}
+
+/** Écart toléré entre une façade sur voie et l'arête du contour qu'elle désigne (même relevé, mêmes sommets). */
+const TOLERANCE_ARETE_M = 1e-3;
+/** En dessous, une arête du contour n'est qu'un doublon de sommet : elle n'ajoute aucune contrainte à ses voisines. */
+const ARETE_NEGLIGEABLE_M = 0.05;
+
+/**
+ * Lot C10 — marque `voie: true` les segments du contour qui SONT une façade sur voie (mêmes extrémités, dans un
+ * sens ou dans l'autre ; segments et façades dans le même repère). Rend vrai seulement si CHAQUE façade a été
+ * retrouvée sur une arête du contour : sinon rien n'est marqué et l'appelant garde le recul uniforme.
+ * Une arête négligeable (moins de 5 cm) entre deux arêtes reçoit la marque : elle ne contraint rien de plus qu'elles.
+ */
+export function marquerSegmentsVoie<T extends { a: PointLocal; b: PointLocal; voie?: boolean }>(segments: T[], facades: readonly FacadeLocale[]): boolean {
+  const meme = (p: PointLocal, q: PointLocal) => Math.hypot(p.x - q.x, p.y - q.y) <= TOLERANCE_ARETE_M;
+  const trouves: T[] = [];
+  for (const f of facades) {
+    const s = segments.find((x) => (meme(x.a, f.a) && meme(x.b, f.b)) || (meme(x.a, f.b) && meme(x.b, f.a)));
+    if (!s) return false;
+    trouves.push(s);
+  }
+  if (!trouves.length) return false;
+  for (const s of trouves) s.voie = true;
+  for (const s of segments) if (!s.voie && Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y) < ARETE_NEGLIGEABLE_M) s.voie = true;
+  return true;
 }
 
 /**
@@ -179,6 +257,48 @@ export function rectangleDansBande(coins: readonly PointLocal[], facades: readon
     if (!couverts([sur(c0, c1, ts[i]), sur(c0, c1, ts[i + 1]), sur(c3, c2, ts[i + 1]), sur(c3, c2, ts[i])])) return false;
   }
   return true;
+}
+
+function orientation(p: PointLocal, q: PointLocal, r: PointLocal): number { return Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)); }
+/** Distance entre deux segments (0 s'ils se coupent), en mètres. */
+function distanceSegments(a: PointLocal, b: PointLocal, c: PointLocal, d: PointLocal): number {
+  if (orientation(a, b, c) !== orientation(a, b, d) && orientation(c, d, a) !== orientation(c, d, b)) return 0;
+  return Math.min(distancePointSegment(a, c, d), distancePointSegment(b, c, d), distancePointSegment(c, a, b), distancePointSegment(d, a, b));
+}
+
+export interface ReculsMesures {
+  /** Plus petite distance d'un bâtiment aux limites présumées sur voie (m, arrondie au centimètre). */
+  voieM: number;
+  /** Plus petite distance d'un bâtiment aux AUTRES limites du contour (m, arrondie au centimètre) ; null si tout le contour est sur voie. */
+  limitesM: number | null;
+}
+
+/**
+ * Lot C10 — mesure INDÉPENDANTE du placement : distance réelle des bâtiments du volume (aile par aile) au côté
+ * voie d'une part, aux autres limites du contour d'autre part. null si le volume ne porte pas le côté voie
+ * (`bande.facades`), si une façade n'est pas une arête du contour, ou s'il n'y a aucun bâtiment : on ne mesure
+ * alors rien plutôt que de mesurer faux. Ne dit pas si les bâtiments sont DANS la parcelle (voir les autres contrôles).
+ */
+export function mesurerReculsVolume(v: VolumeAVerifier & { contour?: readonly PointLocal[] }): ReculsMesures | null {
+  const facades = (v.bande?.facades ?? []).filter((f) => f && [f.a, f.b].every((q) => q && Number.isFinite(q.x) && Number.isFinite(q.y)));
+  const contour = v.contour ?? [];
+  if (!facades.length || contour.length < 3) return null;
+  const segments = contour.map((a, i): { a: PointLocal; b: PointLocal; voie?: boolean } => ({ a, b: contour[(i + 1) % contour.length] }));
+  if (!marquerSegmentsVoie(segments, facades)) return null;
+  const rectangles: (readonly PointLocal[])[] = [];
+  const corps = v.batiments?.length ? v.batiments : v.emprise ? [v.emprise] : [];
+  for (const c of corps) {
+    const ailes = 'ailes' in c && c.ailes && c.ailes.length >= 2 ? c.ailes : null;
+    if (ailes) for (const a of ailes) rectangles.push(a.coins); else rectangles.push(c.coins);
+  }
+  if (!rectangles.length || rectangles.some((r) => r.length !== 4 || !r.every((q) => q && Number.isFinite(q.x) && Number.isFinite(q.y)))) return null;
+  let voie = Infinity, limites = Infinity;
+  for (const r of rectangles) for (let k = 0; k < 4; k++) for (const s of segments) {
+    const d = distanceSegments(r[k], r[(k + 1) % 4], s.a, s.b);
+    if (s.voie) voie = Math.min(voie, d); else limites = Math.min(limites, d);
+  }
+  const cm = (x: number) => Math.round(x * 100) / 100;
+  return { voieM: cm(voie), limitesM: Number.isFinite(limites) ? cm(limites) : null };
 }
 
 /** Ce qui est lu d'un volume pour revérifier sa bande (sous-ensemble de VolumePropose). */

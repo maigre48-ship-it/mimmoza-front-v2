@@ -20,12 +20,21 @@
 // bande, emprise sous le plafond de la bande) — y compris pour un volume modifié dans la fiche. Sinon l'emprise
 // est rapportée au plafond prudent (taux le plus contraignant sur toute la parcelle). Le verdict reste « à
 // vérifier » dans les deux cas : le côté voie est présumé d'après le cadastre, pas constaté.
+//
+// Lot C10 —
+//   · hauteur, niveaux et pleine terre PAR BANDE suivent la même règle que l'emprise : la valeur de la bande
+//     principale ne vaut que pour des bâtiments prouvés dans cette bande ; sinon la valeur la plus contraignante
+//     des bandes (reglesVolume, controlerVolume, limiteSelonBande) ;
+//   · reculs : quand le volume porte le côté voie, la distance à la voie et la distance aux autres limites sont
+//     MESURÉES sur ses bâtiments (mesurerReculsVolume) et jugées chacune contre sa règle ;
+//   · implantationDesRegles : ce que les règles lues établissent du recul à la voie (alignement explicite
+//     seulement), pour le moteur. Rien n'y est supposé.
 // =============================================================================
 
 import { HYPOTHESES_VOLUME, libelleNiveaux, regleValide, type ReglePlu, type ReglesPluVolume, type VolumePropose } from './volumeParcelle.ts';
 import { estConditionBande, mentionBandes, optionBandePrincipale, optionBandeSecondaire, profondeurBandePrincipaleM, type OptionBande } from './reglesParBande.ts';
 import type { MesureBandes } from './coteVoie.ts';
-import { verifierBandeVolume } from './bandePrincipale.ts';
+import { mesurerReculsVolume, verifierBandeVolume, type ImplantationVoie } from './bandePrincipale.ts';
 
 type Obj = Record<string, unknown>;
 const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -88,6 +97,67 @@ export function lireRegles(brut: unknown): RegleLue[] {
 /** Règle CITÉE : confirmée (règlement lu avec son article, ou utilisateur) ET article renseigné. */
 export const regleCitee = (r: RegleLue | undefined): boolean => !!r && r.statut === 'confirme' && !!r.article;
 
+/** Lot C10 : règles dont la valeur dépend de la bande, et sens de « la plus contraignante » ('min' : plafond ; 'max' : minimum exigé). */
+const SENS_PAR_BANDE: Record<string, 'min' | 'max'> = { hauteur_max_m: 'min', niveaux_max: 'min', emprise_sol_max_pct: 'min', pleine_terre_min_pct: 'max' };
+
+export interface LimiteSelonBande {
+  /** Valeur à laquelle comparer le volume : bande principale si elle est prouvée, sinon la plus contraignante des bandes. */
+  valeur: number;
+  /** Vrai si la règle est une règle par bande. */
+  parBande: boolean;
+  /** Règle par bande, bande non prouvée : valeur la MOINS contraignante des bandes (au-delà, le dépassement est certain) ; sinon null. */
+  plusPermissive: number | null;
+}
+
+/**
+ * Lot C10 — valeur d'une règle chiffrée à opposer à un volume, selon que ses bâtiments sont PROUVÉS dans la bande
+ * principale ou non. Règle ordinaire : sa valeur. Règle par bande : valeur de la bande principale si
+ * `bandeProuvee`, sinon la plus contraignante des options (jamais la valeur de la bande principale appliquée à un
+ * bâtiment qui peut être en bande secondaire). null si la règle n'est pas chiffrée.
+ */
+export function limiteSelonBande(regle: RegleLue | undefined, bandeProuvee: boolean): LimiteSelonBande | null {
+  if (!regle || !fini(regle.valeur)) return null;
+  const alts = regle.alternatives ?? [];
+  const sens = SENS_PAR_BANDE[regle.cle];
+  if (!sens || !estConditionBande(alts)) return { valeur: regle.valeur, parBande: false, plusPermissive: null };
+  if (bandeProuvee) return { valeur: optionBandePrincipale(alts)?.valeur ?? regle.valeur, parBande: true, plusPermissive: null };
+  const vals = alts.map((a) => a.valeur).filter(fini);
+  if (!vals.length) return { valeur: regle.valeur, parBande: true, plusPermissive: null };
+  return sens === 'min' ? { valeur: Math.min(...vals), parBande: true, plusPermissive: Math.max(...vals) }
+    : { valeur: Math.max(...vals), parBande: true, plusPermissive: Math.min(...vals) };
+}
+
+/** Lot C10 : condition d'une règle par bande, dite selon l'état réel du volume (bande prouvée ou non). */
+export function conditionSelonBande(regle: RegleLue, bandeProuvee: boolean): string | null {
+  const c = regle.regle_relative;
+  return c && bandeProuvee && c.endsWith(VOIE_NON_IDENTIFIEE) ? `${c.slice(0, -VOIE_NON_IDENTIFIEE.length)}${VOLUME_DANS_BANDE}` : c;
+}
+
+/**
+ * Lot C10 — ce que les règles LUES établissent de l'implantation par rapport à la voie et aux limites, pour le
+ * moteur (BandeVoie.implantation). Prudence :
+ *   · alignement (recul 0 m sur la voie) retenu SEULEMENT pour une règle `recul_voie_m` chiffrée à 0, confirmée
+ *     et citée (article) ; une règle positive passe par les règles du volume (reglesVolume), pas par ici ;
+ *   · règle absente, « non réglementée », non chiffrée ou seulement estimée : rien n'est établi, le moteur garde
+ *     son recul prudent côté voie, et `note` dit pourquoi ;
+ *   · « sur limite séparative ou en retrait » (option à 0 m dans `recul_limites_m`) : signalé au moteur
+ *     (`limiteSeparativePermise`), qui ne l'applique pas encore.
+ */
+export function implantationDesRegles(regles: readonly RegleLue[]): ImplantationVoie {
+  const rv = regles.find((x) => x.cle === 'recul_voie_m' && x.statut !== 'manquant');
+  const out: ImplantationVoie = { reculVoieM: null, sourceVoie: null, limiteSeparativePermise: false, note: null };
+  const prudent = 'alignement non supposé, recul prudent conservé côté voie';
+  if (!rv) out.note = `Recul à la voie : règle non lue — ${prudent}.`;
+  else if (rv.nature === 'non_reglementee') out.note = `Recul à la voie non réglementé (${libelleRegle(rv)}) : aucune valeur chiffrée lue — ${prudent}.`;
+  else if (fini(rv.valeur) && rv.valeur === 0) {
+    if (regleCitee(rv)) { out.reculVoieM = 0; out.sourceVoie = libelleRegle(rv); }
+    else out.note = `Recul à la voie de 0 m (alignement) non confirmé (${rv.statut === 'confirme' ? 'article non cité' : 'règle estimée'}) — ${prudent}.`;
+  } else if (!fini(rv.valeur)) out.note = `Recul à la voie non chiffré (${libelleRegle(rv)}) — ${prudent}.`;
+  const rl = regles.find((x) => x.cle === 'recul_limites_m' && x.statut !== 'manquant');
+  if (rl && fini(rl.valeur) && rl.valeur === 0 && (rl.alternatives ?? []).some((a) => a.valeur === 0 && /\blimites?\b/iu.test(a.libelle))) out.limiteSeparativePermise = true;
+  return out;
+}
+
 /** « H/2 min 4 m » → { diviseur: 2, minimumM: 4 } (même lecture que reglesPlu.ts). */
 export function formuleRecul(v: string): { diviseur: number; minimumM: number | null } | null {
   const f = v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -132,6 +202,24 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
     const c = regle.regle_relative;
     return c && preuveBande.prouvee && c.endsWith(VOIE_NON_IDENTIFIEE) ? `${c.slice(0, -VOIE_NON_IDENTIFIEE.length)}${VOLUME_DANS_BANDE}` : c;
   };
+  /**
+   * Lot C10 — hauteur et niveaux PAR BANDE quand la bande principale n'est pas prouvée : le volume est comparé à
+   * la valeur la plus contraignante des bandes (« à vérifier » au-dessus, « au-delà » seulement au-dessus de la
+   * plus haute, dépassement alors certain). Bande prouvée, ou règle ordinaire : jugement habituel.
+   */
+  const jugerParBande = (regle: RegleLue, mesure: number, valeur: string, unite: (x: number) => string, cle: string, precision = ''): ControleVolume | null => {
+    const l = limiteSelonBande(regle, preuveBande.prouvee);
+    if (!l || !l.parBande || preuveBande.prouvee || l.plusPermissive === null) return null;
+    const mention = mentionBandes(regle.alternatives ?? [], UNITES_BANDE[cle] ?? '', regle.texte);
+    const Mention = `Rappel : ${mention}`;
+    const base = { cle, libelle: LIBELLES[cle], valeur_volume: valeur, regle: `${unite(l.valeur)} (valeur la plus contraignante des bandes) — ${mention} (${libelleRegle(regle)})` };
+    const pourquoi = preuveBande.raison ? ` (${preuveBande.raison})` : '';
+    if (mesure > l.plusPermissive + 1e-9) return { ...base, verdict: 'au_dela', explication: `Le volume d’étude dépasse la règle : ${valeur}, plus que la valeur la plus élevée des bandes (${unite(l.plusPermissive)}). ${Mention}.${precision}` };
+    return { ...base, verdict: 'a_verifier', explication: (mesure <= l.valeur + 1e-9
+      ? `${valeur} : sous la valeur la plus contraignante des bandes (${unite(l.valeur)}), appliquée à tout le volume.`
+      : `${valeur} : au-dessus de la valeur la plus contraignante des bandes (${unite(l.valeur)}) ; admissible seulement pour un bâtiment situé dans la bande principale (${unite(l.plusPermissive)}), ce que le calcul ne prouve pas ici.`) +
+      ` Les bâtiments du volume ne sont pas prouvés dans la bande principale${pourquoi} : à vérifier. ${Mention}.${precision}` };
+  };
   const juger = (regle: RegleLue, respecte: boolean, valeur: string, limite: string, cle: string, precision = ''): ControleVolume => {
     const relative = conditionDe(regle);
     const condition = relative ? ` ${preuveBande.prouvee && relative.endsWith(VOLUME_DANS_BANDE) ? 'Condition complémentaire' : 'Condition complémentaire non vérifiée'} : ${relative}.` : '';
@@ -150,11 +238,13 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
   // Hauteur (indicative : niveaux × hauteur d'étage supposée)
   const h = r('hauteur_max_m');
   const precisionH = ` Hauteur indicative (${v.niveaux} niveaux × ${fr(HYPOTHESES_VOLUME.hauteurEtageM)} m d’étage supposés, toit plat) : à mesurer sur le modèle du Studio.`;
-  if (h && fini(h.valeur)) out.push(juger(h, v.hauteurM <= h.valeur + 1e-9, `≈ ${fr(v.hauteurM, 1)} m`, `${fr(h.valeur, 1)} m max.`, 'hauteur_max_m', precisionH));
+  if (h && fini(h.valeur)) out.push(jugerParBande(h, v.hauteurM, `≈ ${fr(v.hauteurM, 1)} m`, (x) => `${fr(x, 1)} m max.`, 'hauteur_max_m', precisionH)
+    ?? juger(h, v.hauteurM <= h.valeur + 1e-9, `≈ ${fr(v.hauteurM, 1)} m`, `${fr(h.valeur, 1)} m max.`, 'hauteur_max_m', precisionH));
   else out.push(nonControle('hauteur_max_m', `Hauteur maximale inconnue : non contrôlée (volume ≈ ${fr(v.hauteurM, 1)} m).`));
   // Niveaux
   const n = r('niveaux_max');
-  if (n && fini(n.valeur)) out.push(juger(n, v.niveaux <= n.valeur, `${v.niveaux} niveaux (${libelleNiveaux(v.niveaux)})`, `${fr(n.valeur)} niveaux max.`, 'niveaux_max'));
+  if (n && fini(n.valeur)) out.push(jugerParBande(n, v.niveaux, `${v.niveaux} niveaux (${libelleNiveaux(v.niveaux)})`, (x) => `${fr(x)} niveaux max.`, 'niveaux_max')
+    ?? juger(n, v.niveaux <= n.valeur, `${v.niveaux} niveaux (${libelleNiveaux(v.niveaux)})`, `${fr(n.valeur)} niveaux max.`, 'niveaux_max'));
   // Emprise
   const e = r('emprise_sol_max_pct');
   if (e && e.nature === 'non_reglementee' && e.article) {
@@ -211,18 +301,34 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
   const recul = v.reculM;
   const ailes = (v.batiments ?? []).some((b) => (b.ailes?.length ?? 0) >= 2);
   const surContour = ailes ? ' Mesuré aile par aile sur le contour réel du bâtiment (pas sur son rectangle englobant).' : '';
+  // Lot C10 : le volume porte le côté voie (bande appliquée) → distances MESURÉES sur ses bâtiments, à la voie d'une
+  // part, aux autres limites d'autre part (mesure indépendante du placement, valable aussi pour un volume modifié
+  // dans la fiche). Sinon : `reculM`, distance à toutes les limites, comme avant.
+  const mesures = v.bande?.statut === 'appliquee' ? mesurerReculsVolume(v) : null;
+  const tolerance = mesures ? 0.02 : 0.01;
+  const reculVoie = mesures ? mesures.voieM : recul;
+  const reculLimites = mesures && mesures.limitesM !== null ? mesures.limitesM : recul;
+  const valeurVoie = mesures ? `${fr(reculVoie, 2)} m du côté voie présumé (mesuré)` : `${fr(recul, 1)} m de toutes les limites`;
+  const valeurLimites = mesures && mesures.limitesM !== null ? `${fr(reculLimites, 2)} m des limites autres que la voie (mesuré)` : `${fr(recul, 1)} m de toutes les limites`;
+  const precisionVoie = mesures ? ' Côté voie présumé d’après le cadastre (limite sans parcelle mitoyenne), à confirmer ; distance mesurée sur les bâtiments du volume.'
+    : preuveBande.prouvee ? ' Côté voie présumé d’après le cadastre ; recul uniforme sur toutes les limites, côté voie compris.' : ' Côté voie non identifié sur le cadastre : recul uniforme.';
   const rv = r('recul_voie_m');
-  if (rv && fini(rv.valeur)) out.push(juger(rv, recul + 0.01 >= rv.valeur, `${fr(recul, 1)} m de toutes les limites`, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m',
-    `${preuveBande.prouvee ? ' Côté voie présumé d’après le cadastre ; recul uniforme sur toutes les limites, côté voie compris.' : ' Côté voie non identifié sur le cadastre : recul uniforme.'}${surContour}`));
-  else out.push(nonControle('recul_voie_m', 'Recul à la voie inconnu : non contrôlé.'));
+  if (rv && fini(rv.valeur)) out.push(juger(rv, reculVoie + tolerance >= rv.valeur, valeurVoie, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m',
+    `${precisionVoie}${surContour}`));
+  else if (rv && rv.nature === 'non_reglementee' && rv.article) {
+    // Lot C10 : « non réglementé » n'est pas « inconnu ». Aucun minimum n'est lu ; le volume n'en déduit PAS l'alignement.
+    out.push({ cle: 'recul_voie_m', libelle: LIBELLES.recul_voie_m, valeur_volume: valeurVoie, regle: `non réglementé (${libelleRegle(rv)})`,
+      verdict: regleCitee(rv) ? 'dans_la_limite' : 'a_verifier',
+      explication: `Recul à la voie non réglementé${regleCitee(rv) ? ` (${rv.article})` : ' (règle non confirmée)'} : aucun minimum chiffré à respecter. Le volume d’étude n’en déduit pas l’implantation à l’alignement : il garde ${mesures ? `${fr(reculVoie, 2)} m` : `${fr(recul, 1)} m`} côté voie.${mesures ? precisionVoie : ''}${surContour}` });
+  } else out.push(nonControle('recul_voie_m', 'Recul à la voie inconnu : non contrôlé.'));
   const rl = r('recul_limites_m');
-  if (rl && fini(rl.valeur)) out.push(juger(rl, recul + 0.01 >= rl.valeur, `${fr(recul, 1)} m de toutes les limites`, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m', surContour));
+  if (rl && fini(rl.valeur)) out.push(juger(rl, reculLimites + tolerance >= rl.valeur, valeurLimites, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m', surContour));
   else {
     const rf = r('recul_limites_formule');
     const f = rf && typeof rf.valeur === 'string' ? formuleRecul(rf.valeur) : null;
     if (rf && f) {
       const exige = Math.max(f.minimumM ?? 0, v.hauteurM / f.diviseur);
-      out.push(juger(rf, recul + 0.01 >= exige, `${fr(recul, 1)} m de toutes les limites`, `${String(rf.valeur)} soit ${fr(exige, 1)} m pour ≈ ${fr(v.hauteurM, 1)} m`, 'recul_limites_m', surContour));
+      out.push(juger(rf, reculLimites + tolerance >= exige, valeurLimites, `${String(rf.valeur)} soit ${fr(exige, 1)} m pour ≈ ${fr(v.hauteurM, 1)} m`, 'recul_limites_m', surContour));
     } else out.push(nonControle('recul_limites_m', 'Recul aux limites inconnu : non contrôlé.'));
   }
   // Pleine terre : jamais affirmée (voirie, stationnement, dalles non déduits).
@@ -325,11 +431,34 @@ export function reglesVolume(regles: RegleLue[], gabaritNiveaux: number | null, 
       else non.push(`Recul aux limites (formule « ${String(r.valeur)} ») : non chiffrable par le volume`);
       continue;
     }
+    // Lot C10 (défaut D) — hauteur, niveaux, pleine terre PAR BANDE : la valeur de la bande principale (retenue
+    // par lireRegles) ne vaut que pour un volume destiné à la bande principale, c'est-à-dire quand l'appelant
+    // passe les bandes mesurées (l'emprise est alors celle de la bande principale) ou garantit l'implantation
+    // dans la bande. Sinon (calcul prudent, côté voie non situé) un bâtiment peut se trouver en bande
+    // secondaire : la valeur la PLUS CONTRAIGNANTE des bandes est appliquée à tout le volume, et c'est dit.
+    if (SENS_PAR_BANDE[r.cle] && r.cle !== 'emprise_sol_max_pct' && estConditionBande(r.alternatives ?? []) && !options.implantationDansBande && !bandes) {
+      const l = limiteSelonBande(r, false);
+      if (l && l.plusPermissive !== null) {
+        const ratio = cle === 'pleine_terre_min_ratio';
+        const prudente: ReglePlu = { cle, valeur: ratio ? l.valeur / 100 : l.valeur, ...base, source: `${r.source} — règle par bande, bâtiments non situés dans la bande principale : valeur la plus contraignante des bandes` };
+        if (regleValide(prudente)) {
+          out.push(prudente);
+          const u = UNITES_BANDE[r.cle] ?? '';
+          // « Règle par bande, … » en tête : la fiche du site retire les lignes commençant par « Pleine terre » quand la notion est trouvée.
+          non.push(`Règle par bande, ${(LIBELLES[r.cle] ?? r.cle).toLowerCase()} (${mentionBandes(r.alternatives ?? [], u, r.texte).replace(/^règle par bande — /u, '')}) — le volume d’étude n’est pas situé dans la bande principale : ` +
+            `${fr(l.valeur, 1)}${u ? ` ${u}` : ''} appliqué${l.valeur !== l.plusPermissive ? `, et non ${fr(l.plusPermissive, 1)}${u ? ` ${u}` : ''}` : ''}`);
+          continue;
+        }
+      }
+    }
     const v = fini(r.valeur) ? r.valeur : null;
     if (v === null) { non.push(`${r.cle} : valeur non chiffrée`); continue; }
     const regle: ReglePlu = { cle, valeur: cle === 'emprise_max_ratio' || cle === 'pleine_terre_min_ratio' ? v / 100 : v, ...base };
     if (regleValide(regle)) out.push(regle);
-    else if (v === 0 && cle.startsWith('recul')) non.push(`${r.cle} : 0 m (implantation à l’alignement autorisée) — le volume garde le recul des limites séparatives`);
+    else if (v === 0 && cle === 'recul_limites_m') non.push('recul_limites_m : 0 m (implantation en limite séparative permise) — non appliqué : le volume garde un retrait sur les limites séparatives');
+    else if (v === 0 && cle.startsWith('recul')) non.push(options.implantationDansBande
+      ? `${r.cle} : 0 m (implantation à l’alignement autorisée) — appliqué côté voie seulement si la règle est confirmée et citée, voir les hypothèses`
+      : `${r.cle} : 0 m (implantation à l’alignement autorisée) — le volume garde le recul des limites séparatives`);
     else non.push(`${r.cle} : ${String(r.valeur)} hors bornes, ignorée`);
   }
   if (gabaritNiveaux !== null) {

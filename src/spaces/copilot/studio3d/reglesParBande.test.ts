@@ -70,13 +70,21 @@ test('lireRegles : une règle déjà stockée avec la valeur du fond est relue a
   assert.match(r.hauteur_max_m.regle_relative ?? '', /règle par bande — bande principale \(profondeur non lue\) : 19,5 m ; bande secondaire : 13,5 m ; côté voie non identifié/);
 });
 
-test('reglesVolume : hauteur et niveaux de la bande principale ; emprise prudente et annoncée comme sous-estimée', () => {
+// Lot C10 (défaut D) : sans côté voie, un bâtiment peut être en bande secondaire → hauteur, niveaux et pleine
+// terre les plus contraignants des bandes (avant : 19,5 m, 6 niveaux et 15 %, valeurs de la bande principale).
+test('reglesVolume, côté voie non situé : hauteur, niveaux, emprise et pleine terre les plus contraignants des bandes, et c’est dit', () => {
   const v = reglesVolume(lireRegles(STOCKEES), null);
   const val = (cle: string) => v.regles.find((x) => x.cle === cle)?.valeur;
-  assert.equal(val('hauteur_max_m'), 19.5);
-  assert.equal(val('niveaux_max'), 6);
+  assert.equal(val('hauteur_max_m'), 13.5);
+  assert.equal(val('niveaux_max'), 4);
   assert.equal(val('emprise_max_ratio'), 0.2);                     // côté voie inconnu : on ne suppose pas 80 % de la parcelle
-  assert.equal(val('pleine_terre_min_ratio'), 0.15);
+  assert.equal(val('pleine_terre_min_ratio'), 0.5);
+  assert.match(v.nonAppliquees.join(' | '), /Règle par bande, hauteur \(bande principale \(profondeur non lue\) : 19,5 m ; bande secondaire : 13,5 m\) — le volume d’étude n’est pas situé dans la bande principale : 13,5 m appliqué, et non 19,5 m/);
+  // L'appelant qui GARANTIT l'implantation dans la bande principale garde les valeurs de cette bande.
+  const dansBande = reglesVolume(lireRegles(STOCKEES), null, null, { implantationDansBande: true });
+  assert.equal(dansBande.regles.find((x) => x.cle === 'hauteur_max_m')?.valeur, 19.5);
+  assert.equal(dansBande.regles.find((x) => x.cle === 'niveaux_max')?.valeur, 6);
+  assert.equal(dansBande.regles.find((x) => x.cle === 'pleine_terre_min_ratio')?.valeur, 0.15);
   assert.equal(val('epaisseur_max_m'), undefined);
   const note = v.nonAppliquees.find((l) => l.startsWith('Emprise par bande')) ?? '';
   assert.match(note, /80 % dans la bande principale, 20 % dans la bande secondaire/);

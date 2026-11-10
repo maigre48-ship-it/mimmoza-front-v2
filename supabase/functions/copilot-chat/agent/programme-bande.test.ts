@@ -162,7 +162,9 @@ Deno.test('C7c-5 : parcelle d’essai — moteur dans la bande (24 %), forme « 
   na.match(ces(enL), /20 %/);
   na.doesNotMatch(enL.resume.regles_appliquees.join(' | '), /de la bande principale de 18 m \(/);
   na.equal(enL.volume.bande?.statut, 'non-appliquee');
-  na.match(enL.volume.bande!.raison!, /forme choisie non contenue dans la bande principale \(2 emprises bâties sur 2 non contenues dans la bande principale de 18 m\) : plafond d’emprise prudent appliqué à toute la parcelle\.$/);
+  // Lot C10 : la forme est d'abord cherchée DANS la bande principale (formesBatiment.placerForme) ; elle n'y tient pas, et la raison le dit
+  // (avant : elle était posée hors bande, puis refusée « 2 emprises bâties sur 2 non contenues »). Le résultat final est le même.
+  na.match(enL.volume.bande!.raison!, /forme choisie non contenue dans la bande principale \(En L : Cette forme ne tient pas dans la bande principale \(18 m depuis le côté voie présumé\) avec les reculs et l’épaisseur du moteur\) : plafond d’emprise prudent appliqué à toute la parcelle\.$/);
   na.ok(enL.resume.regles_non_appliquees.includes(enL.volume.bande!.raison!));
   const gl = mesurer(enL.volume, COTE_ESSAI);
   na.ok(gl.distanceMax > 18, 'la forme en L sort bien de la bande');

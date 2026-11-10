@@ -30,11 +30,17 @@
 // tout entier dans la bande principale (étapes 2 et 4 remplacées ; reculs, CES, niveaux inchangés). Bande
 // inutilisable : calcul habituel, raison écrite dans `bande.raison` et dans les alertes. Sans le paramètre :
 // résultat strictement identique à avant. Rien n'est construit en bande secondaire.
+//
+// Lot C10 — recul différencié (seulement quand la bande est appliquée, donc le côté voie identifié) : si le recul à
+// la voie est ÉTABLI par une règle lue (règle chiffrée `recul_voie_m`, ou alignement explicite passé dans
+// `bande.implantation.reculVoieM`), il s'applique aux limites présumées sur voie, et le recul aux limites
+// séparatives à toutes les autres. Recul à la voie non établi : recul uniforme d'origine, côté voie compris, et
+// l'hypothèse affichée le dit. L'alignement n'est jamais supposé.
 
 import type { JarvisDraft } from './jarvisDraft.ts';
-import { distanceVoie, preparerBande, rectangleDansBande, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
+import { distanceVoie, marquerSegmentsVoie, preparerBande, rectangleDansBande, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
 
-export type { BandeVoie, BandeVolume } from './bandePrincipale.ts';
+export type { BandeVoie, BandeVolume, ImplantationVoie } from './bandePrincipale.ts';
 
 export type Position = number[];
 export type GeometrieParcelle =
@@ -228,6 +234,11 @@ export interface VolumePropose {
   logementsEstimes: number | null;
   sdpViseeM2: number | null;
   programmeAtteint: boolean | null;
+  /**
+   * Recul appliqué aux limites. Reculs uniformes (cas général) : distance minimale à TOUTES les limites.
+   * Lot C10, reculs différenciés (`bande.reculVoieM` présent) : recul aux limites AUTRES que la voie ; le recul
+   * côté voie est `bande.reculVoieM`.
+   */
   reculM: number;
   cesRetenu: number;
   /** Lignes d'hypothèses à afficher telles quelles. */
@@ -359,19 +370,29 @@ export function orientationParcelle(anneau: PointLocal[]): number {
 
 export interface Rect { cu: number; cv: number; w: number; d: number }
 
-export interface Segment { a: PointLocal; b: PointLocal; x0: number; x1: number; y0: number; y1: number }
+export interface Segment {
+  a: PointLocal; b: PointLocal; x0: number; x1: number; y0: number; y1: number;
+  /** Lot C10 : limite présumée sur voie (posé par marquerSegmentsVoie) ; absent = limite ordinaire. */
+  voie?: boolean;
+}
 export const segmentsDe = (anneaux: PointLocal[][]): Segment[] => anneaux.flatMap(anneau => anneau.map((a, i) => {
   const b = anneau[(i + 1) % anneau.length];
   return { a, b, x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) };
 }));
 
-/** Le rectangle (repère tourné u, v) tient-il à ≥ recul de toutes les limites ? */
-export function rectTient(anneaux: PointLocal[][], segments: Segment[], r: Rect, recul: number): boolean {
+/**
+ * Le rectangle (repère tourné u, v) tient-il à ≥ recul de toutes les limites ?
+ * Lot C10 : `reculVoie` (facultatif) remplace `recul` pour les segments marqués `voie` (limites présumées sur
+ * voie) ; sans ce paramètre, ou sans segment marqué, le test est celui d'origine.
+ */
+export function rectTient(anneaux: PointLocal[][], segments: Segment[], r: Rect, recul: number, reculVoie?: number): boolean {
   const x0 = r.cu - r.w / 2, x1 = r.cu + r.w / 2, y0 = r.cv - r.d / 2, y1 = r.cv + r.d / 2;
   if (!dansPolygone(anneaux, x0, y0)) return false;
   const coins = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
-  const marge = Math.max(recul, 1e-6);
+  const margeLimites = Math.max(recul, 1e-6);
+  const margeVoie = reculVoie === undefined ? margeLimites : Math.max(reculVoie, 1e-6);
   for (const s of segments) {
+    const marge = s.voie ? margeVoie : margeLimites;
     // Segment loin du rectangle (boîtes englobantes) : rien à vérifier.
     if (s.x1 < x0 - marge || s.x0 > x1 + marge || s.y1 < y0 - marge || s.y0 > y1 + marge) continue;
     // Sommet de la parcelle (ou d'un trou) dans le rectangle : rectangle refusé.
@@ -416,20 +437,23 @@ function plusGrandRectangle(anneaux: PointLocal[][], recul: number, epaisseurMax
  * des limites ET entièrement dans la bande principale. Grille de départs fixe, donc déterministe ; à surface
  * égale, le rectangle le plus proche de la voie.
  */
-function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisseurMax: number, coteMin: number, facades: FacadeLocale[], profondeurM: number): Rect | null {
+function plusGrandRectangleBande(anneaux: PointLocal[][], recul: number, epaisseurMax: number, coteMin: number, facades: FacadeLocale[], profondeurM: number, reculVoie?: number): Rect | null {
   const segments = segmentsDe(anneaux);
+  // Lot C10 : recul différencié seulement si chaque façade sur voie est retrouvée sur le contour ; sinon recul uniforme.
+  const differencie = reculVoie !== undefined && marquerSegmentsVoie(segments, facades);
+  const rVoie = differencie ? reculVoie as number : recul, rMin = Math.min(recul, rVoie);
   const us = anneaux[0].map(p => p.x), vs = anneaux[0].map(p => p.y);
   const fu = facades.flatMap(f => [f.a.x, f.b.x]), fv = facades.flatMap(f => [f.a.y, f.b.y]);
   // Zone utile : la parcelle moins le recul, réduite à ce qui peut être à moins de `profondeurM` d'une façade.
-  const u0 = Math.max(Math.min(...us) + recul, Math.min(...fu) - profondeurM), u1 = Math.min(Math.max(...us) - recul, Math.max(...fu) + profondeurM);
-  const v0 = Math.max(Math.min(...vs) + recul, Math.min(...fv) - profondeurM), v1 = Math.min(Math.max(...vs) - recul, Math.max(...fv) + profondeurM);
+  const u0 = Math.max(Math.min(...us) + rMin, Math.min(...fu) - profondeurM), u1 = Math.min(Math.max(...us) - rMin, Math.max(...fu) + profondeurM);
+  const v0 = Math.max(Math.min(...vs) + rMin, Math.min(...fv) - profondeurM), v1 = Math.min(Math.max(...vs) - rMin, Math.max(...fv) + profondeurM);
   const largeurMax = u1 - u0, hauteurMax = v1 - v0;
   if (largeurMax < coteMin || hauteurMax < coteMin) return null;
-  // Épaisseurs essayées : celles du calcul habituel, et la profondeur de bande moins le recul (à 0,5 m et 1 m près).
-  const epaisseurs = [...new Set([epaisseurMax, epaisseurMax * 0.75, epaisseurMax * 0.5, profondeurM - recul, profondeurM - recul - 0.5, profondeurM - recul - 1]
+  // Épaisseurs essayées : celles du calcul habituel, et la profondeur de bande moins le recul côté voie (à 0,5 m et 1 m près).
+  const epaisseurs = [...new Set([epaisseurMax, epaisseurMax * 0.75, epaisseurMax * 0.5, profondeurM - rVoie, profondeurM - rVoie - 0.5, profondeurM - rVoie - 1]
     .map(e => arrondiInf(Math.min(e, epaisseurMax, hauteurMax))).filter(e => e >= coteMin))].sort((a, b) => b - a);
   const tient = (r: Rect) => {
-    if (!rectTient(anneaux, segments, r, recul)) return false;
+    if (!rectTient(anneaux, segments, r, recul, differencie ? rVoie : undefined)) return false;
     const x0 = r.cu - r.w / 2, x1 = r.cu + r.w / 2, y0 = r.cv - r.d / 2, y1 = r.cv + r.d / 2;
     return rectangleDansBande([{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }], facades, profondeurM);
   };
@@ -501,6 +525,47 @@ export function regleValide(r: ReglePlu): boolean {
   }
 }
 
+/** Lot C10 : reculs retenus pour un jeu de règles (même sélection pour le volume unique et pour l'implantation multi-bâtiments). */
+export interface ReculsRetenus {
+  /** Au moins un recul lu (voie, limites ou formule). */
+  reculConnu: boolean;
+  /** Recul UNIFORME d'origine : le plus fort des reculs lus pour cette hauteur, ou 4 m par défaut. */
+  uniformePour: (hauteurM: number) => number;
+  /** Un recul aux limites séparatives est lu (valeur ou formule H/k). */
+  limitesLues: boolean;
+  /** Recul aux limites AUTRES que la voie : reculs aux limites lus ; à défaut, le recul uniforme d'origine. */
+  limitesPour: (hauteurM: number) => number;
+  /** Recul côté voie ÉTABLI par une règle lue (m ; 0 = alignement permis) ; null : non établi, recul uniforme partout. */
+  voieM: number | null;
+  /** D'où vient `voieM` : règle chiffrée des règles du volume, ou implantation fournie par l'appelant. */
+  origineVoie: 'regle' | 'implantation' | null;
+}
+
+/**
+ * Lot C10 — reculs à appliquer. `implantation` : celle de la bande préparée (côté voie identifié) ; null hors
+ * bande → `voieM` null, donc aucun recul différencié. Le recul à la voie n'est établi que par une règle chiffrée
+ * `recul_voie_m` ou par `implantation.reculVoieM` (valeur lue, 0 = alignement) ; si les deux existent, le plus fort.
+ */
+export function reculsRetenus(regles: readonly ReglePlu[], implantation: { reculVoieM: number | null } | null): ReculsRetenus {
+  const H = HYPOTHESES_VOLUME;
+  const valides = regles.filter(regleValide);
+  const max = (cle: CleReglePlu) => { const l = valides.filter(r => r.cle === cle); return l.length ? Math.max(...l.map(r => r.valeur)) : null; };
+  const voieRegle = max('recul_voie_m'), limites = max('recul_limites_m');
+  const formules = valides.filter(r => r.cle === 'recul_limites_formule');
+  const formule = formules.length ? formules.reduce((a, b) => b.valeur < a.valeur || (b.valeur === a.valeur && (b.minimumM ?? 0) > (a.minimumM ?? 0)) ? b : a) : null;
+  const parFormule = (h: number) => formule ? Math.max(formule.minimumM ?? 0, h / formule.valeur) : 0;
+  const reculConnu = voieRegle !== null || limites !== null || formule !== null;
+  const uniformePour = (h: number) => !reculConnu ? H.reculDefautM : Math.max(voieRegle ?? 0, limites ?? 0, parFormule(h));
+  const limitesLues = limites !== null || formule !== null;
+  const lue = implantation ? implantation.reculVoieM : null;
+  const voieM = !implantation ? null : lue !== null ? Math.max(lue, voieRegle ?? 0) : voieRegle;
+  return {
+    reculConnu, uniformePour, limitesLues,
+    limitesPour: (h: number) => limitesLues ? Math.max(limites ?? 0, parFormule(h)) : uniformePour(h),
+    voieM, origineVoie: voieM === null ? null : lue !== null && lue >= (voieRegle ?? 0) ? 'implantation' : 'regle',
+  };
+}
+
 /**
  * Volume d'étude proposé sur la parcelle.
  * `bande` (facultatif, lot C7b) : bande principale d'un PLU « par bande ». Absente : calcul habituel, résultat
@@ -539,13 +604,41 @@ export function calculerVolumeParcelle(
     ...v,
     hypotheses: [...v.hypotheses,
       ...(b.empriseMaxM2 !== null ? [`Emprise au sol bornée à ${fr(b.empriseMaxM2)} m² : maximum de la bande principale.`] : []),
-      `Bande secondaire (au-delà de ${fr(b.profondeurM, 1)} m depuis la voie) : non construite dans ce volume d’étude.`],
+      `Bande secondaire (au-delà de ${fr(b.profondeurM, 1)} m depuis la voie) : non construite dans ce volume d’étude.`,
+      ...hypothesesImplantation(b)],
     bande: {
       statut: 'appliquee', raison: null, profondeurM: b.profondeurM, longueurFacadeM: b.longueurFacadeM,
       angleVoieDeg: Math.round(b.angle * 180 / Math.PI * 10) / 10,
       distanceMaxVoieM: Math.ceil(distanceMax * 100 - 1e-6) / 100, empriseMaxM2: b.empriseMaxM2,
+      ...(v.bande?.reculVoieM !== undefined ? { reculVoieM: v.bande.reculVoieM, reculLimitesM: v.reculM } : {}),
     },
   };
+}
+
+/** Lot C10 : lignes d'hypothèses tirées de l'implantation fournie (notes de l'appelant, implantation en limite non appliquée). */
+export function hypothesesImplantation(b: BandePreparee): string[] {
+  return [
+    ...b.implantation.notes,
+    ...(b.implantation.limiteSeparativePermise ? ['Implantation en limite séparative permise selon la règle lue : NON appliquée dans ce volume d’étude (retrait conservé sur les limites autres que la voie), ce qui peut sous-estimer l’emprise possible.'] : []),
+  ];
+}
+
+/**
+ * Lot C10 : première ligne d'hypothèses quand les reculs sont différenciés (recul côté voie établi par une règle lue).
+ * `reculLimitesM` null : la valeur dépend du bâtiment (plusieurs hauteurs), elle n'est pas chiffrée dans la phrase.
+ */
+export function hypotheseReculsDifferencies(rc: ReculsRetenus, b: BandePreparee, reculLimitesM: number): string {
+  const voie = rc.voieM ?? 0;
+  const source = rc.origineVoie === 'implantation' && b.implantation.sourceVoie ? ` (${b.implantation.sourceVoie})` : '';
+  const coteVoie = voie === 0
+    ? `Côté voie : implantation à l’alignement (recul 0 m), permise par la règle lue${source}`
+    : `Recul de ${fr(voie, 1)} m côté voie : règle de recul à la voie lue${source}`;
+  const autres = rc.limitesLues
+    ? `recul de ${fr(reculLimitesM, 1)} m aux autres limites : le plus fort des reculs aux limites séparatives lus pour cette hauteur`
+    : rc.reculConnu
+      ? `recul de ${fr(reculLimitesM, 1)} m aux autres limites : recul aux limites séparatives non lu, valeur du recul à la voie reprise`
+      : `recul de ${fr(reculLimitesM, 1)} m aux autres limites (valeur par défaut : recul aux limites séparatives non lu)`;
+  return `${coteVoie} ; ${autres}. Reculs différenciés : le côté voie est présumé d’après le cadastre (limite sans parcelle mitoyenne), à confirmer.`;
 }
 
 /** Le calcul lui-même. `bande` null : comportement d'origine, à l'identique. */
@@ -593,9 +686,18 @@ function calculerVolume(
 
   // Recul uniforme sur toutes les limites (côté voie non identifié) : le plus fort des reculs connus pour une hauteur donnée.
   const reculConnu = Boolean(rVoie || rLimites || rFormule);
-  const reculPour = (hauteurM: number) => !reculConnu ? H.reculDefautM : Math.max(
+  const reculUniformePour = (hauteurM: number) => !reculConnu ? H.reculDefautM : Math.max(
     rVoie?.valeur ?? 0, rLimites?.valeur ?? 0,
     rFormule ? Math.max(rFormule.minimumM ?? 0, hauteurM / rFormule.valeur) : 0);
+  // Lot C10 — bande appliquée ET recul à la voie établi par une règle lue ET façades retrouvées sur le contour :
+  // recul « voie » côté voie, recul « limites » ailleurs. Sinon (toujours hors bande) : recul uniforme d'origine.
+  const rc = reculsRetenus(valides, bande ? bande.implantation : null);
+  const differencie = !!bande && rc.voieM !== null && (() => {
+    const proj0 = projeterParcelle(geometrie);
+    return !!proj0 && marquerSegmentsVoie(segmentsDe(proj0.anneaux), bande.facades);
+  })();
+  const reculVoieM = differencie ? rc.voieM as number : null;
+  const reculPour = differencie ? rc.limitesPour : reculUniformePour;
 
   const mentionPlu = appliquees.size || valides.length
     ? 'Règles PLU appliquées — conformité à vérifier par un professionnel'
@@ -640,7 +742,7 @@ function calculerVolume(
     const reculM = Math.round(reculPour(n * H.hauteurEtageM) * 100) / 100;
     const cle = reculM.toFixed(2);
     if (!cacheRect.has(cle)) cacheRect.set(cle, bande && facadesUV
-      ? plusGrandRectangleBande(anneauxUV, reculM, epaisseurMax, H.coteMinM, facadesUV, bande.profondeurM)
+      ? plusGrandRectangleBande(anneauxUV, reculM, epaisseurMax, H.coteMinM, facadesUV, bande.profondeurM, reculVoieM ?? undefined)
       : plusGrandRectangle(anneauxUV, reculM, epaisseurMax, H.coteMinM));
     const rect = cacheRect.get(cle);
     if (!rect) return null;
@@ -691,10 +793,11 @@ function calculerVolume(
 
   const { n: niveaux, reculM, rect } = choix;
   const w = choix.w, d = choix.d;
-  if (rVoie) noter(rVoie, 'recul appliqué');
-  if (rLimites) noter(rLimites, 'recul appliqué');
+  if (rVoie) noter(rVoie, differencie ? 'recul appliqué côté voie' : 'recul appliqué');
+  if (rLimites) noter(rLimites, differencie ? 'recul appliqué aux limites autres que la voie' : 'recul appliqué');
   if (rFormule) noter(rFormule, `recul recalculé pour H = ${fr(niveaux * H.hauteurEtageM)} m : ${fr(Math.max(rFormule.minimumM ?? 0, niveaux * H.hauteurEtageM / rFormule.valeur), 1)} m`);
-  if (reculConnu) hypotheses[0] = bande
+  if (differencie && bande) hypotheses[0] = hypotheseReculsDifferencies(rc, bande, reculM);
+  else if (reculConnu) hypotheses[0] = bande
     ? `Recul de ${fr(reculM, 1)} m sur toutes les limites, côté voie compris : le plus fort des reculs PLU pour cette hauteur (recul à la voie et reculs aux limites non différenciés).`
     : `Recul de ${fr(reculM, 1)} m sur toutes les limites : le plus fort des reculs PLU pour cette hauteur (côté voie non identifié).`;
   if (hauteurMax === null && !rNiveaux) alertes.push(sdpVisee !== null ? 'Hauteur maximale du PLU inconnue : niveaux déduits du seul programme.' : 'Hauteur maximale du PLU inconnue : hauteur indicative.');
@@ -724,6 +827,8 @@ function calculerVolume(
     alertes, mentionPlu,
     reglesAppliquees: lignesRegles(),
     reglesNonAppliquees: [...regles.nonAppliquees],
+    // Lot C10 : reculs différenciés → repris et complétés par calculerVolumeParcelle (état de la bande).
+    ...(reculVoieM !== null ? { bande: { statut: 'appliquee' as const, raison: null, profondeurM: null, longueurFacadeM: null, angleVoieDeg: null, distanceMaxVoieM: null, empriseMaxM2: null, reculVoieM, reculLimitesM: reculM } } : {}),
   };
 }
 

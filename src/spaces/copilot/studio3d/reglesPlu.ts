@@ -22,9 +22,17 @@
 // Rattachement : un lot de règles ne s'applique à la parcelle affichée que s'il
 // porte sur son IDU, ou sur sa zone (même commune si elle est connue ; un
 // secteur « UBb » accepte les règles de « UB »). Les autres sont listées « ignorées ».
+//
+// Lot C10 — règles PAR BANDE (« 80 % dans la bande principale de 18 m, 20 % au-delà ») : la fiche « Dossier 3D »
+// du site ne connaît ni les parcelles voisines ni le côté voie. Elle applique donc LE MÊME plafond prudent que le
+// serveur quand la bande n'est pas prouvée (controlesVolume.reglesVolume, sans bandes mesurées) : la valeur la
+// plus contraignante des bandes sur toute la parcelle, avec la même note. Avant ce lot, `alternatives` n'était pas
+// lu : une emprise par bande enregistrée à 80 devenait 80 % de TOUTE la parcelle, bâtiments hors bande compris.
 
 import { normaliserIdu } from './missionPreparation3D.ts';
 import type { CleReglePlu, ReglePlu, ReglesPluVolume } from './volumeParcelle.ts';
+import { lireRegles, reglesVolume } from './controlesVolume.ts';
+import { estConditionBande } from './reglesParBande.ts';
 
 export interface AppelOutil { name: string; status: string; input?: unknown; output?: unknown }
 export interface MessageRegles { role: 'user' | 'assistant'; toolCalls?: AppelOutil[] }
@@ -148,12 +156,24 @@ const CLES_CONCEPTION: Record<string, CleReglePlu> = {
   pleine_terre_min_pct: 'pleine_terre_min_ratio',
 };
 
-/** Règles au format conception (RegleConception) → règles du volume. */
-function reglesConception(liste: unknown[], origine: string): ReglePlu[] {
+/**
+ * Règles au format conception (RegleConception) → règles du volume.
+ * `notes` (lot C10) reçoit les lignes à afficher pour les règles par bande (plafond prudent appliqué, et pourquoi).
+ */
+function reglesConception(liste: unknown[], origine: string, notes: string[] = []): ReglePlu[] {
   const out: ReglePlu[] = [];
   for (const e of liste) {
     const r = enr(e); const cle = r ? CLES_CONCEPTION[String(r.cle)] : undefined;
     if (!r || !cle || r.statut === 'manquant') continue;
+    // Lot C10 — règle PAR BANDE : même conversion que le serveur sans bandes mesurées (reglesVolume, plafond
+    // prudent). Aucune seconde logique ici : la règle est relue par lireRegles et convertie par reglesVolume.
+    const lue = lireRegles([{ ...r, source: txt(r.source) ?? origine }])[0];
+    if (lue && estConditionBande(lue.alternatives ?? [])) {
+      const prudentes = reglesVolume([lue], null, null);
+      out.push(...prudentes.regles);
+      notes.push(...prudentes.nonAppliquees);
+      continue;
+    }
     const statut = r.statut === 'confirme' ? 'lue' : 'estimee';
     const base = { source: txt(r.source) ?? origine, reference: txt(r.article), statut } as const;
     if (cle === 'recul_limites_formule') {
@@ -213,11 +233,15 @@ export function lotsReglesDesMessages(messages: readonly MessageRegles[]): LotRe
         continue;
       }
       if (a.name === 'enregistrer_regles_conception' && Array.isArray(entree.regles)) {
-        lots.push({ regles: reglesConception(entree.regles, 'Règles de conception'), manquantes: [], zone: null, idu: iduConception, insee: iduConception?.slice(0, 5) ?? null, origine: 'Règles de conception', niveau: 'conception' });
+        const notes: string[] = [];
+        const regles = reglesConception(entree.regles, 'Règles de conception', notes);
+        lots.push({ regles, manquantes: notes, zone: null, idu: iduConception, insee: iduConception?.slice(0, 5) ?? null, origine: 'Règles de conception', niveau: 'conception' });
         continue;
       }
       if (a.name === 'lire_regles_plu_importees' && Array.isArray(d.regles)) {
-        lots.push({ regles: reglesConception(d.regles, 'Règlement importé'), manquantes: [], zone: normaliserZone(entree.zone_code), idu: null, insee: txt(entree.code_insee), origine: 'Règlement importé', niveau: 'conception' });
+        const notes: string[] = [];
+        const regles = reglesConception(d.regles, 'Règlement importé', notes);
+        lots.push({ regles, manquantes: notes, zone: normaliserZone(entree.zone_code), idu: null, insee: txt(entree.code_insee), origine: 'Règlement importé', niveau: 'conception' });
       }
     }
   }

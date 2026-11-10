@@ -34,7 +34,8 @@
 // =============================================================================
 
 import { hauteurCorps, type ApercuVolume } from './briefCreatif.ts';
-import { controlerVolume, regleCitee, type ControleVolume, type RegleLue } from './controlesVolume.ts';
+import { conditionSelonBande, controlerVolume, limiteSelonBande, regleCitee, type ControleVolume, type RegleLue } from './controlesVolume.ts';
+import { verifierBandeVolume } from './bandePrincipale.ts';
 import { HYPOTHESES_PROGRAMME } from './implantationProgramme.ts';
 import {
   corpsAffiches, HYPOTHESES_VOLUME, libelleNiveaux, NOMS_FORME_AILES, rectTient, segmentsDe, versWgs84,
@@ -247,10 +248,16 @@ export function appliquerForme(p: PreparationFiche, s: SaisieDimensions, forme: 
 /** Lot formes-batiment : contexte du moteur pour placer une forme (mêmes contraintes que le volume du moteur). */
 export function contexteForme(p: PreparationFiche): ContexteForme {
   const vises = p.programme?.logements ?? p.volume.kpi?.unitesVisees ?? null;
+  // Lot C10 : le volume du moteur est-il PROUVÉ dans la bande principale ? Alors les formes y sont placées aussi,
+  // avec les règles de cette bande ; sinon plafond prudent (formesBatiment.placerForme).
+  const b = p.volume.bande;
+  const bande = b && b.statut === 'appliquee' && b.facades?.length && b.profondeurM !== null && verifierBandeVolume(p.volume).prouvee
+    ? { facades: b.facades, profondeurM: b.profondeurM, empriseMaxM2: b.empriseMaxM2 } : null;
   return {
     contour: p.volume.contour, angleDeg: p.volume.emprise?.angleDeg ?? 0, surfaceParcelleM2: p.volume.surfaceParcelleM2,
     regles: p.regles, gabaritNiveaux: p.gabaritNiveaux ?? null,
     sdpViseeM2: vises !== null && vises > 0 ? Math.round(vises) * HYPOTHESES_VOLUME.sdpParLogementM2 : Math.max(1, p.volume.sdpM2),
+    ...(bande ? { bande } : {}),
   };
 }
 
@@ -571,7 +578,7 @@ export function evaluerSaisie(p: PreparationFiche, s: SaisieDimensions, attique 
     modifie, forme: s.forme, corps, sdpM2: Math.round(modifie ? sdpTotal : p.volume.sdpM2), empriseM2: Math.round(empriseTotal),
     empriseRatio: surface > 0 ? empriseTotal / surface : 0, surfaceParcelleM2: surface,
     capaciteLogements: capacite, logementsVises: vises, logementsPlaces: placesTotal, reculMinM,
-    controles, hauteurStudio: controleHauteurStudio(corps, p.regles, attique), alertes, volume,
+    controles, hauteurStudio: controleHauteurStudio(corps, p.regles, attique, volume), alertes, volume,
   };
 }
 
@@ -579,21 +586,42 @@ export function evaluerSaisie(p: PreparationFiche, s: SaisieDimensions, attique 
  * Hauteur DESSINÉE par le Studio (cotes réelles, attique compris si choisi) confrontée à la hauteur
  * maximale de la conception. Même principe que controlerVolume : « dans la limite de la règle citée »
  * seulement pour une règle confirmée, citée et sans condition complémentaire ; sinon « à vérifier ».
+ *
+ * Lot C10 — hauteur PAR BANDE : `volume` (le volume évalué) dit si ses bâtiments sont PROUVÉS dans la bande
+ * principale. Prouvé : hauteur de la bande principale, et la condition le dit (« contenu dans la bande
+ * principale, vérifié par le calcul »). Non prouvé (ou volume non fourni) : hauteur la plus contraignante des
+ * bandes ; au-dessus, « à vérifier » tant que la hauteur de la bande principale n'est pas dépassée.
  */
-export function controleHauteurStudio(corps: readonly CorpsEvalue[], regles: readonly RegleLue[], attique: boolean): ControleHauteurStudio | null {
+export function controleHauteurStudio(corps: readonly CorpsEvalue[], regles: readonly RegleLue[], attique: boolean, volume: VolumePropose | null = null): ControleHauteurStudio | null {
   if (!corps.length) return null;
   const h = Math.max(...corps.map(c => (attique ? c.hauteurStudioAttiqueM : c.hauteurStudioM)));
   const r = regles.find(x => x.cle === 'hauteur_max_m' && x.statut !== 'manquant' && typeof x.valeur === 'number' && Number.isFinite(x.valeur));
   const dessin = `Hauteur dessinée par le Studio : ${fr(h, 2)} m${attique ? ' (attique compris)' : ''}`;
   if (!r) return { verdict: 'non_controle', texte: `${dessin} ; hauteur maximale inconnue : non contrôlée.` };
-  const v = r.valeur as number;
-  const regle = `${fr(v, 1)} m max. (${r.source}${r.article ? `, ${r.article}` : ''})`;
+  const prouvee = volume ? verifierBandeVolume(volume).prouvee : false;
+  const limite = limiteSelonBande(r, prouvee);
+  const v = limite?.valeur ?? (r.valeur as number);
+  const relative = conditionSelonBande(r, prouvee);
+  const condition = relative ? ` ${prouvee && relative !== r.regle_relative ? 'Condition complémentaire' : 'Condition complémentaire non vérifiée'} : ${relative}.` : '';
+  const origine = `(${r.source}${r.article ? `, ${r.article}` : ''})`;
+  if (limite?.parBande && limite.plusPermissive !== null) {
+    // Bande non prouvée : la hauteur de la bande principale ne vaut pas pour un bâtiment qui peut être en bande secondaire.
+    const regle = `${fr(v, 1)} m max. — hauteur la plus contraignante des bandes ${origine}`;
+    if (h > limite.plusPermissive + 1e-9) return { verdict: 'au_dela', texte: `${dessin} : au-delà de la hauteur la plus élevée des bandes (${fr(limite.plusPermissive, 1)} m) ${origine}.${condition}` };
+    return {
+      verdict: 'a_verifier',
+      texte: (h > v + 1e-9
+        ? `${dessin} : au-dessus de ${regle} ; admissible seulement dans la bande principale (${fr(limite.plusPermissive, 1)} m), où le volume n’est pas prouvé : à vérifier.`
+        : `${dessin} pour ${regle} : à vérifier.`) + condition,
+    };
+  }
+  const regle = `${fr(v, 1)} m max. ${origine}`;
   if (h > v + 1e-9) return { verdict: 'au_dela', texte: `${dessin} : au-delà de la règle (${regle}).` };
   const sure = regleCitee(r) && !r.regle_relative;
   return {
     verdict: sure ? 'dans_la_limite' : 'a_verifier',
     texte: sure ? `${dessin} : dans la limite de la règle citée (${regle}).`
-      : `${dessin} pour ${regle} : à vérifier.${r.regle_relative ? ` Condition complémentaire non vérifiée : ${r.regle_relative}.` : ''}`,
+      : `${dessin} pour ${regle} : à vérifier.${condition}`,
   };
 }
 
