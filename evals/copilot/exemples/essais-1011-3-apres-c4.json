@@ -1,0 +1,21 @@
+{
+ "titre": "Essai réel du 10/11 après le lot C4 (essai 3 à 11 h 02)",
+ "fidelite": "Fragments cités mot pour mot dans _mimmoza-agents/lot-2a-temoin/RESULTATS.md, séparés par « […] ». Le texte complet de la réponse n'a pas été conservé : ce qui n'est pas cité n'est pas reconstitué.",
+ "reponses": [
+  {
+   "id": "PIE-02",
+   "origine": "RESULTATS.md, essai 3 (11 h 02) : 9 jetons, 22 s, 1 outil (get_parcelle_depuis_adresse). Les deux premières phrases sont citées mot pour mot ; la dernière reprend la description du relevé (« puis demande de la référence cadastrale ou d'un numéro confirmé »), faute de citation.",
+   "texte": "Le numéro 100 n'est pas reconnu par la Base Adresse Nationale […] Je ne peux pas ancrer l'étude sur cette seule adresse […] [demande de la référence cadastrale ou d'un numéro confirmé]",
+   "outils": [
+    {
+     "name": "get_parcelle_depuis_adresse"
+    }
+   ],
+   "jetons": 9,
+   "duree_ms": 22000,
+   "raison_arret": null,
+   "devis_mission": null,
+   "erreur": null
+  }
+ ]
+}

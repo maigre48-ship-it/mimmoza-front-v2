@@ -1,0 +1,60 @@
+{
+ "titre": "Essai réel du 10/11 après le lot C1 (essai 1 bis à 10 h 18)",
+ "fidelite": "Fragments cités mot pour mot dans _mimmoza-agents/lot-2a-temoin/RESULTATS.md, séparés par « […] ». Le texte complet de la réponse n'a pas été conservé : ce qui n'est pas cité n'est pas reconstitué.",
+ "reponses": [
+  {
+   "id": "PIE-02",
+   "origine": "RESULTATS.md, essai 1 bis (10 h 18) : 56 jetons, 165 s, 14 outils, arrêt « end_turn », 15 726 caractères dont seuls ces fragments sont cités.",
+   "texte": "[…] tension extrême […] régimes courants à Montreuil […] ## Ce qui manque […]",
+   "outils": [
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    }
+   ],
+   "jetons": 56,
+   "duree_ms": 165000,
+   "raison_arret": "end_turn",
+   "devis_mission": null,
+   "erreur": null
+  }
+ ]
+}

@@ -1,0 +1,75 @@
+{
+ "titre": "Essais réels du 10/11 avant correctifs (essai 1 à 09 h 59, essai 2 à 10 h 31)",
+ "fidelite": "Fragments cités mot pour mot dans _mimmoza-agents/lot-2a-temoin/RESULTATS.md, séparés par « […] ». Le texte complet de la réponse n'a pas été conservé : ce qui n'est pas cité n'est pas reconstitué.",
+ "reponses": [
+  {
+   "id": "PIE-02",
+   "origine": "RESULTATS.md, essai 1 (09 h 59) : 38 jetons, 108 s, 14 outils, arrêt « tool_use », dernière phrase citée. Les noms des 14 outils ne sont pas relevés.",
+   "texte": "[…] Je les lis en parallèle avec l'étude de marché.",
+   "outils": [
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    },
+    {
+     "name": "(nom non relevé)"
+    }
+   ],
+   "jetons": 38,
+   "duree_ms": 108000,
+   "raison_arret": "tool_use",
+   "devis_mission": null,
+   "erreur": null
+  },
+  {
+   "id": "PLU-07",
+   "origine": "RESULTATS.md, essai 2 (10 h 31) : 51 jetons, 161 s, arrêt « end_turn », aucune mission proposée. Le nombre et les noms des outils ne sont pas relevés (un seul élément factice les représente).",
+   "texte": "[…] 70 % du terrain (indice B, p. 231) […] « 563 × 5 × 0,85 = 2 390 m² de SDP » […] « environ 5,0 M€ HT » […] ratio ×14 […] ## Ce qui manque […]",
+   "outils": [
+    {
+     "name": "(outils non relevés)"
+    }
+   ],
+   "jetons": 51,
+   "duree_ms": 161000,
+   "raison_arret": "end_turn",
+   "devis_mission": null,
+   "erreur": null
+  }
+ ]
+}
