@@ -119,6 +119,11 @@ const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && 
 const fini = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const positif = (v: unknown): v is number => fini(v) && v >= 0;
 const chaine = (v: unknown, max = 500): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+/**
+ * Lot C9 : longueur maximale d'un libellé de secteur (20 auparavant : libellés coupés au milieu d'un mot).
+ * Même valeur que le serveur (supabase/functions/copilot-chat/agent/conception.ts, LIBELLE_SECTEUR_MAX).
+ */
+const LIBELLE_SECTEUR_MAX = 80;
 
 export function lireRegle(v: unknown): RegleConception | null {
   if (!estObj(v)) return null;
@@ -142,7 +147,7 @@ export function lireRegle(v: unknown): RegleConception | null {
   if (nonReglementee) r.nature = 'non_reglementee';
   if (nature === 'par_secteur' && Array.isArray(v.valeurs_par_secteur)) {
     const vps = v.valeurs_par_secteur.filter(estObj).flatMap((e) => {
-      const secteur = typeof e.secteur === 'number' ? String(e.secteur) : chaine(e.secteur, 20);
+      const secteur = typeof e.secteur === 'number' ? String(e.secteur) : chaine(e.secteur, LIBELLE_SECTEUR_MAX);
       const val = cle === 'recul_limites_formule' ? chaine(e.valeur, 120) : positif(e.valeur) ? e.valeur : null;
       if (!secteur || val === null) return [];
       const t = chaine(e.texte, 300);
@@ -157,7 +162,7 @@ export function lireRegle(v: unknown): RegleConception | null {
       r.nature = 'par_secteur';
       r.valeurs_par_secteur = vps;
       const renvoi = chaine(v.renvoi_document_graphique, 200); if (renvoi) r.renvoi_document_graphique = renvoi;
-      const secteur = chaine(v.secteur, 20); if (secteur) r.secteur = secteur;
+      const secteur = chaine(v.secteur, LIBELLE_SECTEUR_MAX); if (secteur) r.secteur = secteur;
       if (v.toiture === 'terrasse' || v.toiture === 'pentes') r.toiture = v.toiture;
       const mesure = chaine(v.mesure_retenue, 200); if (mesure) r.mesure_retenue = mesure;
     }

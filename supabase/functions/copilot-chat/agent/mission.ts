@@ -44,6 +44,7 @@ import {
 import { NOMS_OUTILS_MISSION, OUTILS_MISSION_INTERDITS_VEILLE, outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
 import {
   ajusterToiture, appliquerReponseFormulaire, appliquerSecteur, appliquerSecteursDeclares, centroideParcelle, cheminReglementAutorise, cheminTexteReglement, chercherContourParcelle,
+  appliquerDispositionsCommunes, contexteDispositionsCommunes, lireDispositionsCommunes, resumeVoisines, type DispositionLue,
   completerRegles, compterTokensAnthropic, construireQuestionRegles, CONSIGNE_LECTURE_REGLEMENT, controlerProgramme, decrireRegle,
   fusionnerRegles, normaliserProgramme, normaliserRegle, questionSecteur, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
   reglesAPreciser, reglesDepuisLecture, reglesDepuisRulesets, reglesManquantes, signalementsFormules,
@@ -122,6 +123,8 @@ export interface EtatConception {
     chemin: string; zone: string | null; source?: 'depot' | 'gpu'; essais?: number; libelle?: string;
     /** V1.8 : choix de l'utilisateur (pièce du règlement GPU, pages). */
     fichier?: string | null; pages?: number[] | null;
+    /** Lot C9 : état des dispositions communes renvoyé par plu-reglement-v1 (lot C8), s'il existe. */
+    dispositions?: DispositionLue[];
   } | null;
   /** Valeurs proposées (PDF, outils) en désaccord avec une règle confirmée par l'utilisateur : signalées, jamais appliquées. */
   conflits: ConflitRegle[];
@@ -966,7 +969,8 @@ async function executerOutilMission(
       k.idu = idu; k.parcelle = p;
       const ko = await persisterConceptionSure(c, k, 'regles');
       c.etat.conception = k;
-      return JSON.stringify({ idu, surface_m2: p.surface_m2, source: p.source, conception_id: k.id, type_geometrie: p.geometrie.type, ...(ko ? { dossier_non_mis_a_jour: ko } : {}) });
+      // Lot C9 : dire si les parcelles voisines ont été obtenues (lot C7b), et sinon pourquoi.
+      return JSON.stringify({ idu, surface_m2: p.surface_m2, source: p.source, conception_id: k.id, type_geometrie: p.geometrie.type, ...resumeVoisines(p), ...(ko ? { dossier_non_mis_a_jour: ko } : {}) });
     }
     case 'lire_regles_plu_importees': {
       const insee = String(input.code_insee ?? '').trim();
@@ -1188,6 +1192,10 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     k.regles = f.regles;
     const conflit = noterConflits(k, f.conflits);
     const secteurs = appliquerSecteursConnus(k, c.m);
+    // Lot C9 : stationnement / mixité restés manquants → la raison donnée par plu-reglement-v1 (dispositions
+    // communes non trouvées, non jointes, ou lues sans valeur) est écrite dans la règle et dite au modèle.
+    const communes = appliquerDispositionsCommunes(k.regles, lecture?.dispositions, lecture?.libelle ?? 'Règlement lu');
+    if (communes.notes.length) k.regles = communes.regles;
     k.lecture = null;
     c.etat.conception = k;
     const ko = await persisterConceptionSure(c, k);
@@ -1197,6 +1205,7 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
       ? `Règlement lu (${quoi}) : ${lues.map(decrireRegle).join(' ; ')}.`
       : `Règlement lu (${quoi}) : aucune règle clé trouvée pour cette zone.`) +
       (secteurs.length ? ` Secteur(s) déclaré(s) par l'utilisateur appliqué(s) par le moteur : ${secteurs.join(' ; ')}.` : '') +
+      (communes.notes.length ? ` Dispositions communes : ${communes.notes.join(' ')}` : '') +
       (ko ? ' (Dossier de conception non mis à jour en base pour l’instant : règles conservées dans la mission.)' : '');
     // Lot Q1 (A) : règle par secteur → la question du secteur est obligatoire avant toute conclusion.
     const qs = questionSecteur(k.regles);
@@ -1368,7 +1377,11 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
       return await refuser(texte(String(r.message ?? `règlement non lisible au Géoportail de l'urbanisme (${String(r.statut)})`), 300));
     }
     libelle = texte(`Règlement GPU — ${String(r.source ?? r.fichier ?? 'Géoportail de l’urbanisme')}`, 200);
-    contenu = [docTexte(r.texte, String(r.fichier ?? 'Règlement'), `Zone ${String(r.zone_lue ?? zone ?? '?')} — chapitre p. ${String(r.pages_zone ?? '?')}, dispositions générales p. ${String(r.pages_dispositions_generales ?? '—')}.`),
+    // Lot C9 : pages des dispositions communes jointes par plu-reglement-v1 (lot C8). Champs absents
+    // (version déployée avant ce lot) : contexte et lecture strictement identiques à avant.
+    const communes = lireDispositionsCommunes(r.dispositions_communes);
+    if (communes.length) lec.dispositions = communes;
+    contenu = [docTexte(r.texte, String(r.fichier ?? 'Règlement'), `Zone ${String(r.zone_lue ?? zone ?? '?')} — chapitre p. ${String(r.pages_zone ?? '?')}, dispositions générales p. ${String(r.pages_dispositions_generales ?? '—')}${contexteDispositionsCommunes(r)}.`),
       { type: 'text', text: CONSIGNE_LECTURE_REGLEMENT(String(r.zone_lue ?? zone ?? '') || null, 'gpu') }];
   } else {
     // ── Règlement déposé par l'utilisateur ──
