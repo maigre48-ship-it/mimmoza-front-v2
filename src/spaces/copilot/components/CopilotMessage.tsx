@@ -20,6 +20,8 @@ import './CopilotMessage.css';
 import { isGeoCall } from '../maps/thematicMapModel';
 import { CopilotRenderBoundary } from './CopilotRenderBoundary';
 import { tertiaryReview } from '../results/tertiaryReview';
+// LOT C3 : une carte par contenu (doublons masqués) ; un appel resté « en cours » après la fin de la réponse est dit interrompu.
+import { preparerCartes } from '../results/cartesAffichees';
 import { FollowupProposalCard } from '../followup/FollowupProposalCard';
 import { withoutJarvisDraft } from '../studio3d/jarvisDraft';
 import { useCopilotStreaming } from '../hooks/useCopilotStreaming';
@@ -106,6 +108,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   const decisionLimits = tertiaryReview(linkedQuestion, message.toolCalls);
   // Agent autonome : une carte de devis par mission proposée (sans doublon).
   const devisMissions = useMemo(() => devisAAfficher(message.toolCalls), [message.toolCalls]);
+  // LOT C3 : cartes de résultat au contenu identique → une seule ; appel sans réponse à la fin du message → « interrompu ».
+  const cartesResultat = useMemo(() => preparerCartes(message.toolCalls, message.status), [message.toolCalls, message.status]);
   // LOT E1-suivi : carte de suivi vivante d'un rendu Studio (dernier appel qui cite chaque travail).
   const suivisRendu = useMemo(() => cartesSuivi(messages), [messages]);
   // LOT CHOIX-CLIQUABLES : puces actives sur le dernier message seulement ; sinon figées avec la réponse donnée.
@@ -203,7 +207,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
               const webCalls = message.toolCalls.filter((call) => call.name === 'web_search' || call.name === 'web_fetch');
               return tc.id === webCalls[0]?.id ? <CopilotWebResearchCard key={tc.id} calls={webCalls} /> : null;
             }
-            return <CopilotApiResultCard key={tc.id} call={tc} />;
+            { const carte = cartesResultat.get(tc.id);
+              if (carte?.masquee) return null;
+              return <CopilotApiResultCard key={tc.id} call={tc} occurrences={carte?.occurrences} interrompue={carte?.interrompue} />; }
           })()}</CopilotRenderBoundary>)}
         </div>
       )}

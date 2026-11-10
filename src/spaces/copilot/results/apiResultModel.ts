@@ -1,4 +1,6 @@
 import type { ActiveToolCall } from '../types/copilot.types';
+// LOT C3 : les textes du serveur sont écrits pour le modèle ; seule leur partie « constat » est affichée.
+import { texteVisible } from './texteVisible.ts';
 
 type RecordData = Record<string, unknown>;
 export type ApiFamily = 'parcel' | 'urbanism' | 'market' | 'risk' | 'energy' | 'building' | 'cost' | 'context' | 'business' | 'finance';
@@ -68,7 +70,7 @@ export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: num
     url: safeSourceUrl(d.url ?? d.sourceUrl ?? d.source ?? s.source ?? out.source), metrics: [], charts: [], tables: [], notes: [],
   };
   if (model.date === 'Non renseigné') model.date = null;
-  const note = (value: unknown) => { const t = text(value); if (t && !model.notes.includes(t)) model.notes.push(t); };
+  const note = (value: unknown) => { const t = texteVisible(value); if (t && !model.notes.includes(t)) model.notes.push(t); };
   const metric = (label: string, value: unknown, unit = '', hint?: string) => model.metrics.push({ label, value: formatApiValue(value, unit), ...(number(value) !== null ? { numericValue: value as number, ...(unit ? { unit } : {}) } : {}), ...(hint ? { note: hint } : {}) });
   const bars = (title: string, values: unknown, unit = '', max?: number) => {
     const items = Object.entries(record(values)).flatMap(([key, raw]) => { const value = number(raw); return value !== null && value >= 0 && (max === undefined || value <= max) ? [{ label: labelOf(key), value }] : []; });
@@ -179,18 +181,36 @@ export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: num
       metric('Service collectif', s.ac_service); metric('Service non collectif', s.anc_service);
       note('Un service communal ne confirme pas le raccordement ni la capacité du réseau pour cette parcelle.'); break;
     case 'get_parcel_plu': case 'get_zonage_plu': {
-      const zone = record(d.zone_principale), rules = record(d.regles);
-      metric('Zone au point', d.zone_code ?? text(d.zone_principale) ?? first(zone, 'libelle', 'code', 'zone_code')); metric('Hauteur maximale', rules.hauteur_max_m, 'm');
-      const ratio = number(rules.emprise_sol_max_ratio); metric('Emprise maximale', ratio !== null && ratio >= 0 && ratio <= 1 ? ratio * 100 : null, '%');
-      metric('Recul sur voie', rules.recul_voirie_m, 'm'); metric('Recul séparatif', rules.recul_limites_m, 'm'); metric('Stationnement', rules.stationnement_par_logement, 'place(s)/logement');
-      table('Zones intersectées', d.zones, [['Zone', ['libelle', 'code']], ['Désignation', ['libelle_long', 'nom']], ['Type', ['type_zone', 'typezone']]]);
-      if (!Object.keys(rules).length) note('Zonage seul : les règles de hauteur, d’emprise et de stationnement ne sont pas connues.');
+      const zone = record(d.zone_principale), rules = record(d.regles), aDesRegles = Object.keys(rules).length > 0;
+      // LOT C3 : le code de zone arrive sous `zone` (Géoportail de l'urbanisme, règlement lu ou à préciser), `zone_code`
+      // (PLU importé) ou `zone_principale` ; une ligne n'est affichée que si le serveur a la donnée.
+      const codeZone = d.zone_code ?? text(d.zone_principale) ?? first(zone, 'zone', 'libelle', 'code', 'zone_code') ?? text(d.zone) ?? text(d.zone_lue);
+      if (codeZone != null) metric('Zone au point', codeZone);
+      const lecture = ({ reglement_lu: 'Règlement écrit lu', zonage_seul: 'Zonage seul', a_preciser: 'Règlement trouvé, lecture à préciser' } as Record<string, string>)[text(d.niveau_de_detail) ?? ''];
+      if (lecture) metric('Lecture', lecture);
+      // Les cinq règles chiffrées ne sont listées que si le serveur renvoie des règles structurées (`regles`) :
+      // sans elles, cinq lignes « Non renseigné » n'apprennent rien — la note ci-dessous dit ce qui manque.
+      if (aDesRegles) {
+        metric('Hauteur maximale', rules.hauteur_max_m, 'm');
+        const ratio = number(rules.emprise_sol_max_ratio); metric('Emprise maximale', ratio !== null && ratio >= 0 && ratio <= 1 ? ratio * 100 : null, '%');
+        metric('Recul sur voie', rules.recul_voirie_m, 'm'); metric('Recul séparatif', rules.recul_limites_m, 'm'); metric('Stationnement', rules.stationnement_par_logement, 'place(s)/logement');
+      }
+      table('Zones intersectées', d.zones, [['Zone', ['zone', 'libelle', 'code']], ['Désignation', ['libelle_long', 'nom']], ['Type', ['type_zone', 'typezone']]]);
+      if (!aDesRegles) {
+        if (d.niveau_de_detail === 'reglement_lu') note('Le règlement écrit a été lu pour cette réponse. Cette carte n’en extrait aucune valeur chiffrée : les règles sont à lire dans le texte de la réponse.');
+        else {
+          note(d.niveau_de_detail === 'a_preciser' ? 'Règlement trouvé mais pas encore lu : la pièce, la zone ou les pages à lire restent à préciser. Aucune règle de hauteur, d’emprise ou de stationnement n’est connue à ce stade.' : 'Zonage seul : les règles de hauteur, d’emprise et de stationnement ne sont pas connues.');
+          if (model.state === 'ready') model.state = 'partial';
+        }
+      }
       note('La zone seule ne valide pas la constructibilité du projet ; vérifier le règlement et les contraintes applicables.'); break;
     }
     case 'get_parcel_summary': case 'get_parcelle_depuis_adresse': case 'get_etude_parcelle': {
       const p = record(d.parcelle), a = record(d.adresse);
       metric('Référence cadastrale', first(d, 'cadastral_ref', 'parcel_id') ?? p.idu); metric('Surface cadastrale', first(d, 'surface_m2', 'surface') ?? first(p, 'contenance_m2', 'surface_m2'), 'm²');
-      metric('Commune', a.commune ?? first(p, 'commune_nom', 'commune') ?? first(d, 'commune.commune_nom', 'commune')); metric('Zone', d.plu_zone);
+      metric('Commune', a.commune ?? first(p, 'commune_nom', 'commune') ?? first(d, 'commune.commune_nom', 'commune'));
+      // LOT C3 : seul get_parcel_summary porte `plu_zone` ; la ligne « Zone » n'est affichée que si la zone est connue.
+      if (text(d.plu_zone)) metric('Zone', d.plu_zone);
       table('Sources de l’étude', d.donnees, [['Domaine', ['domaine']], ['Résultat', ['resume']], ['Disponibilité', ['statut']], ['Organisme', ['organisme']]]);
       note(p.idu || d.parcel_id || d.cadastral_ref ? 'La parcelle détectée au point d’adresse ne confirme pas le périmètre de toute la propriété.' : 'Point de recherche sans parcelle résolue : ni référence cadastrale ni surface du bien confirmées.'); break;
     }
@@ -286,6 +306,7 @@ export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: num
       if (typeof raw === 'number' && Number.isFinite(raw) || typeof raw === 'boolean' || typeof raw === 'string' && raw.length < 100 && !safeSourceUrl(raw)) metric(labelOf(key), raw);
     }
   }
+  model.summary = texteVisible(model.summary);
   if (d.affichage_tronque === true) note('Les listes et répartitions portent sur l’échantillon retourné, qui peut être inférieur au total recensé.');
   if (model.state === 'ready' && model.metrics.some((metric) => metric.value === 'Non renseigné')) model.state = 'partial';
   if (model.state === 'empty') note('Aucun résultat exploitable dans ce périmètre ne signifie pas que l’objet ou la contrainte n’existe pas.');

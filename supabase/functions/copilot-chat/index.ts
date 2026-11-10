@@ -76,6 +76,8 @@ import { DOCTRINE_MISSIONS_CHAT } from './agent/prompt-promoteur.ts';
 import { AVIS_SANS_CONCLUSION, avecConsigneCloture, clotureSansConclusion } from './agent/cloture-tour.ts';
 import { avisCalculNonMoteur, calculParMoteur, CONSIGNE_PAS_DE_CALCUL, expressionsCalculees } from './agent/garde-calcul.ts';
 import { messageNumeroNonReconnu, numeroNonReconnu } from './agent/adresse-precision.ts';
+// Lot C3 : la note affichée dans la carte et la consigne destinée au modèle sont deux champs distincts.
+import { textesRepliZonageSeul } from './agent/cartes-plu.ts';
 import { FORMAT_REPONSE_CHAT } from '../_shared/texte/consignesFormat.ts';
 import {
   APPELS_IMBRIQUES_ETUDE_PARCELLE, ATTENTE_MAX_MISSION_MS, ErreurBudgetTrace, acquerirBudget, avecBudgetTrace,
@@ -5105,14 +5107,9 @@ async function toolParcelPlu(input: Record<string, unknown>, ctx: MimmozaContext
           statut_lecture: 'zonage seul',
           regle_ecrite_disponible: false,
           ...(noteLectureReglement ? { lecture_reglement_gpu: noteLectureReglement } : {}),
-          note_repli:
-            "Aucun règlement de PLU n'a été importé sur la page Foncier" +
-            (INTERNAL_FUNCTIONS.plu_reglement ? " et le règlement écrit n'a pas pu être lu automatiquement au Géoportail de l'urbanisme (voir lecture_reglement_gpu)" : '') +
-            " : ces éléments se limitent au ZONAGE OPPOSABLE (code de zone, type U/AU/A/N). " +
-            "Les règles CHIFFRÉES — hauteur maximale, emprise au sol, retraits, stationnement, OAP — ne " +
-            "sont PAS disponibles ici : ne les invente sous aucun prétexte. Dis à l'utilisateur que pour " +
-            "les obtenir il peut joindre le PDF du règlement au chat (lecture ciblée de sa zone, jusqu'à 50 Mo) " +
-            "ou l'importer sur la page Foncier de Mimmoza.",
+          // Lot C3 : note_repli est AFFICHÉE dans la carte (constat + marche à suivre) ; la consigne
+          // au modèle (« ne les invente… ») part dans `consignes`, jamais affiché.
+          ...textesRepliZonageSeul(Boolean(INTERNAL_FUNCTIONS.plu_reglement)),
         },
       };
     }

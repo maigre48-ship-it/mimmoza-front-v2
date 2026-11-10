@@ -25,23 +25,28 @@ const dateText = (value: string) => {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('fr-FR').format(date);
 };
 
-/** Une carte par appel métier, sans relancer l’API ni modifier ses chiffres. */
-export function CopilotApiResultCard({ call }: { call: ActiveToolCall }) {
+/**
+ * Une carte par appel métier, sans relancer l’API ni modifier ses chiffres.
+ * LOT C3 : `occurrences` = nombre d'appels au contenu identique que cette carte représente (doublons non affichés) ;
+ * `interrompue` = appel resté « en cours » alors que la réponse est terminée (voir results/cartesAffichees.ts).
+ */
+export function CopilotApiResultCard({ call, occurrences = 1, interrompue = false }: { call: ActiveToolCall; occurrences?: number; interrompue?: boolean }) {
   const model = useMemo(() => buildApiResult(call), [call.name, call.status, call.output]);
   if (!model) return <CopilotToolCallCard call={call} />;
   const family = FAMILIES[model.family], Icon = family.icon;
   const hasResults = model.metrics.length + model.charts.length + model.tables.length > 0;
+  const enCours = model.state === 'running' && !interrompue;
   return <section className={`copilot-api-card copilot-api-card--${model.state}`}
     style={{ '--api-accent': family.color, '--api-soft': family.soft } as CSSProperties}
-    aria-label={model.title} aria-busy={model.state === 'running'}>
+    aria-label={model.title} aria-busy={enCours}>
     <header className="copilot-api-header">
       <span className="copilot-api-icon"><Icon size={19} aria-hidden="true" /></span>
       <div className="copilot-api-heading"><span className="copilot-api-family">{family.label}</span><h3>{model.title}</h3></div>
-      <span className="copilot-api-status">{model.state === 'running' && <LoaderCircle size={13} className="copilot-api-spinner" aria-hidden="true" />}{STATUS[model.state]}</span>
+      <span className="copilot-api-status">{enCours && <LoaderCircle size={13} className="copilot-api-spinner" aria-hidden="true" />}{model.state === 'running' && interrompue ? 'Recherche interrompue' : STATUS[model.state]}</span>
     </header>
     {model.scope && <p className="copilot-api-scope"><MapPin size={12} aria-hidden="true" />{model.scope}</p>}
     {model.summary && <p className="copilot-api-summary">{model.summary}</p>}
-    {model.state === 'running' && <p className="copilot-api-wait" role="status">Les résultats apparaîtront à la fin de la recherche.</p>}
+    {model.state === 'running' && <p className="copilot-api-wait" role="status">{interrompue ? 'Cette recherche n’a pas abouti avant la fin de la réponse : aucun résultat n’a été reçu de cette source.' : 'Les résultats apparaîtront à la fin de la recherche.'}</p>}
     {model.metrics.length > 0 && <dl className="copilot-api-metrics">{model.metrics.map((metric, i) => <div key={i} className={metric.value === 'Non renseigné' ? 'copilot-api-missing' : ''}>
       <dt>{metric.label}</dt><dd>{metric.unit ? <><span>{metric.value.slice(0, -metric.unit.length).trim()}</span><span className="copilot-api-metric-unit">{metric.unit}</span></> : dateText(metric.value)}</dd>{metric.note && <small>{metric.note}</small>}
     </div>)}</dl>}
@@ -74,6 +79,7 @@ export function CopilotApiResultCard({ call }: { call: ActiveToolCall }) {
     </aside>}
     <footer className="copilot-api-footer">
       <span>Source : {model.source ?? 'Non précisée dans le résultat'}</span>
+      {occurrences > 1 && <span>Source interrogée {occurrences} fois dans cette réponse, résultat affiché identique</span>}
       {model.date && <span>{model.dateLabel} : {dateText(model.date)}</span>}
       {model.url && <a href={model.url} target="_blank" rel="noopener noreferrer">Consulter la source <ExternalLink size={12} aria-hidden="true" /></a>}
     </footer>

@@ -125,7 +125,9 @@
 
 /* ── Journal ─────────────────────────────────────────────────────────── */
 .mzag-journal { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.mzag-journal li { display: grid; grid-template-columns: 96px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--ag-bord); font-size: 13px; }
+/* LOT C3 : « > li » et non « li ». Le texte d'une ligne de journal (plan de mission) contient lui-même des listes ;
+   le sélecteur descendant leur appliquait la grille « 96px 1fr » : chaque point du plan s'écrivait dans 96 px. */
+.mzag-journal > li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--ag-bord); font-size: 13px; }
 .mzag-journal__genre { font-size: 11.5px; font-weight: 700; color: var(--ag-accent-fort); text-transform: uppercase; letter-spacing: .03em; padding-top: 1px; }
 .mzag-journal__genre--erreur { color: var(--ag-rouge); }
 .mzag-journal__genre--question { color: var(--ag-orange); }
@@ -184,7 +186,7 @@
 
 @media (max-width: 640px) {
   .mzag-panneau__corps { padding: 14px 14px 24px; }
-  .mzag-journal li { grid-template-columns: 1fr; gap: 2px; }
+  .mzag-journal > li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
 .mzag-tourne { animation: mzag-rot 1s linear infinite; }
 @keyframes mzag-rot { to { transform: rotate(360deg); } }
