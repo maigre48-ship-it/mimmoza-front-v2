@@ -26,3 +26,12 @@
 .mz-suivi-rendu__bouton { padding: 6px 12px; border-radius: 8px; border: 1px solid #c7d2fe; background: #eef2ff; }
 .mz-suivi-rendu__film a:hover, .mz-suivi-rendu__bouton:hover { text-decoration: underline; }
 .mz-suivi-rendu__avertissements { margin: 4px 0 0 18px; padding: 0; color: #475569; font-size: 12px; }
+/* LOT P2 (11/11/2026) — image dans sa rue : mention de la source, atelier « Ajuster le placement », devis de la nouvelle image. */
+.mz-suivi-rendu__mention { color: #334155; font-size: 11px; font-style: italic; }
+.mz-suivi-rendu button.mz-suivi-rendu__bouton { font: inherit; font-weight: 600; cursor: pointer; }
+.mz-suivi-rendu button.mz-suivi-rendu__bouton:disabled { opacity: .6; cursor: default; text-decoration: none; }
+.mz-suivi-rendu__bouton.is-leger { background: #ffffff; border-color: #e2e8f0; color: #334155; }
+.mz-suivi-rendu__atelier, .mz-suivi-rendu__devis { margin-top: 8px; }
+.mz-suivi-rendu__devis { padding: 8px 10px; border: 1px solid #c7d2fe; border-radius: 10px; background: #ffffff; }
+.mz-suivi-rendu__devis ul { margin: 4px 0 6px 18px; padding: 0; color: #334155; font-size: 12px; }
+.mz-suivi-rendu__actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -117,7 +117,8 @@ test('vue en cours : progression et étape écrites par la machine ; silence > 1
 test('vue terminée / échec / annulé : le suivi s’arrête', () => {
   const fini = vueCarteSuivi(travail({ statut: 'termine', progression: 100, resultat: { image_path: 'u/j/a.jpg', images: [], avertissements: ['Ciel simplifié.'] }, elements_omis: [{ categorie: 'arbres' }] }), INDICE_LANCE, T0);
   assert.equal(fini.actif, false);
-  assert.equal(fini.titre, 'Image photoréaliste — prête');
+  // LOT P2 : sans photomontage livré, c'est une image d'étude (plus jamais « Image photoréaliste » pour tout).
+  assert.equal(fini.titre, 'Image d’étude — prête');
   assert.deepEqual(fini.avertissements, ['Ciel simplifié.']);
   assert.match(fini.omis ?? '', /arbres/);
   const echec = vueCarteSuivi(travail({ statut: 'echec', erreur: 'Blender a quitté' }), INDICE_LANCE, T0);

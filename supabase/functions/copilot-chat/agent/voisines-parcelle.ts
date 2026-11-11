@@ -19,6 +19,7 @@
 // =============================================================
 
 import { empriseMaxParBande, identifierCoteVoie, mesurerBandes, type CoteVoie, type MesureBandes } from '../../../../src/spaces/copilot/studio3d/coteVoie.ts';
+import { versWgs84 } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
 import type { BandeVoie } from '../../../../src/spaces/copilot/studio3d/bandePrincipale.ts';
 import { estConditionBande, optionBandePrincipale, profondeurBandePrincipaleM, type OptionBande } from '../../../../src/spaces/copilot/studio3d/reglesParBande.ts';
 
@@ -226,6 +227,37 @@ export function bandePourMoteur(b: BandesConception): BandeVoie | null {
   if (!max || !(max.principaleM2 > 0)) return null;
   // Lot C11 : la surface mesurée de la bande principale suit le volume (part non bâtie de la bande dans les contrôles).
   return { cote: b.cote, profondeurM: b.profondeurM, empriseMaxM2: max.principaleM2, surfaceBandeM2: b.mesure.bandePrincipaleM2 };
+}
+
+// =============================================================
+// LOT P2 (11/11/2026) — façade(s) sur voie transmises à la machine de rendu (contrat CONTRAT-PHOTO-RUE.md §2) :
+// `charge.site.facadesVoie`, pour chercher une photo de rue qui montre la façade. MÊME calcul que les bandes
+// (identifierCoteVoie sur les voisines conservées avec la conception), mais SANS condition de règle par bande :
+// la voie est là même si le règlement n'a pas de bande. Rien n'est inventé : non identifié → liste vide + raison.
+// =============================================================
+
+/** Façade sur voie en WGS 84, telle que la lit la machine de rendu. */
+export interface FacadeVoieFiche { debut: [number, number]; fin: [number, number]; longueurM: number; source: 'cadastre-voisines' }
+
+const r7 = (v: number) => Math.round(v * 1e7) / 1e7;
+
+/**
+ * Façades présumées sur voie de la parcelle d'une conception (`parcelle.geometrie` + `parcelle.voisines`).
+ * PUR. `facades` vide si la voie n'est pas identifiée ; `raison` dit alors pourquoi (phrase lisible).
+ */
+export function facadesVoieDeLaParcelle(parcelle: unknown): { facades: FacadeVoieFiche[]; raison: string | null } {
+  const voisines = lireVoisines(parcelle);
+  if (!voisines) return { facades: [], raison: 'Parcelles voisines absentes de cette conception (contour récupéré avant leur prise en charge) : façade sur voie non identifiée.' };
+  if (voisines.statut !== 'disponibles') return { facades: [], raison: voisines.raison ?? 'Parcelles voisines indisponibles : façade sur voie non identifiée.' };
+  const geometrie = lireGeometrieCadastre(estObj(parcelle) ? parcelle.geometrie : null);
+  const cote = identifierCoteVoie(geometrie, voisines.parcelles.map((v) => v.geometrie));
+  if (cote.statut !== 'identifie' || !cote.origine) return { facades: [], raison: cote.note };
+  const origine = cote.origine;
+  const facades = cote.facades.map((f): FacadeVoieFiche => {
+    const a = versWgs84(f.a, origine), b = versWgs84(f.b, origine);
+    return { debut: [r7(a.lon), r7(a.lat)], fin: [r7(b.lon), r7(b.lat)], longueurM: Math.round(f.longueurM * 100) / 100, source: 'cadastre-voisines' };
+  });
+  return facades.length ? { facades, raison: null } : { facades: [], raison: cote.note };
 }
 
 /** Note du volume d'étude quand la règle est par bande mais que les bandes ne sont pas mesurées. null sinon. */

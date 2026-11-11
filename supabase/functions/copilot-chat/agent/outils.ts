@@ -290,7 +290,12 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
     "invite l'utilisateur à y faire ses choix, sans recopier les choix ; réponse en texte → `brief` ; « à toi de choisir » → brief: { a_toi_de_choisir: true }. " +
     "Habillage validé dans l'Espace 3D : le serveur le lit dans le message de l'utilisateur, rappelle simplement l'outil. " +
     "L'utilisateur veut changer l'habillage (façade, balcons, attique, toiture…) sans donner tous ses choix → `ouvrir_brief: true` " +
-    "(l'habillage se rouvre dans l'Espace 3D, prérempli). N'annonce " +
+    "(l'habillage se rouvre dans l'Espace 3D, prérempli). " +
+    "IMAGE DANS SA RUE : une image peut être rendue sur une vraie photo de la rue (options.fond = \"photo_rue\" : Panoramax / IGN, " +
+    "Licence Ouverte, si le devis indique `fond_image.couverture.couverte`) ou sur la photo de l'utilisateur prise du trottoir d'en face " +
+    "(fond « photo_client » : il la dépose lui-même dans la carte « Fond de l'image » sous le devis — n'écris jamais de chemin de photo) ; " +
+    "« etude » (défaut) : image d'étude seule. Propose ce choix quand l'utilisateur demande une image ; ne promets jamais une image " +
+    "« insérée dans la rue » : elle n'est livrée ainsi que si le placement est vérifié, sinon image d'étude avec la raison. N'annonce " +
     "jamais un rendu lancé sans statut ok ; si la machine de rendu ne donne pas signe de vie, dis que le rendu restera en attente.",
   input_schema: {
     type: 'object',
@@ -300,7 +305,7 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
         type: 'object',
         description: "film : duree_s (30|60|90), ambiance (jour|fin_de_journee|nuit), format ('16:9'|'9:16'), interieurs, musique (booléens) ; " +
           "visite360 : ambiance, interieurs, resolution ('6k'|'8k') ; image : vues (1 à 3 parmi trois_quarts_gauche, trois_quarts_droite, face), " +
-          'ambiance (jour|fin_de_journee). Absentes : valeurs par défaut.',
+          "ambiance (jour|fin_de_journee), fond (etude|photo_rue ; photo_client seulement via la carte « Fond de l'image »). Absentes : valeurs par défaut.",
       },
       source: { type: 'string', enum: ['auto', 'version', 'preparation'], description: '« auto » (défaut) : version enregistrée si elle existe, sinon 3D préparée.' },
       conception_id: { type: 'string' },

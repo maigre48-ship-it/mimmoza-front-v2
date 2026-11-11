@@ -22,8 +22,8 @@
 // =============================================================================
 
 import {
-  LIBELLES_TYPE, phraseElementsOmis, phraseSuivi,
-  type ResultatFilm, type ResultatImage, type ResultatVisite, type StatutTravail, type TravailStudio, type TypeTravail,
+  LIBELLES_TYPE, libelleResultatImage, phraseElementsOmis, phraseSuivi,
+  type LibelleImage, type ResultatFilm, type ResultatImage, type ResultatVisite, type StatutTravail, type TravailStudio, type TypeTravail,
 } from '../../../lib/studio/travauxLogique.ts';
 
 export const OUTIL_LANCER_RENDU = 'studio_lancer_rendu';
@@ -106,6 +106,22 @@ export function cartesSuivi(messages: readonly MessageAvecOutils[]): Map<string,
   return new Map([...parTravail.values()].map((x) => [x.appelId, x.indice]));
 }
 
+/**
+ * LOT P2 — reste du défaut du 10/11 : appels de suivi RÉUSSIS (lancé, déjà lancé, état) dont le travail a sa carte
+ * vivante sur un AUTRE appel (plus récent). Leur sortie est figée (« en_attente », machine…) : le chat n'affiche plus
+ * leur carte d'outil générique, seulement un renvoi vers la carte vivante. Clé : identifiant de l'appel d'outil.
+ */
+export function appelsSuiviRemplaces(messages: readonly MessageAvecOutils[]): Set<string> {
+  const vivantes = cartesSuivi(messages);
+  const remplaces = new Set<string>();
+  for (const m of messages) {
+    for (const a of m.toolCalls ?? []) {
+      if (!vivantes.has(a.id) && lireIndiceSuivi(a)) remplaces.add(a.id);
+    }
+  }
+  return remplaces;
+}
+
 /** Durée lisible (« 1 min », « 12 min », « 2 h », « 3 jours »). */
 export function dureeLisible(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '';
@@ -132,6 +148,11 @@ export interface VueCarteSuivi {
   alerte: string | null;
   omis: string | null;
   avertissements: string[];
+  /**
+   * LOT P2 — image TERMINÉE : libellé honnête (insérée dans la photo, ou image d'étude et pourquoi), mention de
+   * la source à afficher sous l'image, atelier « Ajuster le placement ». null pour les autres cas.
+   */
+  image: LibelleImage | null;
 }
 
 const QUOI: Record<TypeTravail, string> = { film: 'Le film', visite360: 'La visite 360°', image: 'L’image' };
@@ -143,7 +164,7 @@ const QUOI: Record<TypeTravail, string> = { film: 'Le film', visite360: 'La visi
 export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi, maintenant: number, introuvable = false): VueCarteSuivi {
   const type = travail?.type ?? indice.type;
   const libelle = type ? LIBELLES_TYPE[type] : 'Rendu Studio';
-  const base = { progression: null, details: [] as string[], alerte: null, omis: null, avertissements: [] as string[] };
+  const base = { progression: null, details: [] as string[], alerte: null, omis: null, avertissements: [] as string[], image: null };
   if (!travail) {
     return introuvable
       ? { ...base, etat: 'introuvable', actif: false, titre: libelle, pastille: 'Introuvable', phrase: 'Ce rendu n’est plus accessible depuis votre compte.' }
@@ -179,13 +200,17 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
           : null,
       };
     }
-    case 'termine':
+    case 'termine': {
+      // LOT P2 : une image n'est « insérée dans la photo de la rue » que si la machine de rendu l'a livrée ainsi ;
+      // sinon c'est une image d'étude, et la raison est dite.
+      const image = travail.type === 'image' && travail.resultat ? libelleResultatImage(travail.resultat as ResultatImage) : null;
       return {
-        ...base, etat: 'termine', actif: false, titre: `${libelle} — prêt${travail.type === 'film' ? '' : 'e'}`, pastille: 'Prêt',
+        ...base, etat: 'termine', actif: false, titre: `${image ? image.titre : libelle} — prêt${travail.type === 'film' ? '' : 'e'}`, pastille: 'Prêt', image,
         phrase: travail.resultat ? phraseSuivi(travail) : `${quoi} est indiqué${travail.type === 'film' ? '' : 'e'} comme terminé${travail.type === 'film' ? '' : 'e'}, mais aucun fichier n’est lisible dans le résultat.`,
         omis: phraseElementsOmis(travail.elements_omis),
         avertissements: travail.resultat?.avertissements ?? [],
       };
+    }
     case 'echec':
       return {
         ...base, etat: 'echec', actif: false, titre: `${libelle} — échec`, pastille: 'Échec',

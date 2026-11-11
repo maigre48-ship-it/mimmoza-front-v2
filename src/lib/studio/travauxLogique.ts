@@ -11,8 +11,11 @@
 import { parseJarvisDraft, type JarvisDraft } from '../../spaces/copilot/studio3d/jarvisDraft.ts';
 import type { ProjetMimmozaV2 } from '../../spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { lireElementsOmis, type ElementOmis } from './manifesteVisite.ts';
+// LOT P2 (11/11/2026) — image dans sa rue : options de fond (mêmes règles que la base et le serveur).
+import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from './fondImage.ts';
 
 export type { ElementOmis } from './manifesteVisite.ts';
+export { CLES_FOND, FONDS_IMAGE, LIBELLES_FOND, fondDe, type FondImage, type OptionsFond, type CalageClient, type PhotoClientOption, type PointDeVue } from './fondImage.ts';
 
 export type TypeTravail = 'film' | 'visite360' | 'image';
 export type StatutTravail = 'en_attente' | 'en_cours' | 'termine' | 'echec' | 'annule';
@@ -42,7 +45,11 @@ export type AmbianceImage = 'jour' | 'fin_de_journee';
  */
 export type QualiteImage = 'finale' | 'apercu';
 
-export interface OptionsImage {
+/**
+ * LOT P2 — `fond`, `photo_rue`, `photo_client`, `calage_client` (contrat CONTRAT-PHOTO-RUE.md §1, OptionsFond) :
+ * absents pour une image d'étude (valeur par défaut, options inchangées).
+ */
+export interface OptionsImage extends OptionsFond {
   vues: VueImage[];
   ambiance: AmbianceImage;
   qualite: QualiteImage;
@@ -90,6 +97,23 @@ export interface ImageLivree {
   hauteur: number | null;
 }
 
+/**
+ * LOT P2 — `resultat.photomontage` écrit par la machine de rendu (contrat CONTRAT-PHOTO-RUE.md §3).
+ * `livre` : projet inséré dans la photo (calage « calé » / « approximatif », ou calage validé par l'utilisateur) ;
+ * `a_valider` : image d'étude livrée, photo et plan déposés pour l'atelier ; `repli_etude` : pas de photo exploitable.
+ */
+export interface PhotomontageResultat {
+  tente: boolean;
+  statut: 'livre' | 'a_valider' | 'repli_etude';
+  raison: string | null;
+  verdict: 'cale' | 'approximatif' | 'insuffisant' | 'non-verifiable' | 'impossible' | null;
+  incertitude_m: number | null;
+  source_photo: { type: 'panoramax' | 'client'; id: string | null; producteur: string | null; date: string | null; licence: 'etalab-2.0' | 'client' | null } | null;
+  mention: string | null;
+  /** Chemins du seau privé `studio-rendus` (statut `a_valider` seulement). */
+  atelier: { photo_path: string; plan_path: string } | null;
+}
+
 /** `resultat` d'une image terminée. */
 export interface ResultatImage {
   image_path: string;
@@ -97,6 +121,8 @@ export interface ResultatImage {
   /** Qualité réellement livrée (la machine peut plafonner à l'aperçu : un avertissement le dit alors). */
   qualite: QualiteImage | null;
   avertissements: string[];
+  /** LOT P2 — null : pas de photomontage demandé (image d'étude) ou résultat antérieur au lot. */
+  photomontage: PhotomontageResultat | null;
 }
 
 /** Ligne `studio_jobs` lue depuis la base (normalisée). */
@@ -170,7 +196,9 @@ export const LIBELLES_AMBIANCE: Record<Ambiance, string> = {
   jour: 'En journée', fin_de_journee: 'Fin de journée', nuit: 'De nuit',
 };
 
-export const LIBELLES_TYPE: Record<TypeTravail, string> = { film: 'Film', visite360: 'Visite 360°', image: 'Image photoréaliste' };
+// LOT P2 : « Image du projet » — le résultat peut être une image d'étude (décor de synthèse) ou une image insérée
+// dans une vraie photo de la rue : son libellé exact est donné par libelleResultatImage, jamais « photoréaliste » pour tout.
+export const LIBELLES_TYPE: Record<TypeTravail, string> = { film: 'Film', visite360: 'Visite 360°', image: 'Image du projet' };
 
 export function optionsParDefaut(type: 'film'): OptionsFilm;
 export function optionsParDefaut(type: 'visite360'): OptionsVisite;
@@ -216,8 +244,11 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
 }
 
 function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImage> {
-  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite');
+  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite' && !(CLES_FOND as readonly string[]).includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
+  // LOT P2 : fond (étude par défaut, non recopié), photo Panoramax, photo du client, calage validé.
+  const fond = validerFond(o);
+  if (!fond.ok) return fond;
   const vues = o.vues ?? OPTIONS_IMAGE_DEFAUT.vues;
   if (!Array.isArray(vues) || vues.length < 1 || vues.length > 3 || new Set(vues).size !== vues.length
     || vues.some(v => !VUES_IMAGE.includes(v as VueImage))) {
@@ -227,7 +258,7 @@ function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImag
   if (!AMBIANCES_IMAGE.includes(ambiance as AmbianceImage)) return { ok: false, erreur: 'Choisissez une lumière : journée ou fin de journée.' };
   const qualite = o.qualite ?? OPTIONS_IMAGE_DEFAUT.qualite;
   if (!QUALITES_IMAGE.includes(qualite as QualiteImage)) return { ok: false, erreur: 'Choisissez une définition : haute définition ou aperçu rapide.' };
-  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage } };
+  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage, ...fond.valeur } };
 }
 
 /** Titre lisible du film ou de la visite, tiré de la fiche (« 12 logements — 12 rue des Lilas, Lyon »). */
@@ -307,6 +338,8 @@ export function resumeOptions(type: TypeTravail, options: unknown): string {
     const im = o as OptionsImage;
     parts.push(im.vues.map(v => LIBELLES_VUE[v]).join(', '), LIBELLES_AMBIANCE[im.ambiance].toLowerCase());
     if (im.qualite === 'apercu') parts.push('aperçu rapide');
+    if (fondDe(im) !== 'etude') parts.push(LIBELLES_FOND[fondDe(im)].toLowerCase());
+    if (im.calage_client) parts.push('placement ajusté');
   } else if (type === 'film') {
     const f = o as OptionsFilm;
     parts.push(`${String(f.duree_s)} s`, LIBELLES_AMBIANCE[f.ambiance].toLowerCase(), f.format === '16:9' ? 'paysage' : 'vertical');
@@ -336,7 +369,7 @@ function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | Resultat
     });
     const principale = texte(brut.image_path) ?? images[0]?.jpeg_path ?? null;
     const qualite = brut.qualite === 'finale' || brut.qualite === 'apercu' ? brut.qualite : null;
-    return principale ? { image_path: principale, images, qualite, avertissements } : null;
+    return principale ? { image_path: principale, images, qualite, avertissements, photomontage: lirePhotomontage(brut.photomontage) } : null;
   }
   if (type === 'film') {
     const video = texte(brut.video_path);
@@ -346,6 +379,72 @@ function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | Resultat
   const visite = texte(brut.visite_id);
   if (!visite || !/^[A-Za-z0-9_-]{8,64}$/.test(visite)) return null;
   return { visite_id: visite, manifest_path: texte(brut.manifest_path) ?? `${visite}/manifest.json`, panoramas: typeof brut.panoramas === 'number' ? brut.panoramas : null, avertissements };
+}
+
+const VERDICTS: readonly NonNullable<PhotomontageResultat['verdict']>[] = ['cale', 'approximatif', 'insuffisant', 'non-verifiable', 'impossible'];
+
+/** LOT P2 — `resultat.photomontage` (contrat §3) ; null si absent ou illisible (jamais complété). */
+export function lirePhotomontage(brut: unknown): PhotomontageResultat | null {
+  if (!estObjet(brut)) return null;
+  const statut = brut.statut === 'livre' || brut.statut === 'a_valider' || brut.statut === 'repli_etude' ? brut.statut : null;
+  if (!statut) return null;
+  const sp = estObjet(brut.source_photo) ? brut.source_photo : null;
+  const typeSource = sp?.type === 'panoramax' || sp?.type === 'client' ? sp.type : null;
+  const at = estObjet(brut.atelier) ? brut.atelier : null;
+  const photoPath = at ? texte(at.photo_path) : null;
+  const planPath = at ? texte(at.plan_path) : null;
+  const inc = brut.incertitude_m;
+  return {
+    tente: brut.tente === true,
+    statut,
+    raison: texte(brut.raison),
+    verdict: VERDICTS.includes(brut.verdict as NonNullable<PhotomontageResultat['verdict']>) ? brut.verdict as PhotomontageResultat['verdict'] : null,
+    incertitude_m: typeof inc === 'number' && Number.isFinite(inc) && inc >= 0 ? inc : null,
+    source_photo: sp && typeSource ? {
+      type: typeSource, id: texte(sp.id), producteur: texte(sp.producteur), date: texte(sp.date),
+      licence: sp.licence === 'etalab-2.0' || sp.licence === 'client' ? sp.licence : null,
+    } : null,
+    mention: texte(brut.mention),
+    atelier: statut === 'a_valider' && photoPath && planPath ? { photo_path: photoPath, plan_path: planPath } : null,
+  };
+}
+
+/** Libellé honnête d'une image livrée, avec ce qu'il faut afficher dessous. */
+export interface LibelleImage {
+  /** « Image insérée dans la photo de la rue », « Image insérée dans votre photo » ou « Image d'étude ». */
+  titre: string;
+  /** Vrai seulement si le projet a été inséré dans une vraie photo (statut `livre`). */
+  inseree: boolean;
+  /** Mention de la source, à afficher sous l'image (licence comprise) ; null si aucune. */
+  mention: string | null;
+  /** Pourquoi l'image n'est qu'une image d'étude (repli), en français ; null sinon. */
+  raison: string | null;
+  /** Atelier disponible (« Ajuster le placement »). */
+  aValider: boolean;
+}
+
+export function libelleResultatImage(r: Pick<ResultatImage, 'photomontage'> | null | undefined): LibelleImage {
+  const p = r?.photomontage ?? null;
+  if (!p) return { titre: 'Image d’étude', inseree: false, mention: null, raison: null, aValider: false };
+  if (p.statut === 'livre') {
+    const client = p.source_photo?.type === 'client';
+    const precision = p.incertitude_m !== null ? `précision ± ${String(Math.round(p.incertitude_m * 10) / 10).replace('.', ',')} m` : null;
+    const calage = p.verdict === 'approximatif' ? 'placement approximatif' : null;
+    return {
+      titre: client ? 'Image insérée dans votre photo' : 'Image insérée dans la photo de la rue',
+      inseree: true,
+      mention: p.mention ?? (client ? 'Photo : vous' : null),
+      raison: [calage, precision].filter(Boolean).join(', ') || null,
+      aValider: false,
+    };
+  }
+  return {
+    titre: 'Image d’étude',
+    inseree: false,
+    mention: null,
+    raison: p.raison ?? (p.statut === 'a_valider' ? 'Le placement dans la photo n’a pas pu être vérifié automatiquement.' : 'Aucune photo de rue exploitable.'),
+    aValider: p.statut === 'a_valider' && p.atelier !== null,
+  };
 }
 
 /** Normalise une ligne `studio_jobs` ; `null` si inexploitable. */
@@ -394,6 +493,7 @@ export function messageErreurTravail(erreur: unknown, type?: TypeTravail): strin
   if (fileIndisponible(erreur)) return 'Films, visites 360° et images : bientôt disponible.';
   const message = estObjet(erreur) && typeof erreur.message === 'string' ? erreur.message : erreur instanceof Error ? erreur.message : '';
   if (/déjà 2 (films ou visites|rendus)/.test(message)) return message;
+  if (type === 'image' && /studio_jobs_photo_client_proprietaire/.test(message)) return 'Cette photo n’appartient pas à votre compte : téléversez-la de nouveau.';
   if (type === 'image' && /Options du travail invalides|studio_jobs_type_check/.test(message)) return 'L’image photoréaliste sera bientôt disponible.';
   if (/Options du travail invalides/.test(message)) return 'Ces options ne sont pas acceptées. Rechargez la page puis réessayez.';
   if (/row-level security|permission denied|JWT/i.test(message)) return 'Connectez-vous pour lancer un rendu.';

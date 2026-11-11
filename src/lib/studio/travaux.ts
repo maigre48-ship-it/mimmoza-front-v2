@@ -12,6 +12,10 @@
 
 import { supabase } from '@/lib/supabaseClient';
 import { fileIndisponible, lireTravail, messageErreurTravail, type NouveauTravail, type TravailStudio } from './travauxLogique';
+// LOT P2 (11/11/2026) — image dans sa rue : couverture Panoramax (fonction en lecture seule), photo du client.
+import { lireCouvertureTransmise, type CouverturePhotoRue, type LonLat } from './couverturePhotoRue';
+import { cheminPhotoClient } from './photoClientLogique';
+import { deposerDansBucket } from '@/spaces/copilot/pieces-jointes/televersement';
 
 export * from './travauxLogique';
 export * from './manifesteVisite';
@@ -135,4 +139,46 @@ export async function urlSigneeRendu(chemin: string, dureeS = 3600, telecharger?
 /** Adresse publique d'un fichier d'une visite (`<visite_id>/manifest.json`, `<visite_id>/pano-1.jpg`…). */
 export function urlPubliqueVisite(chemin: string): string {
   return supabase.storage.from(BUCKET_VISITES).getPublicUrl(chemin).data.publicUrl;
+}
+
+// ── LOT P2 (11/11/2026) — image dans sa rue ──────────────────────────────────
+
+/** Seau PRIVÉ des photos du client (20 Mo, jpeg/png) : `<auth.uid()>/<uuid>.jpg`, politiques par propriétaire. */
+export const BUCKET_PHOTO_CLIENT = 'studio-transfert';
+
+/**
+ * Fiche et options d'un travail de l'utilisateur (RLS : ses lignes seulement), pour créer un travail identique
+ * avec le calage validé dans l'atelier. null si la ligne n'est pas lisible.
+ */
+export async function lireFicheTravail(id: string): Promise<{ type: string; conversation_id: string | null; fiche: unknown; options: unknown } | null> {
+  const { data, error } = await supabase.from('studio_jobs').select('type,conversation_id,fiche,options').eq('id', id).maybeSingle();
+  if (error) throw new ErreurTravail(messageErreurTravail(error));
+  return data ? { type: String(data.type), conversation_id: (data.conversation_id as string | null) ?? null, fiche: data.fiche, options: data.options } : null;
+}
+
+/**
+ * Couverture Panoramax (instance IGN, Licence Ouverte) autour d'un contour, par la fonction en lecture seule
+ * `photo-rue-couverture` (l'appel direct depuis le navigateur dépendrait des en-têtes CORS de l'IGN, non vérifiés).
+ */
+export async function demanderCouverturePhotoRue(contour: readonly LonLat[]): Promise<{ ok: true; couverture: CouverturePhotoRue } | { ok: false; raison: string }> {
+  const { data, error } = await supabase.functions.invoke('photo-rue-couverture', { body: { contour } });
+  if (error) return { ok: false, raison: 'La vérification des photos de rue n’a pas abouti. Réessayez dans un instant.' };
+  const d = (data ?? {}) as Record<string, unknown>;
+  if (d.ok === false) return { ok: false, raison: typeof d.raison === 'string' ? d.raison : 'Couverture non vérifiée.' };
+  const c = lireCouvertureTransmise(d.couverture);
+  return c ? { ok: true, couverture: c } : { ok: false, raison: 'Réponse illisible : couverture non vérifiée.' };
+}
+
+/**
+ * Téléverse la photo du client TELLE QUELLE (fichier d'origine, EXIF compris, aucune recompression) dans
+ * `studio-transfert/<uid>/<uuid>.jpg|png`. À n'appeler qu'APRÈS le consentement explicite de l'utilisateur.
+ * Au-delà de 6 Mo : envoi reprenable (TUS), comme les pièces jointes.
+ */
+export async function televerserPhotoClient(fichier: File, surProgres?: (envoye: number, total: number) => void): Promise<{ chemin: string; octets: number }> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) throw new ErreurTravail('Connectez-vous pour envoyer votre photo.');
+  const chemin = cheminPhotoClient(data.user.id, crypto.randomUUID(), fichier.type);
+  if (!chemin) throw new ErreurTravail('Format non pris en charge : JPEG ou PNG.');
+  await deposerDansBucket(BUCKET_PHOTO_CLIENT, chemin, fichier, fichier.type, surProgres);
+  return { chemin, octets: fichier.size };
 }

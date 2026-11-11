@@ -15,6 +15,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Clapperboard, ExternalLink, Image as IconeImage, Loader2, Orbit } from 'lucide-react';
 import { lienVisite, suivreTravail, urlSigneeRendu, type TravailStudio } from '@/lib/studio/travaux';
 import { fichiersResultat, SONDAGE_SUIVI_CHAT_MS, vueCarteSuivi, type IndiceSuivi } from './suiviRenduChat';
+// LOT P2 (11/11/2026) — image dans sa rue : atelier « Ajuster le placement » puis nouveau travail avec le calage.
+import { AtelierPlacement } from './AtelierPlacement';
 import './CarteSuiviRendu.css';
 
 type Liens =
@@ -97,11 +99,17 @@ export function CarteSuiviRendu({ indice }: { indice: IndiceSuivi }) {
       {vue.etat === 'termine' && liens?.genre === 'images' && <div className="mz-suivi-rendu__images">
         {liens.images.map(i => <figure key={i.url}>
           <a href={i.url} target="_blank" rel="noopener noreferrer" title="Ouvrir l’image en grand">
-            <img src={i.url} alt={`Image photoréaliste du projet — vue ${i.libelle}`} loading="lazy" onError={resigner} />
+            <img src={i.url} alt={`${vue.image?.titre ?? 'Image du projet'} — vue ${i.libelle}`} loading="lazy" onError={resigner} />
           </a>
           <figcaption>{i.libelle}</figcaption>
         </figure>)}
       </div>}
+      {vue.etat === 'termine' && vue.image?.mention && <p className="mz-suivi-rendu__mention">{vue.image.mention}</p>}
+      {vue.etat === 'termine' && vue.image && !vue.image.inseree && vue.image.raison && <p className="mz-suivi-rendu__detail">
+        <strong>Image d’étude :</strong> {vue.image.raison}
+      </p>}
+      {vue.etat === 'termine' && vue.image?.inseree && vue.image.raison && <p className="mz-suivi-rendu__detail">Insertion indicative : {vue.image.raison}.</p>}
+      {vue.etat === 'termine' && vue.image?.aValider && travail && <AtelierPlacement travail={travail} />}
       {vue.etat === 'termine' && liens?.genre === 'film' && <div className="mz-suivi-rendu__film">
         <video src={liens.url} poster={liens.affiche ?? undefined} controls playsInline preload="metadata" onError={resigner} />
         <a href={liens.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} aria-hidden="true" /> Ouvrir le film</a>

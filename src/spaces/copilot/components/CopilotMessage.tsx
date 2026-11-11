@@ -29,10 +29,12 @@ import { trackFire } from '@/lib/mimmozia/track';
 import { CarteDevisMission } from '../agent/CarteDevisMission';
 import { devisAAfficher, estAppelDevis } from '../agent/agentLogique';
 import { CarteSuiviRendu } from '../studio3d/CarteSuiviRendu';
-import { cartesSuivi } from '../studio3d/suiviRenduChat';
+import { appelsSuiviRemplaces, cartesSuivi } from '../studio3d/suiviRenduChat';
 import { CarteBriefCreatif } from '../studio3d/CarteBriefCreatif';
 // Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
 import { LigneHabillage } from '../studio3d/LigneHabillage';
+// LOT P2 (11/11/2026) — image dans sa rue : carte « Fond de l'image » sous le devis d'une image.
+import { ChoixFondImage } from '../studio3d/ChoixFondImage';
 import type { DemandeBrief } from '../studio3d/briefCreatif';
 import { lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
 import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
@@ -112,6 +114,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   const cartesResultat = useMemo(() => preparerCartes(message.toolCalls, message.status), [message.toolCalls, message.status]);
   // LOT E1-suivi : carte de suivi vivante d'un rendu Studio (dernier appel qui cite chaque travail).
   const suivisRendu = useMemo(() => cartesSuivi(messages), [messages]);
+  // LOT P2 : un appel de suivi plus ancien (sortie figée « en_attente ») renvoie vers la carte vivante du même travail.
+  const suivisRemplaces = useMemo(() => appelsSuiviRemplaces(messages), [messages]);
   // LOT CHOIX-CLIQUABLES : puces actives sur le dernier message seulement ; sinon figées avec la réponse donnée.
   // La carte « Brief créatif » fait déjà le choix d'habillage : pas de puces en double sous elle.
   const situation = useMemo(() => situationChoix(messages, message.id), [messages, message.id]);
@@ -174,13 +178,14 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
           {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
             if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} /> : null; }
             { const suivi = suivisRendu.get(tc.id); if (suivi) return <CarteSuiviRendu indice={suivi} />; }
+            if (suivisRemplaces.has(tc.id)) return <p style={{ margin: '4px 0', color: T.textMuted, fontSize: 12 }}>Suivi de ce rendu : voir la carte à jour plus bas dans la conversation.</p>;
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
             { const demande = lireDemandeBrief(tc); if (demande) {
               const brief = onOuvrirHabillage
                 ? <LigneHabillage demande={demande} messageId={message.id} onOuvrir={onOuvrirHabillage} />
                 : <CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} />;
-              return demande.origine === 'demande' ? brief : <><CopilotApiResultCard call={tc} />{brief}</>;
+              return demande.origine === 'demande' ? brief : <><CopilotApiResultCard call={tc} />{brief}<ChoixFondImage call={tc} demande={demande} messageId={message.id} onSend={onSend} /></>;
             } }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;

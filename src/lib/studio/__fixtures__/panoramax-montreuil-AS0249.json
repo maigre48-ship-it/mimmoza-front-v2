@@ -1,0 +1,1208 @@
+{
+ "_copie_lot_p2": "Copie (11/11/2026, lot P2) de mimmozia-studio/tests/fixtures/panoramax-montreuil-AS0249.json, relevée par le lot P1 : réponse de l’instance IGN de Panoramax autour de la parcelle 93048000AS0249 (voir _provenance).",
+ "_provenance": {
+  "recupere_le": "2026-11-11",
+  "requetes": [
+   "https://api.panoramax.xyz/api/search?bbox=2.4275,48.8560,2.4297,48.8576&limit=40",
+   "https://panoramax.ign.fr/api/search?bbox=2.4275,48.8560,2.4297,48.8576&limit=40",
+   "https://panoramax.ign.fr/api/collections/dace0857-33f4-4c86-b442-98321f0cc50f/items/d36c2217-f0a8-4c56-88bb-5092cbe40b93"
+  ],
+  "methode": "Champs relevés par l'outil WebFetch (lecture assistée de la réponse JSON, pas une copie octet pour octet) depuis la VM de l'agent ; la machine Linux des dépôts n'a pas d'accès réseau. 26 items complets ; 2 items tronqués (7bf84eda…, d27ddbd0…) non repris. Les liens hd des items stockés sur le S3 OVH suivent le motif observé (main-pictures/aa/bb/cc/dd/<reste de l'id>.jpg) ; l'essai sur le PC relit l'API en direct.",
+  "controle": "L'item d36c2217… relu sur l'instance IGN : datetimetz 2025-05-07T04:55:00.102+02:00, EXIF DateTimeOriginal 2025:05:07 04:55:00, GPSImgDirection 251,58° (nord vrai), altitude 110,24 m, licence etalab-2.0, producteur immergis (artiste « Immergis pour la Ville de Paris »).",
+  "parcelle": "93048000AS0249 (Montreuil), façade sur voie au sud (segments 6 et 7 du Studio, 28,65 m)"
+ },
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "id": "d36c2217-f0a8-4c56-88bb-5092cbe40b93",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428626544,
+     48.85673458
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:00.102000+00:00",
+    "view:azimuth": 252,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/d3/6c/22/17/f0a8-4c56-88bb-5092cbe40b93.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/d3/6c/22/17/f0a8-4c56-88bb-5092cbe40b93/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "47c89b86-a133-476d-95d8-8dd61c995113",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428592796,
+     48.856728529
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:00.342000+00:00",
+    "view:azimuth": 252,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/47/c8/9b/86/a133-476d-95d8-8dd61c995113.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/47/c8/9b/86/a133-476d-95d8-8dd61c995113/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "693baecd-d632-4c12-b28b-3f92b3278ccc",
+   "collection": "1161b84c-9c7b-47a3-845d-40d2c84b8c41",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4285585,
+     48.8567399
+    ]
+   },
+   "properties": {
+    "datetime": "2025-09-04T14:36:59+00:00",
+    "view:azimuth": 260,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [],
+    "pers:roll": 0.0,
+    "pers:pitch": 0.0
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax.ign.fr/api/pictures/693baecd-d632-4c12-b28b-3f92b3278ccc/hd.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax.ign.fr/api/pictures/693baecd-d632-4c12-b28b-3f92b3278ccc/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "1288754d-96dd-430b-90a5-76363a2947bb",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428660222,
+     48.856740588
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:54:59.862000+00:00",
+    "view:azimuth": 252,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/12/88/75/4d/96dd-430b-90a5-76363a2947bb.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/12/88/75/4d/96dd-430b-90a5-76363a2947bb/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "1227b442-214d-42cf-946e-de3a45a96cfa",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428558978,
+     48.856722449
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:00.582000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/12/27/b4/42/214d-42cf-946e-de3a45a96cfa.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/12/27/b4/42/214d-42cf-946e-de3a45a96cfa/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "e8ae4625-b25a-4a27-9d19-c74e8b2e7de8",
+   "collection": "f3446154-fdeb-43a9-bd3a-7ec475ca3b0a",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4285389,
+     48.8567231
+    ]
+   },
+   "properties": {
+    "datetime": "2025-08-18T10:55:43+00:00",
+    "view:azimuth": 350,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "aurelien.panthou@ign.fr",
+    "semantics": [],
+    "pers:roll": 0.0,
+    "pers:pitch": 0.0
+   },
+   "providers": [
+    {
+     "name": "aurelien.panthou@ign.fr"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/e8/ae/46/25/b25a-4a27-9d19-c74e8b2e7de8.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/e8/ae/46/25/b25a-4a27-9d19-c74e8b2e7de8/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "747e3294-1dbd-4806-8a29-d259edade395",
+   "collection": "20818152-103b-4e03-8cb2-d4480f8719c2",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4286326,
+     48.8567004
+    ]
+   },
+   "properties": {
+    "datetime": "2026-04-28T12:32:16+00:00",
+    "view:azimuth": 78,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [
+     {
+      "key": "computed_by[pitch]",
+      "value": "panoflat/0.1.0"
+     },
+     {
+      "key": "computed_by[roll]",
+      "value": "panoflat/0.1.0"
+     },
+     {
+      "key": "fixme:roll",
+      "value": "fixed"
+     },
+     {
+      "key": "pitch",
+      "value": "5.1"
+     },
+     {
+      "key": "roll",
+      "value": "3.7"
+     }
+    ],
+    "pers:roll": 3.7,
+    "pers:pitch": 5.1
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/74/7e/32/94/1dbd-4806-8a29-d259edade395.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/74/7e/32/94/1dbd-4806-8a29-d259edade395/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "532e537d-0d19-444a-9203-8d2264477569",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428693781,
+     48.856746594
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:54:59.622000+00:00",
+    "view:azimuth": 252,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/53/2e/53/7d/0d19-444a-9203-8d2264477569.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/53/2e/53/7d/0d19-444a-9203-8d2264477569/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "b15c3534-0fde-4c83-a2b9-e586d46f552d",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.42852507,
+     48.856716299
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:00.822000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/b1/5c/35/34/0fde-4c83-a2b9-e586d46f552d.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/b1/5c/35/34/0fde-4c83-a2b9-e586d46f552d/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "7a48ff3e-7646-49fc-b4b3-1426b752b356",
+   "collection": "f3446154-fdeb-43a9-bd3a-7ec475ca3b0a",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4287116,
+     48.8567554
+    ]
+   },
+   "properties": {
+    "datetime": "2025-08-18T10:55:41+00:00",
+    "view:azimuth": 349,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "aurelien.panthou@ign.fr",
+    "semantics": [],
+    "pers:roll": 0.0,
+    "pers:pitch": 0.0
+   },
+   "providers": [
+    {
+     "name": "aurelien.panthou@ign.fr"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/7a/48/ff/3e/7646-49fc-b4b3-1426b752b356.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/7a/48/ff/3e/7646-49fc-b4b3-1426b752b356/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "4de69110-4605-4666-8920-2c61aae4f753",
+   "collection": "1161b84c-9c7b-47a3-845d-40d2c84b8c41",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4287211,
+     48.8567664
+    ]
+   },
+   "properties": {
+    "datetime": "2025-09-04T14:36:57+00:00",
+    "view:azimuth": 260,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [],
+    "pers:roll": 0.0,
+    "pers:pitch": 0.0
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax.ign.fr/api/pictures/4de69110-4605-4666-8920-2c61aae4f753/hd.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax.ign.fr/api/pictures/4de69110-4605-4666-8920-2c61aae4f753/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "73c18b6b-2340-4d3b-b60c-e20cfbd0bfef",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428727274,
+     48.856752602
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:54:59.382000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/73/c1/8b/6b/2340-4d3b-b60c-e20cfbd0bfef.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/73/c1/8b/6b/2340-4d3b-b60c-e20cfbd0bfef/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "2aec69a9-b8a1-49a6-a2cd-c7ccb05fee57",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428491113,
+     48.856710057
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:01.062000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/2a/ec/69/a9/b8a1-49a6-a2cd-c7ccb05fee57.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/2a/ec/69/a9/b8a1-49a6-a2cd-c7ccb05fee57/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "ed4bc2dc-df05-448a-8ad7-7349c7e2c675",
+   "collection": "20818152-103b-4e03-8cb2-d4480f8719c2",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4285071,
+     48.8566766
+    ]
+   },
+   "properties": {
+    "datetime": "2026-04-28T12:32:14+00:00",
+    "view:azimuth": 79,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [],
+    "pers:roll": 3.2,
+    "pers:pitch": 7.9
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/ed/4b/c2/dc/df05-448a-8ad7-7349c7e2c675.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/ed/4b/c2/dc/df05-448a-8ad7-7349c7e2c675/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "41ad4587-29b5-4e40-9477-6ca4565deb6e",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428760708,
+     48.856758631
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:54:59.142000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/41/ad/45/87/29b5-4e40-9477-6ca4565deb6e.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/41/ad/45/87/29b5-4e40-9477-6ca4565deb6e/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "e27c00cf-fc45-4578-975d-d89a47925238",
+   "collection": "20818152-103b-4e03-8cb2-d4480f8719c2",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4287504,
+     48.8567249
+    ]
+   },
+   "properties": {
+    "datetime": "2026-04-28T12:32:18+00:00",
+    "view:azimuth": 79,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [],
+    "pers:roll": 4.4,
+    "pers:pitch": 6.3
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/e2/7c/00/cf/fc45-4578-975d-d89a47925238.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/e2/7c/00/cf/fc45-4578-975d-d89a47925238/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "d8213fbd-d161-4761-8f2f-32c7036892d5",
+   "collection": "f3446154-fdeb-43a9-bd3a-7ec475ca3b0a",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4289028,
+     48.8567933
+    ]
+   },
+   "properties": {
+    "datetime": "2025-08-18T10:55:39+00:00",
+    "view:azimuth": 348,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "aurelien.panthou@ign.fr",
+    "semantics": [],
+    "pers:roll": 0.0,
+    "pers:pitch": 0.0
+   },
+   "providers": [
+    {
+     "name": "aurelien.panthou@ign.fr"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/d8/21/3f/bd/d161-4761-8f2f-32c7036892d5.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/d8/21/3f/bd/d161-4761-8f2f-32c7036892d5/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "eb007446-506b-4505-8a73-f6487609a939",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428927024,
+     48.856788861
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:54:57.942000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/eb/00/74/46/506b-4505-8a73-f6487609a939.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/eb/00/74/46/506b-4505-8a73-f6487609a939/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "d6fd3256-e3b2-4532-a551-c7a01a5b3e1d",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428292972,
+     48.85667296
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:02.532000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/d6/fd/32/56/e3b2-4532-a551-c7a01a5b3e1d.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/d6/fd/32/56/e3b2-4532-a551-c7a01a5b3e1d/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "0206fdc8-2ddd-47fd-ae27-4e301b187072",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4289603,
+     48.856794883
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:54:57.702000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/02/06/fd/c8/2ddd-47fd-ae27-4e301b187072.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/02/06/fd/c8/2ddd-47fd-ae27-4e301b187072/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "961cddf5-c129-44e6-ad29-4613e247b18a",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428261016,
+     48.856666871
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:02.792000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/96/1c/dd/f5/c129-44e6-ad29-4613e247b18a.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/96/1c/dd/f5/c129-44e6-ad29-4613e247b18a/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "f7ab6bac-3efe-48c7-bcfe-71ea248e46ea",
+   "collection": "20818152-103b-4e03-8cb2-d4480f8719c2",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428257,
+     48.8566297
+    ]
+   },
+   "properties": {
+    "datetime": "2026-04-28T12:32:10+00:00",
+    "view:azimuth": 79,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [],
+    "pers:roll": 2.8,
+    "pers:pitch": 8.5
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/f7/ab/6b/ac/3efe-48c7-bcfe-71ea248e46ea.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/f7/ab/6b/ac/3efe-48c7-bcfe-71ea248e46ea/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "3bf89fad-6c8b-48cb-8455-df881ca4de6f",
+   "collection": "20818152-103b-4e03-8cb2-d4480f8719c2",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4289851,
+     48.8567674
+    ]
+   },
+   "properties": {
+    "datetime": "2026-04-28T12:32:22+00:00",
+    "view:azimuth": 83,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [],
+    "pers:roll": 6.9,
+    "pers:pitch": 6.2
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/3b/f8/9f/ad/6c8b-48cb-8455-df881ca4de6f.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/3b/f8/9f/ad/6c8b-48cb-8455-df881ca4de6f/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "3ecf31e6-3de2-4cfe-a5e6-1f3ecc4ac564",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428993352,
+     48.856800879
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:54:57.462000+00:00",
+    "view:azimuth": 251,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/3e/cf/31/e6/3de2-4cfe-a5e6-1f3ecc4ac564.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/3e/cf/31/e6/3de2-4cfe-a5e6-1f3ecc4ac564/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9046ec27-4d56-4a5e-afbc-2ad263f3fe1d",
+   "collection": "dace0857-33f4-4c86-b442-98321f0cc50f",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.428228719,
+     48.856660645
+    ]
+   },
+   "properties": {
+    "datetime": "2025-05-07T02:55:03.062000+00:00",
+    "view:azimuth": 250,
+    "pers:interior_orientation": {
+     "camera_model": "imajbox 360 HD",
+     "field_of_view": 360,
+     "camera_manufacturer": "IMAJING",
+     "sensor_array_dimensions": [
+      12288,
+      6144
+     ]
+    },
+    "quality:horizontal_accuracy": 2.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "immergis",
+    "semantics": []
+   },
+   "providers": [
+    {
+     "name": "immergis"
+    },
+    {
+     "name": "Immergis pour la Ville de Paris"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/main-pictures/90/46/ec/27/4d56-4a5e-afbc-2ad263f3fe1d.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax-storage-public-fast.s3.gra.perf.cloud.ovh.net/derivates/90/46/ec/27/4d56-4a5e-afbc-2ad263f3fe1d/sd.jpg"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "d0067f5e-111b-42d9-8dd6-27c3e3db5585",
+   "collection": "1161b84c-9c7b-47a3-845d-40d2c84b8c41",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.4282069,
+     48.856682
+    ]
+   },
+   "properties": {
+    "datetime": "2025-09-04T14:37:03+00:00",
+    "view:azimuth": 259,
+    "pers:interior_orientation": {
+     "camera_model": "Max",
+     "focal_length": 3.0,
+     "field_of_view": 360,
+     "camera_manufacturer": "GoPro",
+     "sensor_array_dimensions": [
+      5760,
+      2880
+     ]
+    },
+    "quality:horizontal_accuracy": 4.0,
+    "license": "etalab-2.0",
+    "geovisio:producer": "nassigny",
+    "semantics": [],
+    "pers:roll": 0.0,
+    "pers:pitch": 0.0
+   },
+   "providers": [
+    {
+     "name": "nassigny"
+    }
+   ],
+   "assets": {
+    "hd": {
+     "href": "https://panoramax.ign.fr/api/pictures/d0067f5e-111b-42d9-8dd6-27c3e3db5585/hd.jpg"
+    },
+    "sd": {
+     "href": "https://panoramax.ign.fr/api/pictures/d0067f5e-111b-42d9-8dd6-27c3e3db5585/sd.jpg"
+    }
+   }
+  }
+ ]
+}

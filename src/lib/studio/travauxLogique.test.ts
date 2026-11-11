@@ -181,7 +181,8 @@ describe('manifeste de visite 360°', () => {
 describe('image photoréaliste (3e type de rendu)', () => {
   it('options par défaut : une vue 3/4 gauche, en journée', () => {
     assert.deepEqual(optionsParDefaut('image'), { vues: ['trois_quarts_gauche'], ambiance: 'jour', qualite: 'finale' });
-    assert.equal(LIBELLES_TYPE.image, 'Image photoréaliste');
+    // LOT P2 : le type s'appelle « Image du projet » ; le résultat dit lui-même s'il est inséré dans une photo ou une image d'étude.
+    assert.equal(LIBELLES_TYPE.image, 'Image du projet');
   });
   it('accepte 1 à 3 vues (remises dans l’ordre) et la fin de journée ; refuse la nuit et le hors contrat', () => {
     const v = validerOptions('image', { vues: ['face', 'trois_quarts_gauche'], ambiance: 'fin_de_journee' });
