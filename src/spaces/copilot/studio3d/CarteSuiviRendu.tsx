@@ -73,6 +73,20 @@ export function CarteSuiviRendu({ indice }: { indice: IndiceSuivi }) {
     return () => { vivant = false; };
   }, [fichiers, signature]);
 
+  // LOT P5-SITE (12/11/2026) — bâtiment existant effacé : lien signé vers l'image des zones reconstituées, si le
+  // résultat en donne une (jamais d'adresse devinée).
+  const zonesPath = vue.etat === 'termine' ? vue.image?.effacement?.zonesPath ?? null : null;
+  const [zonesUrl, setZonesUrl] = useState<string | null>(null);
+  const [zonesErreur, setZonesErreur] = useState(false);
+  useEffect(() => {
+    setZonesUrl(null);
+    setZonesErreur(false);
+    if (!zonesPath) return;
+    let vivant = true;
+    urlSigneeRendu(zonesPath).then(u => { if (vivant) setZonesUrl(u); }).catch(() => { if (vivant) setZonesErreur(true); });
+    return () => { vivant = false; };
+  }, [zonesPath, signature]);
+
   const resigner = () => setSignature(n => (n < 1 ? n + 1 : n));
   const Icone = travail?.type === 'film' || indice.type === 'film' ? Clapperboard : travail?.type === 'visite360' || indice.type === 'visite360' ? Orbit : IconeImage;
 
@@ -105,6 +119,12 @@ export function CarteSuiviRendu({ indice }: { indice: IndiceSuivi }) {
         </figure>)}
       </div>}
       {vue.etat === 'termine' && vue.image?.mention && <p className="mz-suivi-rendu__mention">{vue.image.mention}</p>}
+      {vue.etat === 'termine' && vue.image?.effacement && <div className="mz-suivi-rendu__effacement" role="note">
+        <p className="mz-suivi-rendu__mention"><strong>{vue.image.effacement.mention}</strong></p>
+        {vue.image.effacement.masque && <p className="mz-suivi-rendu__detail">{vue.image.effacement.masque}</p>}
+        {zonesUrl && <a href={zonesUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} aria-hidden="true" /> Voir les zones reconstituées</a>}
+        {zonesErreur && <p className="mz-suivi-rendu__detail">L’image des zones reconstituées n’est pas accessible pour l’instant. Réessayez dans un instant.</p>}
+      </div>}
       {vue.etat === 'termine' && vue.image && !vue.image.inseree && vue.image.raison && <p className="mz-suivi-rendu__detail">
         <strong>Image d’étude :</strong> {vue.image.raison}
       </p>}

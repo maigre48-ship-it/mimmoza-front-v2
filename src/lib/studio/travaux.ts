@@ -15,6 +15,8 @@ import { fileIndisponible, lireTravail, messageErreurTravail, type NouveauTravai
 // LOT P2 (11/11/2026) — image dans sa rue : couverture Panoramax (fonction en lecture seule), photo du client.
 import { lireCouvertureTransmise, type CouverturePhotoRue, type LonLat } from './couverturePhotoRue';
 import { cheminPhotoClient } from './photoClientLogique';
+// LOT P5-SITE (12/11/2026) — zone à effacer corrigée dans l'atelier : même seau privé que la photo du client.
+import { cheminMasqueExistant, OCTETS_MAX_MASQUE, type MasqueExistantOption } from './masqueExistant';
 import { deposerDansBucket } from '@/spaces/copilot/pieces-jointes/televersement';
 
 export * from './travauxLogique';
@@ -181,4 +183,28 @@ export async function televerserPhotoClient(fichier: File, surProgres?: (envoye:
   if (!chemin) throw new ErreurTravail('Format non pris en charge : JPEG ou PNG.');
   await deposerDansBucket(BUCKET_PHOTO_CLIENT, chemin, fichier, fichier.type, surProgres);
   return { chemin, octets: fichier.size };
+}
+
+// ── LOT P5-SITE (12/11/2026) — effacement de l'existant ──────────────────────────────────────────
+
+/**
+ * Dépose la zone à effacer corrigée dans l'atelier (PNG relu par `lireMessageMasqueExistant`) dans
+ * `studio-transfert/<uid>/<uuid>.png`, AVANT la création du nouveau travail (option `masque_existant`) : la machine
+ * de rendu ne peut donc jamais prendre le travail sans son masque. Seau et politiques de la photo du client
+ * (écriture et lecture par le propriétaire seulement) ; aucune clé de service côté site.
+ */
+export async function televerserMasqueExistant(png: Uint8Array): Promise<MasqueExistantOption> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) throw new ErreurTravail('Connectez-vous pour lancer un rendu.');
+  if (png.length < 1 || png.length > OCTETS_MAX_MASQUE) throw new ErreurTravail('La zone à effacer est trop volumineuse : reprenez-la dans l’atelier.');
+  const chemin = cheminMasqueExistant(data.user.id, crypto.randomUUID());
+  if (!chemin) throw new ErreurTravail('Compte non reconnu : reconnectez-vous.');
+  const copie = new Uint8Array(png);
+  await deposerDansBucket(BUCKET_PHOTO_CLIENT, chemin, new Blob([copie.buffer], { type: 'image/png' }), 'image/png');
+  return { chemin, octets: png.length };
+}
+
+/** Retire une zone à effacer déposée pour un travail qui n'a finalement pas été créé (au mieux : jamais d'erreur). */
+export async function retirerMasqueExistant(chemin: string): Promise<void> {
+  try { await supabase.storage.from(BUCKET_PHOTO_CLIENT).remove([chemin]); } catch { /* le dépôt reste privé ; sans effet sur le rendu */ }
 }

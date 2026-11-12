@@ -13,6 +13,8 @@ import type { ProjetMimmozaV2 } from '../../spaces/promoteur/shared/echangeStudi
 import { lireElementsOmis, type ElementOmis } from './manifesteVisite.ts';
 // LOT P2 (11/11/2026) — image dans sa rue : options de fond (mêmes règles que la base et le serveur).
 import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from './fondImage.ts';
+// LOT P5-SITE (12/11/2026) — effacement de l'existant : masque corrigé dans l'atelier, mention du résultat.
+import { libelleEffacement, lireExistant, lireMasqueExistantOption, type ExistantResultat, type LibelleEffacement, type MasqueExistantOption } from './masqueExistant.ts';
 
 export type { ElementOmis } from './manifesteVisite.ts';
 export { CLES_FOND, FONDS_IMAGE, LIBELLES_FOND, fondDe, type FondImage, type OptionsFond, type CalageClient, type PhotoClientOption, type PointDeVue } from './fondImage.ts';
@@ -53,6 +55,8 @@ export interface OptionsImage extends OptionsFond {
   vues: VueImage[];
   ambiance: AmbianceImage;
   qualite: QualiteImage;
+  /** LOT P5-SITE — zone à effacer corrigée dans l'atelier (`studio-transfert`) ; seulement avec `calage_client`. */
+  masque_existant?: MasqueExistantOption;
 }
 
 export type OptionsTravail = OptionsFilm | OptionsVisite | OptionsImage;
@@ -110,8 +114,10 @@ export interface PhotomontageResultat {
   incertitude_m: number | null;
   source_photo: { type: 'panoramax' | 'client'; id: string | null; producteur: string | null; date: string | null; licence: 'etalab-2.0' | 'client' | null } | null;
   mention: string | null;
-  /** Chemins du seau privé `studio-rendus` (statut `a_valider` seulement). */
-  atelier: { photo_path: string; plan_path: string } | null;
+  /** Chemins du seau privé `studio-rendus` (statut `a_valider` seulement). LOT P5-SITE : `masque_path` facultatif (lot P4). */
+  atelier: { photo_path: string; plan_path: string; masque_path?: string } | null;
+  /** LOT P5-SITE — bâtiment existant effacé (statut `livre` seulement) ; null sinon. */
+  existant: ExistantResultat | null;
 }
 
 /** `resultat` d'une image terminée. */
@@ -244,11 +250,20 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
 }
 
 function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImage> {
-  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite' && !(CLES_FOND as readonly string[]).includes(k));
+  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite' && k !== 'masque_existant' && !(CLES_FOND as readonly string[]).includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
   // LOT P2 : fond (étude par défaut, non recopié), photo Panoramax, photo du client, calage validé.
-  const fond = validerFond(o);
+  const { masque_existant: masqueBrut, ...sansMasque } = o;
+  const fond = validerFond(sansMasque);
   if (!fond.ok) return fond;
+  // LOT P5-SITE : zone à effacer corrigée dans l'atelier — n'a de sens qu'avec un calage validé (relance depuis l'atelier).
+  let masque: MasqueExistantOption | null = null;
+  if (masqueBrut !== undefined) {
+    if (!fond.valeur.calage_client) return { ok: false, erreur: 'Une zone à effacer ne s’envoie qu’avec un placement validé dans l’atelier.' };
+    const m = lireMasqueExistantOption(masqueBrut);
+    if (!m.ok) return m;
+    masque = m.valeur;
+  }
   const vues = o.vues ?? OPTIONS_IMAGE_DEFAUT.vues;
   if (!Array.isArray(vues) || vues.length < 1 || vues.length > 3 || new Set(vues).size !== vues.length
     || vues.some(v => !VUES_IMAGE.includes(v as VueImage))) {
@@ -258,7 +273,7 @@ function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImag
   if (!AMBIANCES_IMAGE.includes(ambiance as AmbianceImage)) return { ok: false, erreur: 'Choisissez une lumière : journée ou fin de journée.' };
   const qualite = o.qualite ?? OPTIONS_IMAGE_DEFAUT.qualite;
   if (!QUALITES_IMAGE.includes(qualite as QualiteImage)) return { ok: false, erreur: 'Choisissez une définition : haute définition ou aperçu rapide.' };
-  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage, ...fond.valeur } };
+  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage, ...fond.valeur, ...(masque ? { masque_existant: masque } : {}) } };
 }
 
 /** Titre lisible du film ou de la visite, tiré de la fiche (« 12 logements — 12 rue des Lilas, Lyon »). */
@@ -340,6 +355,7 @@ export function resumeOptions(type: TypeTravail, options: unknown): string {
     if (im.qualite === 'apercu') parts.push('aperçu rapide');
     if (fondDe(im) !== 'etude') parts.push(LIBELLES_FOND[fondDe(im)].toLowerCase());
     if (im.calage_client) parts.push('placement ajusté');
+    if (im.masque_existant) parts.push('zone à effacer corrigée');
   } else if (type === 'film') {
     const f = o as OptionsFilm;
     parts.push(`${String(f.duree_s)} s`, LIBELLES_AMBIANCE[f.ambiance].toLowerCase(), f.format === '16:9' ? 'paysage' : 'vertical');
@@ -393,6 +409,7 @@ export function lirePhotomontage(brut: unknown): PhotomontageResultat | null {
   const at = estObjet(brut.atelier) ? brut.atelier : null;
   const photoPath = at ? texte(at.photo_path) : null;
   const planPath = at ? texte(at.plan_path) : null;
+  const masquePath = at ? texte(at.masque_path) : null;
   const inc = brut.incertitude_m;
   return {
     tente: brut.tente === true,
@@ -405,7 +422,8 @@ export function lirePhotomontage(brut: unknown): PhotomontageResultat | null {
       licence: sp.licence === 'etalab-2.0' || sp.licence === 'client' ? sp.licence : null,
     } : null,
     mention: texte(brut.mention),
-    atelier: statut === 'a_valider' && photoPath && planPath ? { photo_path: photoPath, plan_path: planPath } : null,
+    atelier: statut === 'a_valider' && photoPath && planPath ? { photo_path: photoPath, plan_path: planPath, ...(masquePath ? { masque_path: masquePath } : {}) } : null,
+    existant: statut === 'livre' ? lireExistant(brut.existant) : null,
   };
 }
 
@@ -421,11 +439,15 @@ export interface LibelleImage {
   raison: string | null;
   /** Atelier disponible (« Ajuster le placement »). */
   aValider: boolean;
+  /** LOT P5-SITE — bâtiment existant effacé (image livrée) : mention, origine de la zone, image des zones ; null sinon. */
+  effacement: LibelleEffacement | null;
+  /** LOT P5-SITE — l'atelier propose aussi de corriger la zone à effacer (masque proposé déposé par la machine). */
+  corrigerZone: boolean;
 }
 
 export function libelleResultatImage(r: Pick<ResultatImage, 'photomontage'> | null | undefined): LibelleImage {
   const p = r?.photomontage ?? null;
-  if (!p) return { titre: 'Image d’étude', inseree: false, mention: null, raison: null, aValider: false };
+  if (!p) return { titre: 'Image d’étude', inseree: false, mention: null, raison: null, aValider: false, effacement: null, corrigerZone: false };
   if (p.statut === 'livre') {
     const client = p.source_photo?.type === 'client';
     const precision = p.incertitude_m !== null ? `précision ± ${String(Math.round(p.incertitude_m * 10) / 10).replace('.', ',')} m` : null;
@@ -436,6 +458,8 @@ export function libelleResultatImage(r: Pick<ResultatImage, 'photomontage'> | nu
       mention: p.mention ?? (client ? 'Photo : vous' : null),
       raison: [calage, precision].filter(Boolean).join(', ') || null,
       aValider: false,
+      effacement: libelleEffacement(p.existant),
+      corrigerZone: false,
     };
   }
   return {
@@ -444,6 +468,8 @@ export function libelleResultatImage(r: Pick<ResultatImage, 'photomontage'> | nu
     mention: null,
     raison: p.raison ?? (p.statut === 'a_valider' ? 'Le placement dans la photo n’a pas pu être vérifié automatiquement.' : 'Aucune photo de rue exploitable.'),
     aValider: p.statut === 'a_valider' && p.atelier !== null,
+    effacement: null,
+    corrigerZone: p.statut === 'a_valider' && !!p.atelier?.masque_path,
   };
 }
 
@@ -494,6 +520,7 @@ export function messageErreurTravail(erreur: unknown, type?: TypeTravail): strin
   const message = estObjet(erreur) && typeof erreur.message === 'string' ? erreur.message : erreur instanceof Error ? erreur.message : '';
   if (/déjà 2 (films ou visites|rendus)/.test(message)) return message;
   if (type === 'image' && /studio_jobs_photo_client_proprietaire/.test(message)) return 'Cette photo n’appartient pas à votre compte : téléversez-la de nouveau.';
+  if (type === 'image' && /studio_jobs_masque_existant_proprietaire/.test(message)) return 'Cette zone à effacer n’appartient pas à votre compte : reprenez-la dans l’atelier.';
   if (type === 'image' && /Options du travail invalides|studio_jobs_type_check/.test(message)) return 'L’image photoréaliste sera bientôt disponible.';
   if (/Options du travail invalides/.test(message)) return 'Ces options ne sont pas acceptées. Rechargez la page puis réessayez.';
   if (/row-level security|permission denied|JWT/i.test(message)) return 'Connectez-vous pour lancer un rendu.';

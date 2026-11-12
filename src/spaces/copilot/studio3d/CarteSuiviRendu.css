@@ -28,6 +28,9 @@
 .mz-suivi-rendu__avertissements { margin: 4px 0 0 18px; padding: 0; color: #475569; font-size: 12px; }
 /* LOT P2 (11/11/2026) — image dans sa rue : mention de la source, atelier « Ajuster le placement », devis de la nouvelle image. */
 .mz-suivi-rendu__mention { color: #334155; font-size: 11px; font-style: italic; }
+/* LOT P5-SITE — bâtiment existant effacé : mention et lien vers l'image des zones reconstituées. */
+.mz-suivi-rendu__effacement { border-left: 3px solid #c026d3; padding: 4px 0 4px 8px; margin: 6px 0; display: flex; flex-direction: column; gap: 3px; }
+.mz-suivi-rendu__effacement a { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 .mz-suivi-rendu button.mz-suivi-rendu__bouton { font: inherit; font-weight: 600; cursor: pointer; }
 .mz-suivi-rendu button.mz-suivi-rendu__bouton:disabled { opacity: .6; cursor: default; text-decoration: none; }
 .mz-suivi-rendu__bouton.is-leger { background: #ffffff; border-color: #e2e8f0; color: #334155; }

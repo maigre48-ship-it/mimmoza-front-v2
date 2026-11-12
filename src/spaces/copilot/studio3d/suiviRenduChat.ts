@@ -25,6 +25,8 @@ import {
   LIBELLES_TYPE, libelleResultatImage, phraseElementsOmis, phraseSuivi,
   type LibelleImage, type ResultatFilm, type ResultatImage, type ResultatVisite, type StatutTravail, type TravailStudio, type TypeTravail,
 } from '../../../lib/studio/travauxLogique.ts';
+// LOT P5-SITE (12/11/2026) — la mention d'effacement a son bloc : elle n'est pas répétée dans les avertissements.
+import { avertissementsSansMention } from '../../../lib/studio/masqueExistant.ts';
 
 export const OUTIL_LANCER_RENDU = 'studio_lancer_rendu';
 export const OUTIL_ETAT_RENDU = 'studio_etat_rendu';
@@ -208,7 +210,7 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
         ...base, etat: 'termine', actif: false, titre: `${image ? image.titre : libelle} — prêt${travail.type === 'film' ? '' : 'e'}`, pastille: 'Prêt', image,
         phrase: travail.resultat ? phraseSuivi(travail) : `${quoi} est indiqué${travail.type === 'film' ? '' : 'e'} comme terminé${travail.type === 'film' ? '' : 'e'}, mais aucun fichier n’est lisible dans le résultat.`,
         omis: phraseElementsOmis(travail.elements_omis),
-        avertissements: travail.resultat?.avertissements ?? [],
+        avertissements: avertissementsSansMention(travail.resultat?.avertissements ?? [], image?.effacement ?? null),
       };
     }
     case 'echec':
