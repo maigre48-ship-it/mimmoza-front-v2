@@ -333,7 +333,11 @@ export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements:
   // Lot C10 : le volume porte le côté voie (bande appliquée) → distances MESURÉES sur ses bâtiments, à la voie d'une
   // part, aux autres limites d'autre part (mesure indépendante du placement, valable aussi pour un volume modifié
   // dans la fiche). Sinon : `reculM`, distance à toutes les limites, comme avant.
-  const mesures = v.bande?.statut === 'appliquee' ? mesurerReculsVolume(v) : null;
+  // Lot P9 : volume posé au recul sur voie (poseVoie) → mêmes mesures que la bande, sur les limites présumées sur voie.
+  const mesures = v.bande?.statut === 'appliquee' ? mesurerReculsVolume(v)
+    : v.poseVoie && v.poseVoie.statut !== 'impossible' && v.poseVoie.facades.length
+      ? mesurerReculsVolume({ ...v, bande: { statut: 'appliquee', raison: null, profondeurM: null, longueurFacadeM: null, angleVoieDeg: null, distanceMaxVoieM: null, empriseMaxM2: null, facades: v.poseVoie.facades } })
+      : null;
   const tolerance = mesures ? 0.02 : 0.01;
   const reculVoie = mesures ? mesures.voieM : recul;
   const reculLimites = mesures && mesures.limitesM !== null ? mesures.limitesM : recul;

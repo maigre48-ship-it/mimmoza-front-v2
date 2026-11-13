@@ -62,6 +62,11 @@ import {
   contourDepuisGeometrie, phraseCouverture, verifierCouverture, type CouverturePhotoRue, type LonLat, type ResultatCouverture,
 } from '../../../../src/lib/studio/couverturePhotoRue.ts';
 import { facadesVoieDeLaParcelle, type FacadeVoieFiche } from './voisines-parcelle.ts';
+// LOT P9 : volume d'étude posé au recul sur voie, règles PLU de la conception dans `charge.regles`.
+import { ligneHauteurFiche, poserVolumeSurVoie } from '../../../../src/spaces/copilot/studio3d/implantationVoieVolume.ts';
+import { reglesFicheDepuisReglesLues } from '../../../../src/spaces/copilot/studio3d/reglesFiche.ts';
+import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
+import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -333,7 +338,13 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
     }
   }
   if (!f.ok) return { ok: false, raison: f.raison };
-  const volume = f.volume;
+  let volume = f.volume;
+  // Lot P9 : un seul bâtiment, hors bande, forme non saisie à la main → posé parallèle à la voie, façade au recul
+  // (règle lue/estimée, sinon 4 m SUPPOSÉS), dans la parcelle. Façade sur voie absente : volume inchangé.
+  if (!choix.saisie && volume.bande?.statut !== 'appliquee' && !volumeParBatiments(volume)) {
+    const fv = facadesVoieDeLaParcelle(c.parcelle);
+    if (fv.facades.length) volume = poserVolumeSurVoie(volume, parcelle.geometrie, fv.facades, reglesVolume(regles, gabarit, null)).volume;
+  }
   const controles = controlerVolume(volume, regles, volume.logementsEstimes ?? pv.logements);
   const entree: EntreePreparation = { parcelle, commune: c.commune, regles, programme: c.programme ?? null, programme_volume: pv, gabarit_niveaux: gabarit,
     ...(bandes.mesure ? { bandes: bandes.mesure } : {}) };
@@ -1034,7 +1045,9 @@ export interface PreparationLue {
 export function poseDepuisVolume(v: Pick<VolumePropose, 'emprise'>): { lon: number; lat: number; orientationDeg: number; entryOffsetM: number } | null {
   const e = v.emprise;
   if (!e || !fini(e.centreWgs84.lon) || !fini(e.centreWgs84.lat) || !fini(e.angleDeg)) return null;
-  return { lon: e.centreWgs84.lon, lat: e.centreWgs84.lat, orientationDeg: rotationContrat(e.angleDeg), entryOffsetM: 0 };
+  // Lot P9 : orientation de la LONGUEUR (le Studio prend le plus grand côté de « 11 m x 16 m »).
+  const axe = e.profondeurM > e.largeurM + 1e-9 ? e.angleDeg + 90 : e.angleDeg;
+  return { lon: e.centreWgs84.lon, lat: e.centreWgs84.lat, orientationDeg: rotationContrat(axe), entryOffsetM: 0 };
 }
 
 export function titreRendu(draft: JarvisDraft): string {
@@ -1048,11 +1061,19 @@ export function titreRendu(draft: JarvisDraft): string {
  * ficheStudioDepuisVolume, volumeBatimentsStudio, construireProjetChat), sans relief (le worker le
  * signale : terrain supposé plat) ni pièces jointes.
  */
-export function ficheDepuisPreparation(p: PreparationLue, conversationId: string, horodatage: string, sessionId: string, origine: string, brief: BriefRendu | null = null, facadesVoie: readonly FacadeVoieFiche[] | null = null): Validation<Obj> {
+export function ficheDepuisPreparation(p: PreparationLue, conversationId: string, horodatage: string, sessionId: string, origine: string, brief: BriefRendu | null = null, facadesVoie: readonly FacadeVoieFiche[] | null = null,
+  options: { /** Lot P9 : façades recopiées dans `charge.site` (contrat photo-rue §2) ; sinon seulement pour poser le volume. */ facadesDansSite?: boolean } = {}): Validation<Obj> {
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
-  const v = p.volume as VolumePropose;
+  const v0 = p.volume as VolumePropose;
   const parcelle = lireParcelle(entree.parcelle, p.idu);
-  if (!parcelle || !estObj(p.volume) || !v.emprise) return { ok: false, erreur: 'La 3D préparée est illisible : relancez la préparation.' };
+  if (!parcelle || !estObj(p.volume) || !v0.emprise) return { ok: false, erreur: 'La 3D préparée est illisible : relancez la préparation.' };
+  const reglesLues: RegleLue[] = Array.isArray(entree.regles) ? entree.regles : [];
+  const rv = reglesVolume(reglesLues, entree.gabarit_niveaux ?? null, null);
+  // Lot P9 : préparation antérieure au lot (sans `poseVoie`) → posée ici ; une préparation récente est rendue telle quelle.
+  const vPose = facadesVoie && facadesVoie.length && !v0.poseVoie ? poserVolumeSurVoie(v0, parcelle.geometrie, facadesVoie, rv).volume : v0;
+  // Lot P9 : mention d'une préparation antérieure au lot recalculée avec la règle du moteur (règles toutes estimées → dit).
+  const valides = rv.regles.filter(regleValide);
+  const v = valides.length && valides.every((r) => r.statut === 'estimee') && vPose.mentionPlu !== MENTION_REGLES_ESTIMEES ? { ...vPose, mentionPlu: MENTION_REGLES_ESTIMEES } : vPose;
   const draft = ficheStudioDepuisVolume(v, { adresse: entree.commune ?? null, reference: p.idu, programme: entree.programme_volume, base: null });
   if (!draft) return { ok: false, erreur: 'Aucun volume à transmettre.' };
   try { exigerPreparation3D(draft); } catch (e) { return { ok: false, erreur: e instanceof Error ? e.message : 'Fiche 3D incomplète.' }; }
@@ -1062,7 +1083,9 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
   // E1-brief : le brief habille la commande de création (seule entrée interprétée par le Studio
   // quand une commande existe) ; le texte `brief` le reprend à titre informatif.
   const composition = studioComposition(draft)?.map((c) => ({ ...c, commande: commandeAvecBrief(c.commande, brief, true) ?? c.commande })) ?? null;
-  const texteBrief = brief ? `${draftBrief(draft)}\nhabillage demandé : ${libelleBrief(brief)}` : draftBrief(draft);
+  // Lot P9 : comment la hauteur est comptée (acrotère compris, décision de prudence) et où le volume est posé.
+  const lignesP9 = [ligneHauteurFiche(v, rv), ...(v.poseVoie ? [v.poseVoie.message] : [])].join('\n');
+  const texteBrief = `${brief ? `${draftBrief(draft)}\nhabillage demandé : ${libelleBrief(brief)}` : draftBrief(draft)}\n${lignesP9}`;
   const construit = construireProjetChat({
     conversationId, etudeId: null, sessionId, origine, retourUrl: null, revision: 0, horodatage,
     parcelles: [{ id: p.idu, feature: { type: 'Feature', properties: { id: p.idu, ...(insee ? { code_insee: insee } : {}) }, geometry: parcelle.geometrie } }],
@@ -1077,9 +1100,17 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
   const multi = (vb?.batiments.length ?? 0) > 0;
   // LOT P2 — contrat CONTRAT-PHOTO-RUE.md §2 : `charge.site.facadesVoie` (côté voie déduit du cadastre) ; ABSENT si
   // non identifié (jamais une façade devinée). Ajouté après la validation du contrat v2 (clé lue par la machine de rendu).
-  const charge = facadesVoie && facadesVoie.length
-    ? { ...construit.projet, site: { ...construit.projet.site, facadesVoie: facadesVoie.map((f) => ({ ...f, debut: [...f.debut], fin: [...f.fin] })) } }
-    : construit.projet;
+  // Lot P9 : règles PLU de la conception dans `charge.regles` (source + statut lue / estimée), validées par le contrat v2.
+  const regles = reglesFicheDepuisReglesLues(reglesLues);
+  let projet = construit.projet;
+  if (regles.length) {
+    const lu = validerProjet({ ...construit.projet, regles });
+    if (!lu.ok) return { ok: false, erreur: `Règles PLU refusées par le contrat v2 : ${'erreur' in lu ? lu.erreur : 'raison inconnue'}` };
+    projet = lu.projet;
+  }
+  const charge = facadesVoie && facadesVoie.length && options.facadesDansSite !== false
+    ? { ...projet, site: { ...projet.site, facadesVoie: facadesVoie.map((f) => ({ ...f, debut: [...f.debut], fin: [...f.fin] })) } }
+    : projet;
   return { ok: true, valeur: {
     version: 1, charge, draft, titre: titreRendu(draft), conversation_id: conversationId, origine: 'mimmo', preparation_id: p.id,
     ...(brief ? { brief_rendu: brief } : {}),
@@ -1418,9 +1449,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     } else {
       const prep = await env.depot.preparation(uid, { id: j.s.preparation_id });
       if (!prep) return erreur('La 3D préparée du devis n’existe plus. RIEN N’A ÉTÉ LANCÉ.', 'not_found');
-      // LOT P2 : façades sur voie (contrat §2) pour toute image ; absentes si non identifiées.
-      const facades = j.t === 'image' ? (await facadesVoiePreparation(env, uid, prep)).facades : null;
-      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades);
+      // LOT P2 : façades sur voie (contrat §2) dans le site pour toute image ; LOT P9 : lues pour tout rendu, pour poser
+      // le volume au recul sur voie (film et visite compris), recopiées dans le site seulement pour l'image.
+      const facades = (await facadesVoiePreparation(env, uid, prep)).facades;
+      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' });
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }

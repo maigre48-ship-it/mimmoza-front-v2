@@ -184,7 +184,15 @@ Deno.test('C7b-7 : côté voie non identifié ou profondeur non lue → aucune m
   const { voisines: _v, ...ancienne } = p;
   const a = await preparerVolume(conception(p, ordinaires)), s = await preparerVolume(conception(ancienne, ordinaires));
   na.ok(a.ok && s.ok && a.empreinte === s.empreinte);
-  na.ok(a.ok && s.ok && JSON.stringify(a.volume) === JSON.stringify(s.volume));
+  // Lot P9 : avec les voisines, le côté voie est connu : MÊME volume (dimensions, niveaux, SDP), posé au recul sur voie ;
+  // sans voisines, rien ne change (pas de pose).
+  na.ok(a.ok && s.ok);
+  if (a.ok && s.ok) {
+    const dims = (v: typeof a.volume) => ({ l: v.emprise?.largeurM, p: v.emprise?.profondeurM, n: v.niveaux, sdp: v.sdpM2 });
+    na.deepEqual(dims(a.volume), dims(s.volume));
+    na.equal(s.volume.poseVoie, undefined);
+    na.ok(a.volume.poseVoie && a.volume.poseVoie.statut !== 'impossible', a.volume.poseVoie?.message);
+  }
 });
 
 Deno.test('C7b-8 : lecture tolérante des voisines enregistrées', () => {

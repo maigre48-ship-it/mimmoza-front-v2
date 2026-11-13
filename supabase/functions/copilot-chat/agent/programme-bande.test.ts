@@ -126,7 +126,10 @@ Deno.test('C7c-3 : repli — bande mesurée mais trop peu profonde (8 m) : plafo
   // Même volume qu'une conception sans voisines (calcul prudent du lot C6), à la note et au champ `bande` près.
   const sans = prete(await preparerVolume(conception(30, { ...PARCELLE, voisines: undefined }, regles('8 m'))));
   na.equal(r.resume.emprise_batie_m2, sans.resume.emprise_batie_m2);
-  na.deepEqual(r.volume.batiments, sans.volume.batiments);
+  // Lot P9 : mêmes bâtiments (dimensions, niveaux) ; avec les voisines, le volume unique est posé au recul sur voie.
+  const dims = (v: typeof r.volume) => (v.batiments ?? []).map((b) => [b.largeurM, b.profondeurM, b.niveaux, b.sdpM2]);
+  na.deepEqual(dims(r.volume), dims(sans.volume));
+  na.equal(sans.volume.poseVoie, undefined);
   na.equal('bande' in sans.volume, false);
   const e = controleEmprise(r);
   na.equal(e.verdict, 'a_verifier');

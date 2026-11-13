@@ -45,6 +45,7 @@
 //     distance du retrait (formule H/k) : jamais entre les deux. Le retrait reste dû sur le fond de parcelle.
 
 import type { JarvisDraft } from './jarvisDraft.ts';
+import type { PoseVoie } from './implantationVoieVolume.ts';
 import { CONTACT_LIMITE_M, distanceVoie, lateralesAdmises, marquerSegmentsLateraux, marquerSegmentsVoie, preparerBande, rectangleDansBande, type BandePreparee, type BandeVoie, type BandeVolume, type FacadeLocale } from './bandePrincipale.ts';
 
 export type { BandeVoie, BandeVolume, ImplantationVoie } from './bandePrincipale.ts';
@@ -213,6 +214,9 @@ export const HYPOTHESES_VOLUME = {
   niveauxMaxStudio: 30,
 } as const;
 
+/** Lot P9 : mention quand toutes les règles appliquées sont estimées (aucune lue dans le règlement). */
+export const MENTION_REGLES_ESTIMEES = 'Règles PLU estimées appliquées (non lues dans le règlement) — à confirmer, conformité à vérifier par un professionnel';
+
 export const REGLES_INCONNUES: ReglesPluVolume = { source: 'aucune', regles: [], nonAppliquees: [] };
 
 export type StatutVolume = 'calcule' | 'indicatif' | 'trop-petite' | 'hauteur-insuffisante' | 'contour-invalide';
@@ -270,6 +274,8 @@ export interface VolumePropose {
    * bande, parallèle à la voie ; `non-appliquee` : calcul habituel, la raison est dans `raison`.
    */
   bande?: BandeVolume;
+  /** Lot P9 : pose au recul sur voie (implantationVoieVolume.ts), présente seulement si la façade sur voie est connue. */
+  poseVoie?: PoseVoie;
 }
 
 const M_PAR_DEGRE = 111_320;
@@ -858,8 +864,10 @@ function calculerVolume(
   const cotesLateraux = bande && rc.enLimite && proj0 ? marquerSegmentsLateraux(segmentsDe(proj0.anneaux), proj0.anneaux[0].length, bande.facades) : 0;
   const enLimite = cotesLateraux > 0;
 
+  // Lot P9 : règles toutes ESTIMÉES (ex. prescriptions GPU, aucune lue dans le règlement) → le libellé le dit.
+  const toutesEstimees = valides.length > 0 && valides.every(r => r.statut === 'estimee');
   const mentionPlu = appliquees.size || valides.length
-    ? 'Règles PLU appliquées — conformité à vérifier par un professionnel'
+    ? (toutesEstimees ? MENTION_REGLES_ESTIMEES : 'Règles PLU appliquées — conformité à vérifier par un professionnel')
     : regles.source === 'reglement-texte'
       ? 'Hypothèse — règlement PLU lu, aucune règle chiffrée reprise'
       : 'Hypothèse — règlement PLU non lu';
@@ -1091,7 +1099,7 @@ export function ficheStudioDepuisVolume(v: VolumePropose, contexte: { adresse?: 
     programme: contexte.programme?.libelle ?? (logements !== null ? `${logements} logements` : contexte.base?.programme ?? null),
     dimensions: `${dimension(e.largeurM)} m x ${dimension(e.profondeurM)} m`,
     style: contexte.base?.style ?? null,
-    contraintes: `${v.mentionPlu}. Volume simple calculé ${v.reglesAppliquees.length ? 'avec les règles PLU lues listées dans le Dossier 3D, complétées par des valeurs par défaut' : 'par une règle par défaut (reculs, coefficient d’emprise, hauteur d’étage)'} ; implantation et conformité à vérifier.`,
+    contraintes: `${v.mentionPlu}. Volume simple calculé ${v.reglesAppliquees.length ? `avec les règles PLU ${v.mentionPlu === MENTION_REGLES_ESTIMEES ? 'estimées (non lues dans le règlement)' : 'lues'} listées dans le Dossier 3D, complétées par des valeurs par défaut` : 'par une règle par défaut (reculs, coefficient d’emprise, hauteur d’étage)'} ; implantation et conformité à vérifier.`,
     questions: [],
     pieces: contexte.base?.pieces ? [...contexte.base.pieces] : [],
   };

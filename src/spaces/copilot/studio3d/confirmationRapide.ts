@@ -72,7 +72,10 @@ export function terrainDepuisParcelle(parcelle: TerrainParcel, idu: string, poin
 export function implantationDepuisVolume(v: Pick<VolumePropose, 'emprise'>): { lon: number; lat: number; orientationDeg: number; entryOffsetM: number } | null {
   const e = v.emprise;
   if (!e || !Number.isFinite(e.centreWgs84.lon) || !Number.isFinite(e.centreWgs84.lat) || !Number.isFinite(e.angleDeg)) return null;
-  let o = -e.angleDeg;
+  // Lot P9 : le Studio lit « L m x P m » en longueur = plus grand côté, posée le long de orientationDeg
+  // (nl.findDimensions). angleDeg est l'axe de la LARGEUR du moteur : si la profondeur est plus grande, +90°.
+  const axe = e.profondeurM > e.largeurM + 1e-9 ? e.angleDeg + 90 : e.angleDeg;
+  let o = -axe;
   o = ((o % 360) + 540) % 360 - 180; // ]-180, 180]
   if (o === -180) o = 180;
   return { lon: e.centreWgs84.lon, lat: e.centreWgs84.lat, orientationDeg: Math.round(o * 10) / 10 || 0, entryOffsetM: 0 };
