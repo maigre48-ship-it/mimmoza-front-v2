@@ -1,0 +1,23 @@
+/* LOT X3 (14/11/2026) — Carte « Extension de maison » (CarteExtensionMaison.tsx). */
+.mz-ext { margin: 8px 0; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; color: #0f172a; font-size: 13px; line-height: 1.5; }
+.mz-ext.is-dossier { margin: 0 0 12px; }
+.mz-ext__tete { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mz-ext__tete strong { flex: 1; min-width: 0; font-size: 14px; }
+.mz-ext__ref { color: #475569; font-size: 12px; white-space: nowrap; }
+.mz-ext__bloc { border-top: 1px solid #f1f5f9; padding-top: 6px; margin-top: 6px; }
+.mz-ext__bloc.is-refus { border-left: 3px solid #dc2626; padding-left: 8px; }
+.mz-ext__bloc.is-ok { border-left: 3px solid #16a34a; padding-left: 8px; }
+.mz-ext__titre { font-weight: 600; margin: 0 0 4px; }
+.mz-ext p { margin: 0 0 4px; }
+.mz-ext ul { margin: 2px 0 6px 18px; padding: 0; }
+.mz-ext__note { color: #475569; font-size: 12px; }
+.mz-ext__alertes { color: #9a3412; font-size: 12px; }
+.mz-ext__table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 12px; }
+.mz-ext__table th { text-align: left; font-weight: 500; color: #334155; padding: 2px 8px 2px 0; white-space: nowrap; }
+.mz-ext__table td { padding: 2px 8px 2px 0; }
+.mz-ext__statut { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #334155; cursor: help; }
+.mz-ext__statut.is-mesuree { background: #dcfce7; color: #166534; }
+.mz-ext__statut.is-estimee { background: #e0f2fe; color: #075985; }
+.mz-ext__statut.is-supposee { background: #fef3c7; color: #92400e; }
+.mz-ext__statut.is-confirmee { background: #ede9fe; color: #5b21b6; }
+.mz-ext__conserve { border-left: 3px solid #16a34a; padding: 4px 0 4px 8px; margin: 6px 0; display: flex; flex-direction: column; gap: 2px; }

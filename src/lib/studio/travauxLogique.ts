@@ -57,6 +57,8 @@ export interface OptionsImage extends OptionsFond {
   qualite: QualiteImage;
   /** LOT P5-SITE — zone à effacer corrigée dans l'atelier (`studio-transfert`) ; seulement avec `calage_client`. */
   masque_existant?: MasqueExistantOption;
+  /** LOT X3 — projet d'extension : bâtiment existant CONSERVÉ (aucun effacement) ou effacé. Absent : effacé. */
+  existant?: 'conserver' | 'effacer';
 }
 
 export type OptionsTravail = OptionsFilm | OptionsVisite | OptionsImage;
@@ -147,6 +149,10 @@ export interface TravailStudio {
   maj_le: string;
   demarre_le: string | null;
   termine_le: string | null;
+  /** LOT X3 — `fiche.projet_extension` (contrat X0), lu tel quel ; revalidé à l'affichage (extensionMaison.ts). */
+  projet_extension?: unknown;
+  /** LOT X3 — `resultat.extension` (machine de rendu, lot X4), lu tel quel. */
+  resultat_extension?: unknown;
 }
 
 /** Ligne à insérer (le serveur force statut, suivi et dates). */
@@ -250,10 +256,14 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
 }
 
 function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImage> {
-  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite' && k !== 'masque_existant' && !(CLES_FOND as readonly string[]).includes(k));
+  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite' && k !== 'masque_existant' && k !== 'existant' && !(CLES_FOND as readonly string[]).includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
+  // LOT X3 : maison existante conservée (extension) — jamais avec une zone à effacer (mêmes règles que la base et le worker).
+  const existant = o.existant;
+  if (existant !== undefined && existant !== 'conserver' && existant !== 'effacer') return { ok: false, erreur: 'Bâtiment existant : « conserver » ou « effacer ».' };
+  if (existant === 'conserver' && o.masque_existant !== undefined) return { ok: false, erreur: 'La maison existante est conservée (projet d’extension) : aucune zone à effacer.' };
   // LOT P2 : fond (étude par défaut, non recopié), photo Panoramax, photo du client, calage validé.
-  const { masque_existant: masqueBrut, ...sansMasque } = o;
+  const { masque_existant: masqueBrut, existant: _existant, ...sansMasque } = o;
   const fond = validerFond(sansMasque);
   if (!fond.ok) return fond;
   // LOT P5-SITE : zone à effacer corrigée dans l'atelier — n'a de sens qu'avec un calage validé (relance depuis l'atelier).
@@ -273,7 +283,7 @@ function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImag
   if (!AMBIANCES_IMAGE.includes(ambiance as AmbianceImage)) return { ok: false, erreur: 'Choisissez une lumière : journée ou fin de journée.' };
   const qualite = o.qualite ?? OPTIONS_IMAGE_DEFAUT.qualite;
   if (!QUALITES_IMAGE.includes(qualite as QualiteImage)) return { ok: false, erreur: 'Choisissez une définition : haute définition ou aperçu rapide.' };
-  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage, ...fond.valeur, ...(masque ? { masque_existant: masque } : {}) } };
+  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage, ...fond.valeur, ...(masque ? { masque_existant: masque } : {}), ...(existant !== undefined ? { existant } : {}) } };
 }
 
 /** Titre lisible du film ou de la visite, tiré de la fiche (« 12 logements — 12 rue des Lilas, Lyon »). */
@@ -356,6 +366,7 @@ export function resumeOptions(type: TypeTravail, options: unknown): string {
     if (fondDe(im) !== 'etude') parts.push(LIBELLES_FOND[fondDe(im)].toLowerCase());
     if (im.calage_client) parts.push('placement ajusté');
     if (im.masque_existant) parts.push('zone à effacer corrigée');
+    if (im.existant === 'conserver') parts.push('maison existante conservée');
   } else if (type === 'film') {
     const f = o as OptionsFilm;
     parts.push(`${String(f.duree_s)} s`, LIBELLES_AMBIANCE[f.ambiance].toLowerCase(), f.format === '16:9' ? 'paysage' : 'vertical');
@@ -493,6 +504,9 @@ export function lireTravail(brut: unknown): TravailStudio | null {
     maj_le: texte(brut.maj_le) ?? '',
     demarre_le: texte(brut.demarre_le),
     termine_le: texte(brut.termine_le),
+    // LOT X3 : projet d'extension et retour de la machine de rendu, s'ils existent (jamais inventés).
+    ...(brut.projet_extension !== undefined && brut.projet_extension !== null ? { projet_extension: brut.projet_extension } : {}),
+    ...(estObjet(brut.resultat) && estObjet(brut.resultat.extension) ? { resultat_extension: brut.resultat.extension } : {}),
   };
 }
 

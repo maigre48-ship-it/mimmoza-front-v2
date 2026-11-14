@@ -27,6 +27,8 @@ import {
 } from '../../../lib/studio/travauxLogique.ts';
 // LOT P5-SITE (12/11/2026) — la mention d'effacement a son bloc : elle n'est pas répétée dans les avertissements.
 import { avertissementsSansMention } from '../../../lib/studio/masqueExistant.ts';
+// LOT X3 (14/11/2026) — projet d'extension : bloc « maison existante conservée » (la mention du worker n'est pas répétée).
+import { avertissementsSansConservation, existantDuTravail, type ExistantTravail } from './extensionMaison.ts';
 
 export const OUTIL_LANCER_RENDU = 'studio_lancer_rendu';
 export const OUTIL_ETAT_RENDU = 'studio_etat_rendu';
@@ -155,6 +157,8 @@ export interface VueCarteSuivi {
    * la source à afficher sous l'image, atelier « Ajuster le placement ». null pour les autres cas.
    */
   image: LibelleImage | null;
+  /** LOT X3 — projet d'extension : maison existante conservée, extension demandée, refus éventuels ; null sinon. */
+  existant: ExistantTravail | null;
 }
 
 const QUOI: Record<TypeTravail, string> = { film: 'Le film', visite360: 'La visite 360°', image: 'L’image' };
@@ -166,7 +170,7 @@ const QUOI: Record<TypeTravail, string> = { film: 'Le film', visite360: 'La visi
 export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi, maintenant: number, introuvable = false): VueCarteSuivi {
   const type = travail?.type ?? indice.type;
   const libelle = type ? LIBELLES_TYPE[type] : 'Rendu Studio';
-  const base = { progression: null, details: [] as string[], alerte: null, omis: null, avertissements: [] as string[], image: null };
+  const base = { progression: null, details: [] as string[], alerte: null, omis: null, avertissements: [] as string[], image: null, existant: existantDuTravail(travail) };
   if (!travail) {
     return introuvable
       ? { ...base, etat: 'introuvable', actif: false, titre: libelle, pastille: 'Introuvable', phrase: 'Ce rendu n’est plus accessible depuis votre compte.' }
@@ -210,7 +214,7 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
         ...base, etat: 'termine', actif: false, titre: `${image ? image.titre : libelle} — prêt${travail.type === 'film' ? '' : 'e'}`, pastille: 'Prêt', image,
         phrase: travail.resultat ? phraseSuivi(travail) : `${quoi} est indiqué${travail.type === 'film' ? '' : 'e'} comme terminé${travail.type === 'film' ? '' : 'e'}, mais aucun fichier n’est lisible dans le résultat.`,
         omis: phraseElementsOmis(travail.elements_omis),
-        avertissements: avertissementsSansMention(travail.resultat?.avertissements ?? [], image?.effacement ?? null),
+        avertissements: avertissementsSansConservation(avertissementsSansMention(travail.resultat?.avertissements ?? [], image?.effacement ?? null), base.existant),
       };
     }
     case 'echec':

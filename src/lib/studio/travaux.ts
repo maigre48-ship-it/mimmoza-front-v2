@@ -24,7 +24,8 @@ export * from './manifesteVisite';
 
 export const BUCKET_RENDUS = 'studio-rendus';
 export const BUCKET_VISITES = 'visites';
-const COLONNES = 'id,conversation_id,type,statut,progression,etape,options,resultat,elements_omis,erreur,cree_le,maj_le,demarre_le,termine_le';
+// LOT X3 : `projet_extension` (fiche.projet_extension, contrat X0) pour la carte de résultat d'un projet d'extension.
+const COLONNES = 'id,conversation_id,type,statut,progression,etape,options,resultat,elements_omis,erreur,cree_le,maj_le,demarre_le,termine_le,projet_extension:fiche->projet_extension';
 const SONDAGE_MS = 5000;
 
 export type Reponse<T> = { disponible: true; valeur: T } | { disponible: false };

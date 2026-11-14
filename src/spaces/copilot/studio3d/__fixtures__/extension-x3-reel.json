@@ -1,0 +1,1051 @@
+{
+ "_provenance": "LOT X3 (14/11/2026). (1) `bdtopo` : copie VERBATIM de mimmozia-studio/tests/fixtures/bdtopo-existants-extension.json @ 0d3a044 (BD TOPO IGN, WFS Géoplateforme, essais réels des 11 et 12/11/2026, Licence Ouverte Etalab 2.0, © IGN – BD TOPO®). (2) `sites` : contour et façade sur voie DÉCLARÉS dans mimmozia-studio/worker/outils/sites/<idu>.json (cadastre API Carto IGN relevé le 12/11/2026). (3) `conceptionP0646` : ligne agent_conceptions 914d4bdd-… (idu, commune, parcelle avec voisines, regles_plu) lue en LECTURE SEULE dans Supabase production le 14/11/2026 ; aucune donnée personnelle.",
+ "bdtopo": {
+  "_provenance": "Extrait VERBATIM (attributs BD TOPO complets, format VoisinageIGN.batiments) des fichiers bdtopo.json écrits par worker/outils/essai-photomontage-rue.mts lors des essais réels des 11 et 12/11/2026 (output/photomontage-rue/<essai>/bdtopo.json, service WFS Géoplateforme IGN, BD TOPO, Licence Ouverte Etalab 2.0, © IGN – BD TOPO®). Retenus : bâtiments sur la parcelle ou à moins de 3 m de son contour (sites Montfermeil P0646 et O0521, Montreuil AS0249) ; et, à Trappes AX0129, les 3 bâtiments dont l altitude maximale du toit est publiée (cas faîtage mesuré). Lot X1, 13/11/2026.",
+  "sites": [
+   {
+    "idu": "930470000P0646",
+    "essai": "essai-930470000P0646-20261112-103342",
+    "recupereLe": "2026-11-12T10:33:42.188Z",
+    "contourWgs84": [
+     [
+      2.54999713,
+      48.89137322
+     ],
+     [
+      2.55000455,
+      48.8913987
+     ],
+     [
+      2.55005347,
+      48.89170321
+     ],
+     [
+      2.55031807,
+      48.89168585
+     ],
+     [
+      2.55031109,
+      48.89164113
+     ],
+     [
+      2.55030398,
+      48.89159623
+     ],
+     [
+      2.55026501,
+      48.89135489
+     ]
+    ],
+    "surParcelle": [
+     "BATIMENT0000000312986202"
+    ],
+    "batiments": [
+     {
+      "id": "BATIMENT0000000312986100",
+      "anneaux": [
+       [
+        [
+         667027.6,
+         6865835.605
+        ],
+        [
+         667027,
+         6865830.605
+        ],
+        [
+         667029.4,
+         6865830.405
+        ],
+        [
+         667029.3,
+         6865829.705
+        ],
+        [
+         667029.8,
+         6865829.705
+        ],
+        [
+         667034.1,
+         6865829.305
+        ],
+        [
+         667034.2,
+         6865830.005
+        ],
+        [
+         667037,
+         6865829.705
+        ],
+        [
+         667037.7,
+         6865836.205
+        ],
+        [
+         667034.9,
+         6865836.505
+        ],
+        [
+         667034.8,
+         6865835.305
+        ],
+        [
+         667027.6,
+         6865836.105
+        ]
+       ]
+      ],
+      "hauteurM": 4.9,
+      "etages": 1,
+      "altitudeSolM": 116,
+      "altitudeToitMinM": 120.9,
+      "altitudeToitMaxM": null,
+      "usage": "Annexe",
+      "nature": "Indifférenciée",
+      "legere": false,
+      "dateModification": "2019-03-15T14:47:12.549Z"
+     },
+     {
+      "id": "BATIMENT0000000312986102",
+      "anneaux": [
+       [
+        [
+         667026.5,
+         6865825.705
+        ],
+        [
+         667029.5,
+         6865825.405
+        ],
+        [
+         667029.8,
+         6865829.705
+        ],
+        [
+         667029.3,
+         6865829.705
+        ],
+        [
+         667029.4,
+         6865830.405
+        ],
+        [
+         667027,
+         6865830.605
+        ]
+       ]
+      ],
+      "hauteurM": null,
+      "etages": null,
+      "altitudeSolM": 116,
+      "altitudeToitMinM": null,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": true,
+      "dateModification": "2022-06-24T16:58:34.954Z"
+     },
+     {
+      "id": "BATIMENT0000000312986103",
+      "anneaux": [
+       [
+        [
+         667027.6,
+         6865836.105
+        ],
+        [
+         667034.8,
+         6865835.305
+        ],
+        [
+         667034.9,
+         6865836.505
+        ],
+        [
+         667035,
+         6865837.005
+        ],
+        [
+         667027.8,
+         6865837.805
+        ]
+       ]
+      ],
+      "hauteurM": null,
+      "etages": null,
+      "altitudeSolM": 116,
+      "altitudeToitMinM": null,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": true,
+      "dateModification": "2022-06-24T16:58:34.954Z"
+     },
+     {
+      "id": "BATIMENT0000000312986202",
+      "anneaux": [
+       [
+        [
+         667008.3,
+         6865820.905
+        ],
+        [
+         667007.1,
+         6865810.705
+        ],
+        [
+         667018.9,
+         6865809.305
+        ],
+        [
+         667019.8,
+         6865817.305
+        ],
+        [
+         667012,
+         6865818.205
+        ],
+        [
+         667012.2,
+         6865820.405
+        ]
+       ]
+      ],
+      "hauteurM": 5,
+      "etages": 2,
+      "altitudeSolM": 115.8,
+      "altitudeToitMinM": 120.8,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": false,
+      "dateModification": "2019-03-15T14:47:12.549Z"
+     }
+    ]
+   },
+   {
+    "idu": "930470000O0521",
+    "essai": "essai-930470000O0521-20261112-103415",
+    "recupereLe": "2026-11-12T10:34:15.780Z",
+    "contourWgs84": [
+     [
+      2.55004091,
+      48.89082121
+     ],
+     [
+      2.55004381,
+      48.89084874
+     ],
+     [
+      2.55011639,
+      48.89127106
+     ],
+     [
+      2.55025382,
+      48.89126069
+     ],
+     [
+      2.55018178,
+      48.89085402
+     ],
+     [
+      2.55017546,
+      48.89081191
+     ]
+    ],
+    "surParcelle": [
+     "BATIMENT0000000312986205",
+     "BATIMENT0000000312986203",
+     "BATIMENT0000000312986204"
+    ],
+    "batiments": [
+     {
+      "id": "BATIMENT0000000356502444",
+      "anneaux": [
+       [
+        [
+         667007.3,
+         6865747.805
+        ],
+        [
+         667006.3,
+         6865740.105
+        ],
+        [
+         667016.2,
+         6865738.805
+        ],
+        [
+         667016.1,
+         6865738.405
+        ],
+        [
+         667026.2,
+         6865737.505
+        ],
+        [
+         667026,
+         6865736.605
+        ],
+        [
+         667035.9,
+         6865735.505
+        ],
+        [
+         667036,
+         6865736.405
+        ],
+        [
+         667045.4,
+         6865735.305
+        ],
+        [
+         667045.6,
+         6865737.205
+        ],
+        [
+         667041.5,
+         6865737.705
+        ],
+        [
+         667041.6,
+         6865738.205
+        ],
+        [
+         667036.3,
+         6865738.405
+        ],
+        [
+         667036.8,
+         6865743.905
+        ],
+        [
+         667017.2,
+         6865746.105
+        ]
+       ]
+      ],
+      "hauteurM": 4.6,
+      "etages": null,
+      "altitudeSolM": 114.7,
+      "altitudeToitMinM": null,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": false,
+      "dateModification": "2022-02-25T12:32:35.811Z"
+     },
+     {
+      "id": "BATIMENT0000000312986205",
+      "anneaux": [
+       [
+        [
+         667021.1,
+         6865778.705
+        ],
+        [
+         667021.3,
+         6865780.205
+        ],
+        [
+         667012.6,
+         6865781.205
+        ],
+        [
+         667012.4,
+         6865779.405
+        ]
+       ]
+      ],
+      "hauteurM": null,
+      "etages": null,
+      "altitudeSolM": 115.3,
+      "altitudeToitMinM": null,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": true,
+      "dateModification": "2022-06-24T16:58:34.954Z"
+     },
+     {
+      "id": "BATIMENT0000000312986203",
+      "anneaux": [
+       [
+        [
+         667021.1,
+         6865778.705
+        ],
+        [
+         667012.4,
+         6865779.405
+        ],
+        [
+         667011.7,
+         6865771.905
+        ],
+        [
+         667013.8,
+         6865771.705
+        ],
+        [
+         667020.2,
+         6865771.105
+        ]
+       ]
+      ],
+      "hauteurM": 6,
+      "etages": 2,
+      "altitudeSolM": 115.3,
+      "altitudeToitMinM": 121.3,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": false,
+      "dateModification": "2022-11-28T18:31:07.891Z"
+     },
+     {
+      "id": "BATIMENT0000000312986204",
+      "anneaux": [
+       [
+        [
+         667020.2,
+         6865771.105
+        ],
+        [
+         667013.8,
+         6865771.705
+        ],
+        [
+         667013.7,
+         6865770.305
+        ],
+        [
+         667020,
+         6865769.405
+        ]
+       ]
+      ],
+      "hauteurM": 5.5,
+      "etages": null,
+      "altitudeSolM": 115.3,
+      "altitudeToitMinM": 120.8,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": true,
+      "dateModification": "2019-01-11T18:33:49.536Z"
+     }
+    ]
+   },
+   {
+    "idu": "93048000AS0249",
+    "essai": "essai-93048000AS0249-20261112-101832",
+    "recupereLe": "2026-11-12T10:18:32.832Z",
+    "contourWgs84": [
+     [
+      2.42844001,
+      48.85710896
+     ],
+     [
+      2.42843963,
+      48.85710617
+     ],
+     [
+      2.42861718,
+      48.8571224
+     ],
+     [
+      2.42864702,
+      48.85704861
+     ],
+     [
+      2.42865136,
+      48.85703784
+     ],
+     [
+      2.42869633,
+      48.85692663
+     ],
+     [
+      2.42873794,
+      48.85682331
+     ],
+     [
+      2.42856396,
+      48.85679244
+     ],
+     [
+      2.42836033,
+      48.85675622
+     ],
+     [
+      2.42839497,
+      48.85710218
+     ],
+     [
+      2.42830804,
+      48.8570997
+     ],
+     [
+      2.42831084,
+      48.85711734
+     ]
+    ],
+    "surParcelle": [
+     "BATIMENT0000000246182554"
+    ],
+    "batiments": [
+     {
+      "id": "BATIMENT0000000246182497",
+      "anneaux": [
+       [
+        [
+         658076.3,
+         6862050.105
+        ],
+        [
+         658077,
+         6862050.105
+        ],
+        [
+         658084.4,
+         6862052.205
+        ],
+        [
+         658090.8,
+         6862053.905
+        ],
+        [
+         658096,
+         6862055.305
+        ],
+        [
+         658099.4,
+         6862056.205
+        ],
+        [
+         658097.8,
+         6862061.305
+        ],
+        [
+         658091.4,
+         6862059.605
+        ],
+        [
+         658074.8,
+         6862055.005
+        ]
+       ]
+      ],
+      "hauteurM": 3.6,
+      "etages": 1,
+      "altitudeSolM": 65.1,
+      "altitudeToitMinM": 68.7,
+      "altitudeToitMaxM": null,
+      "usage": "Annexe",
+      "nature": "Indifférenciée",
+      "legere": false,
+      "dateModification": "2019-03-15T14:47:12.549Z"
+     },
+     {
+      "id": "BATIMENT0000000246182554",
+      "anneaux": [
+       [
+        [
+         658054.3,
+         6862044.205
+        ],
+        [
+         658053.3,
+         6862034.505
+        ],
+        [
+         658053.1,
+         6862032.205
+        ],
+        [
+         658059.8,
+         6862031.505
+        ],
+        [
+         658061.5,
+         6862031.405
+        ],
+        [
+         658060.8,
+         6862025.005
+        ],
+        [
+         658059.3,
+         6862025.205
+        ],
+        [
+         658052.5,
+         6862025.905
+        ],
+        [
+         658051.3,
+         6862013.405
+        ],
+        [
+         658050.9,
+         6862009.405
+        ],
+        [
+         658050.7,
+         6862007.505
+        ],
+        [
+         658058.2,
+         6862009.505
+        ],
+        [
+         658072.9,
+         6862013.405
+        ],
+        [
+         658073.1,
+         6862013.405
+        ],
+        [
+         658085.9,
+         6862016.705
+        ],
+        [
+         658084.2,
+         6862023.205
+        ],
+        [
+         658075.4,
+         6862021.105
+        ],
+        [
+         658077.4,
+         6862042.005
+        ],
+        [
+         658074.8,
+         6862042.205
+        ],
+        [
+         658074.9,
+         6862043.805
+        ],
+        [
+         658062.8,
+         6862045.005
+        ],
+        [
+         658062.6,
+         6862043.405
+        ],
+        [
+         658060.7,
+         6862043.605
+        ]
+       ]
+      ],
+      "hauteurM": 20.2,
+      "etages": null,
+      "altitudeSolM": 64.1,
+      "altitudeToitMinM": 84.3,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": false,
+      "dateModification": "2019-01-11T19:12:57.323Z"
+     },
+     {
+      "id": "BATIMENT0000000246182555",
+      "anneaux": [
+       [
+        [
+         658054.3,
+         6862044.505
+        ],
+        [
+         658054.6,
+         6862047.705
+        ],
+        [
+         658054.1,
+         6862047.705
+        ],
+        [
+         658050.8,
+         6862047.605
+        ],
+        [
+         658050.4,
+         6862045.005
+        ]
+       ]
+      ],
+      "hauteurM": null,
+      "etages": null,
+      "altitudeSolM": 64.1,
+      "altitudeToitMinM": null,
+      "altitudeToitMaxM": null,
+      "usage": "Résidentiel",
+      "nature": "Indifférenciée",
+      "legere": true,
+      "dateModification": "2022-07-30T21:16:38.938Z"
+     }
+    ]
+   }
+  ]
+ },
+ "sites": {
+  "930470000P0646": {
+   "contour": [
+    [
+     2.54999713,
+     48.89137322
+    ],
+    [
+     2.55000455,
+     48.8913987
+    ],
+    [
+     2.55005347,
+     48.89170321
+    ],
+    [
+     2.55031807,
+     48.89168585
+    ],
+    [
+     2.55031109,
+     48.89164113
+    ],
+    [
+     2.55030398,
+     48.89159623
+    ],
+    [
+     2.55026501,
+     48.89135489
+    ]
+   ],
+   "facadesVoie": [
+    [
+     [
+      2.54999713,
+      48.89137322
+     ],
+     [
+      2.55026501,
+      48.89135489
+     ]
+    ]
+   ],
+   "sourceFacade": "Contour : cadastre API Carto IGN (apicarto.ign.fr/api/cadastre/parcelle), relevé le 12/11/2026. Limite sud (≈ 19,7 m) DÉCLARÉE sur l'avenue des Marguerites : la photo Panoramax IGN e8ff453d (06/03/2026) prise sur l'avenue est au sud de cette limite ; non vérifiée par les parcelles voisines. Pavillon BD TOPO BATIMENT0000000312986202 (5 m, 2 niveaux) sur la parcelle. Site d'essai interne lot P4."
+  },
+  "930470000O0521": {
+   "contour": [
+    [
+     2.55004091,
+     48.89082121
+    ],
+    [
+     2.55004381,
+     48.89084874
+    ],
+    [
+     2.55011639,
+     48.89127106
+    ],
+    [
+     2.55025382,
+     48.89126069
+    ],
+    [
+     2.55018178,
+     48.89085402
+    ],
+    [
+     2.55017546,
+     48.89081191
+    ]
+   ],
+   "facadesVoie": [
+    [
+     [
+      2.55025382,
+      48.89126069
+     ],
+     [
+      2.55011639,
+      48.89127106
+     ]
+    ]
+   ],
+   "sourceFacade": "Contour : cadastre API Carto IGN (apicarto.ign.fr/api/cadastre/parcelle), relevé le 12/11/2026. Limite nord (≈ 10,1 m) DÉCLARÉE sur l'avenue des Marguerites, dans l'alignement de la limite nord de 930470000O0294 (voisine ouest) ; non vérifiée par les parcelles voisines. Maison BD TOPO BATIMENT0000000312986203 (6 m, 2 niveaux) sur la parcelle. Site d'essai interne lot P4."
+  }
+ },
+ "conceptionP0646": {
+  "idu": "930470000P0646",
+  "commune": null,
+  "parcelle": {
+   "idu": "930470000P0646",
+   "source": "API Carto IGN — cadastre (contenance cadastrale)",
+   "voisines": {
+    "source": "API Carto IGN — cadastre (parcelles de l’emprise de la parcelle élargie de 2 m)",
+    "statut": "disponibles",
+    "parcelles": [
+     {
+      "idu": "930470000P0359",
+      "geometrie": {
+       "type": "MultiPolygon",
+       "coordinates": [
+        [
+         [
+          [
+           2.55032497,
+           48.89172302
+          ],
+          [
+           2.55033356,
+           48.89177081
+          ],
+          [
+           2.55033838,
+           48.8917978
+          ],
+          [
+           2.55046993,
+           48.89178859
+          ],
+          [
+           2.5504621,
+           48.89173145
+          ],
+          [
+           2.55045645,
+           48.89169159
+          ],
+          [
+           2.55044672,
+           48.89163328
+          ],
+          [
+           2.55042388,
+           48.89149902
+          ],
+          [
+           2.55041285,
+           48.89143368
+          ],
+          [
+           2.55040869,
+           48.89141029
+          ],
+          [
+           2.55039779,
+           48.8913455
+          ],
+          [
+           2.55026501,
+           48.89135489
+          ],
+          [
+           2.55030398,
+           48.89159623
+          ],
+          [
+           2.55031109,
+           48.89164113
+          ],
+          [
+           2.55031807,
+           48.89168585
+          ],
+          [
+           2.55031898,
+           48.89169008
+          ],
+          [
+           2.55032172,
+           48.89170529
+          ],
+          [
+           2.55032497,
+           48.89172302
+          ]
+         ]
+        ]
+       ]
+      }
+     },
+     {
+      "idu": "930470000P0911",
+      "geometrie": {
+       "type": "MultiPolygon",
+       "coordinates": [
+        [
+         [
+          [
+           2.5499175,
+           48.89175063
+          ],
+          [
+           2.55032497,
+           48.89172302
+          ],
+          [
+           2.55032172,
+           48.89170529
+          ],
+          [
+           2.55031898,
+           48.89169008
+          ],
+          [
+           2.55031807,
+           48.89168585
+          ],
+          [
+           2.55005347,
+           48.89170321
+          ],
+          [
+           2.55000455,
+           48.8913987
+          ],
+          [
+           2.54999713,
+           48.89137322
+          ],
+          [
+           2.54985726,
+           48.89138321
+          ],
+          [
+           2.54986425,
+           48.89142551
+          ],
+          [
+           2.5499175,
+           48.89175063
+          ]
+         ]
+        ]
+       ]
+      }
+     }
+    ]
+   },
+   "geometrie": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.54999713,
+        48.89137322
+       ],
+       [
+        2.55000455,
+        48.8913987
+       ],
+       [
+        2.55005347,
+        48.89170321
+       ],
+       [
+        2.55031807,
+        48.89168585
+       ],
+       [
+        2.55031109,
+        48.89164113
+       ],
+       [
+        2.55030398,
+        48.89159623
+       ],
+       [
+        2.55026501,
+        48.89135489
+       ],
+       [
+        2.54999713,
+        48.89137322
+       ]
+      ]
+     ]
+    ]
+   },
+   "surface_m2": 750
+  },
+  "regles_plu": [
+   {
+    "cle": "hauteur_max_m",
+    "texte": "Hauteur max 9 m (typepsc39, prescription GPU zone UC)",
+    "unite": "m",
+    "source": "get_prescriptions_urbanisme GPU",
+    "statut": "estime",
+    "valeur": 9
+   },
+   {
+    "cle": "niveaux_max",
+    "unite": "niveaux",
+    "source": "aucune source trouvée",
+    "statut": "manquant",
+    "valeur": null
+   },
+   {
+    "cle": "emprise_sol_max_pct",
+    "texte": "Emprise au sol max 40 % (typepsc38, prescription GPU zone UC)",
+    "unite": "%",
+    "source": "get_prescriptions_urbanisme GPU",
+    "statut": "estime",
+    "valeur": 40
+   },
+   {
+    "cle": "recul_voie_m",
+    "texte": "Recul min 4 m par rapport à la voie (prescription GPU zone UC)",
+    "unite": "m",
+    "source": "get_prescriptions_urbanisme GPU",
+    "statut": "estime",
+    "valeur": 4
+   },
+   {
+    "cle": "recul_limites_m",
+    "unite": "m",
+    "source": "aucune source trouvée",
+    "statut": "manquant",
+    "valeur": null
+   },
+   {
+    "cle": "recul_limites_formule",
+    "unite": "",
+    "source": "aucune source trouvée",
+    "statut": "manquant",
+    "valeur": null
+   },
+   {
+    "cle": "pleine_terre_min_pct",
+    "texte": "Pleine terre / espaces verts min 45 % (typepsc42, prescription GPU zone UC)",
+    "unite": "%",
+    "source": "get_prescriptions_urbanisme GPU",
+    "statut": "estime",
+    "valeur": 45
+   },
+   {
+    "cle": "stationnement_par_logement",
+    "unite": "places/logement",
+    "source": "aucune source trouvée",
+    "statut": "manquant",
+    "valeur": null
+   },
+   {
+    "cle": "mixite_sociale_pct",
+    "unite": "%",
+    "source": "aucune source trouvée",
+    "statut": "manquant",
+    "valeur": null
+   }
+  ]
+ }
+}

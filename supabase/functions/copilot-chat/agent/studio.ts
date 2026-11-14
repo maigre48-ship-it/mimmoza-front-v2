@@ -67,6 +67,8 @@ import { ligneHauteurFiche, poserVolumeSurVoie } from '../../../../src/spaces/co
 import { reglesFicheDepuisReglesLues } from '../../../../src/spaces/copilot/studio3d/reglesFiche.ts';
 import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
+// LOT X3 : projet d'extension de la conversation (maison conservée) — rendu fermé tant que le lot X4 n'est pas livré.
+import { ficheAvecProjetExtension, MESSAGE_RENDU_EXTENSION_FERME, optionsAvecExistant, projetDesSorties, RENDU_EXTENSION_OUVERT } from './extension.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -1182,6 +1184,11 @@ export interface DepotStudio {
    * Facultatif (dépôt de test) ; ne lève jamais (échec → `{ ok: false, raison }`, couverture « non vérifiée »).
    */
   couverturePhotoRue?(contour: LonLat[]): Promise<ResultatCouverture>;
+  /**
+   * LOT X3 — sorties `data` des appels du parcours « extension de maison » de la conversation (copilot_tool_calls),
+   * du plus récent au plus ancien. Facultatif (dépôt de test) ; erreur de lecture → [].
+   */
+  sortiesExtension?(userId: string, conversationId: string): Promise<Record<string, unknown>[]>;
 }
 
 export interface EnvStudio {
@@ -1414,6 +1421,12 @@ async function devisDeLaConversation(
   return null;
 }
 
+/** LOT X3 : projet d'extension VALIDE de la conversation (dernier parcours terminé), ou null. Ne lève jamais. */
+async function projetExtensionConversation(env: EnvStudio, uid: string): Promise<ReturnType<typeof projetDesSorties>> {
+  if (!env.depot.sortiesExtension || !env.conversationId) return null;
+  try { return projetDesSorties(await env.depot.sortiesExtension(uid, env.conversationId)); } catch { return null; }
+}
+
 async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (!env.secret) return erreur('Rendus indisponibles : secret de devis non configuré côté serveur.', 'not_configured');
   if (!env.conversationId) return erreur('Ouvrez d’abord une conversation : le rendu est rattaché au chat.');
@@ -1442,7 +1455,11 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     if (deja) return { status: 'ok', source: SOURCE_STUDIO, data: { deja_lance: true, ...vueTravail(deja) }, message: 'Ce devis a déjà été lancé : rien n’a été relancé.' +
         ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' +
         MESSAGE_ETAT_EN_DIRECT };
-    if (j.t === 'image' && (await env.depot.typeRenduAutorise('image', j.o)) === false) return fondPhoto(j.o) ? refusFondPhoto() : refusImage();
+    if (j.t === 'image' && (await env.depot.typeRenduAutorise('image', j.o)) === false) {
+      // LOT X3 : option `existant` refusée par une base sans la migration 20261114120000.
+      if (j.o.existant !== undefined) return erreur('L’image d’une extension (maison conservée) n’est pas encore activée dans la base (migration 20261114120000_studio_image_existant non appliquée). RIEN N’A ÉTÉ LANCÉ.', 'not_configured');
+      return fondPhoto(j.o) ? refusFondPhoto() : refusImage();
+    }
     let fiche: Obj;
     if (j.s.genre === 'version') {
       fiche = { version: 1, conception: { conception_id: j.s.conception_id, n: j.s.n, modele_ref: j.s.modele_ref }, titre: `Conception — version ${j.s.n}`, conversation_id: j.c, origine: 'mimmo', ...(briefDuJeton(j.b) ? { brief_rendu: briefDuJeton(j.b) } : {}) };
@@ -1456,6 +1473,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }
+    // LOT X3 : projet d'extension (maison conservée) — seulement quand le rendu d'extension est ouvert (lot X4).
+    const ext = j.o.existant !== undefined ? await projetExtensionConversation(env, uid) : null;
+    if (j.o.existant !== undefined && !ext) return erreur('Le projet d’extension de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ.');
+    if (ext) fiche = ficheAvecProjetExtension(fiche, ext.projet);
     fiche.devis_id = j.id;
     let t: TravailLu;
     try {
@@ -1495,6 +1516,9 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   }
   const src = await resoudreSource(input, env);
   if (!src.ok) return src.res;
+  // LOT X3 : un projet d'EXTENSION (maison conservée) ne se rend pas comme un bâtiment neuf : fermé jusqu'au lot X4.
+  const extension = await projetExtensionConversation(env, uid);
+  if (extension && !RENDU_EXTENSION_OUVERT) return erreur(MESSAGE_RENDU_EXTENSION_FERME, 'partial');
   if (type === 'image' && fondPhoto(opts0.valeur) && src.source.genre !== 'preparation') {
     return erreur('L’image sur une photo de rue ne se fait pour l’instant qu’à partir de la 3D préparée par Mimmo (la fiche d’une version enregistrée ne transmet pas la façade sur voie). RIEN N’A ÉTÉ LANCÉ. Propose l’image d’étude, ou la 3D préparée (source « preparation »).');
   }
@@ -1539,8 +1563,12 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     }
     if (!(type === 'image' && brief.ambiance === 'nuit')) optsEntree = { ...(estObj(optionsDemandees) ? optionsDemandees : {}), ambiance: brief.ambiance };
   }
-  const opts = validerOptionsRendu(type, optsEntree, uid);
-  if (!opts.ok) return erreur(opts.erreur);
+  const opts0b = validerOptionsRendu(type, optsEntree, uid);
+  if (!opts0b.ok) return erreur(opts0b.erreur);
+  // LOT X3 : image d'un projet d'extension → option `existant` (refusée avec une zone à effacer).
+  const avecExistant = extension && type === 'image' ? optionsAvecExistant(opts0b.valeur, extension.existant) : null;
+  if (avecExistant && 'erreur' in avecExistant) return erreur(`${avecExistant.erreur} RIEN N’A ÉTÉ LANCÉ.`);
+  const opts: { ok: true; valeur: Obj } = avecExistant && 'valeur' in avecExistant ? { ok: true, valeur: avecExistant.valeur } : { ok: true, valeur: opts0b.valeur };
   if (brief && brief.ambiance !== opts.valeur.ambiance) {
     brief = { ...brief, ambiance: opts.valeur.ambiance as BriefRendu['ambiance'], defauts: ambianceExplicite ? brief.defauts.filter((c) => c !== 'ambiance') : brief.defauts };
   }
@@ -1900,6 +1928,17 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
         .order('created_at', { ascending: false }).limit(DEVIS_RELUS_MAX);
       if (error || !Array.isArray(data)) return false;
       return data.some((l) => (l as { tool_output?: { data?: { brief_requis?: unknown } } }).tool_output?.data?.brief_requis === true);
+    },
+    async sortiesExtension(userId, conversationId) {
+      // LOT X3 : lecture serveur bornée à l'utilisateur ET à la conversation ; le projet est revalidé (lireProjetExtension).
+      const { data, error } = await admin.from('copilot_tool_calls').select('tool_output')
+        .eq('user_id', userId).eq('conversation_id', conversationId).eq('tool_name', 'extension_maison')
+        .order('created_at', { ascending: false }).limit(10);
+      if (error || !Array.isArray(data)) return [];
+      return data.flatMap((l) => {
+        const o = (l as { tool_output?: { status?: unknown; data?: unknown } }).tool_output;
+        return o?.status === 'ok' && estObj(o.data) ? [o.data as Record<string, unknown>] : [];
+      });
     },
     async briefsMessages(userId, conversationId) {
       // Lecture serveur (service) bornée à l'utilisateur ET à la conversation ; le bloc est revalidé par briefDuMessage.

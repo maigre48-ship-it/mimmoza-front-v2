@@ -26,6 +26,9 @@ import {
   dernierePreparation, LIBELLES_VERDICT, lignesCarte, lirePreparationStockee, ouverturePreparation, renduDemande, type MessageOutils,
 } from './preparationStudio';
 import './VolumeParcelle.css';
+// LOT X3 (14/11/2026) — Dossier 3D : maison existante ESTIMÉE (statuts) et extension du parcours de Mimmo.
+import { CarteExtensionMaison } from './CarteExtensionMaison';
+import { derniereVueExtension } from './extensionMaison';
 
 type OuvrirStudio = (draft: JarvisDraft, conversationId: string, terrain?: ConfirmedTerrain & { adresse?: string | null }) => Promise<IssueOuvertureStudio>;
 
@@ -38,6 +41,7 @@ export function PreparationStudioSection({ messages, conversationId, onOpenStudi
 }) {
   const ref = useMemo(() => dernierePreparation(messages), [messages]);
   const rendus = useMemo(() => suiviRendus && renduDemande(messages), [messages, suiviRendus]);
+  const extension = useMemo(() => derniereVueExtension(messages), [messages]);
   const [ouverture, setOuverture] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -58,8 +62,9 @@ export function PreparationStudioSection({ messages, conversationId, onOpenStudi
     } finally { setOuverture(false); }
   };
 
-  if (!ref && !rendus) return null;
+  if (!ref && !rendus && !extension) return null;
   return <section className="mzia-volume" aria-label="3D préparée par Mimmo">
+    {extension && <CarteExtensionMaison vue={extension} dossier />}
     {ref && <>
       <header className="mzia-volume__tete">
         <h3><span className="mzia-volume__ref">3D préparée par Mimmo</span> <span className="mzia-volume__zone">{ref.idu}{ref.commune ? ` · ${ref.commune}` : ''}</span></h3>

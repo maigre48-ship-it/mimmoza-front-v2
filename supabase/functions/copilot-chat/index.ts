@@ -67,6 +67,11 @@ import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUT
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
 import { briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
+// LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
+import {
+  CONSIGNE_EXTENSION, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
+  OUTIL_EXTENSION_MAISON_DEF, reponseAuParcours, suiteDuParcours, type EnvExtension,
+} from './agent/extension.ts';
 // Lot choix-cliquables : questions à choix fermés → bloc ```mimmoza-choix (puces cliquables du front).
 import { CONSIGNE_CHOIX } from './agent/choix.ts';
 import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mission.ts';
@@ -4551,6 +4556,8 @@ const TOOLS: ToolDef[] = [
   ...OUTILS_AGENT_CHAT,
   // Lot E1 : outils Studio (vertical promoteur, proposés quand le tour parle de 3D / rendu).
   ...OUTILS_STUDIO_CHAT,
+  // LOT X3 : parcours « extension de maison » (proposé seulement quand le tour en parle ou le poursuit).
+  OUTIL_EXTENSION_MAISON_DEF,
 ];
 
 /**
@@ -4671,9 +4678,25 @@ async function executeTool(
       // Lot E1 : identité = JWT vérifié ; écritures avec le client UTILISATEUR (RLS).
       return ((await executerOutilStudio(name, input, envStudio(ctx, auth)))
         ?? { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` }) as ToolResult;
+    case OUTIL_EXTENSION_MAISON:
+      // LOT X3 : identité = JWT vérifié ; réponses lues dans le message REÇU (jamais dans les paramètres du modèle).
+      return (await executerOutilExtension(input, envExtension(ctx, auth))) as ToolResult;
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
   }
+}
+
+/** LOT X3 : environnement du parcours « extension de maison » pour une requête du chat. */
+function envExtension(ctx: MimmozaContext, auth: AuthCtx | null): EnvExtension {
+  const brut = ctx as unknown as Record<string, unknown>;
+  return {
+    userId: auth?.userId ?? null,
+    conversationId: typeof brut.conversation_id === 'string' ? brut.conversation_id : null,
+    // Message REÇU de l'utilisateur, posé par le handler (jamais une valeur du modèle).
+    texteUtilisateur: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '',
+    depot: depotExtensionSupabase(getAdmin(), auth?.authHeader ? getUserClient(auth.authHeader) : null),
+    fetch,
+  };
 }
 
 /** Lot E1 : environnement des outils Studio pour une requête du chat. */
@@ -10783,7 +10806,7 @@ async function runOrchestrator(params: {
     : buildSystemPrompt(ctx, mode);
   const system = consigneCarte ? `${systemBase}\n\n${consigneCarte}` : systemBase;
   const availableTools = toolsForMode(mode)
-    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name)));
+    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
   // Lot E1 : outils Studio proposés quand le tour (ou la réponse précédente : devis à confirmer) parle de 3D / rendu.
@@ -10791,10 +10814,17 @@ async function runOrchestrator(params: {
   const studioAuTour = agentDisponible(ctx.vertical)
     && (Boolean(briefCarte) || Boolean(formeCarte) || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
+  // LOT X3 : parcours « extension de maison » — demandé dans ce message, ou poursuivi (dernière question de Mimmo
+  // issue du parcours ET réponse qui y répond). Dans ces deux cas, le premier tour est IMPOSÉ sur l'outil.
+  const texteAssistantPrecedent = lastAssistantMessage ? extractText(lastAssistantMessage.content) : '';
+  const parcoursEnCours = agentDisponible(ctx.vertical) && suiteDuParcours(texteAssistantPrecedent);
+  const extensionAuTour = agentDisponible(ctx.vertical)
+    && (detecterIntentionExtension(userText).extension || (parcoursEnCours && reponseAuParcours(userText)));
   const selectedNames = new Set([
     ...selection.toolNames,
     ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
     ...(studioAuTour ? NOMS_OUTILS_STUDIO : []),
+    ...(extensionAuTour || parcoursEnCours ? [OUTIL_EXTENSION_MAISON] : []),
     // Lot INT-10 : l'architecte d'intérieur reste proposé tant que le tour (ou la question précédente) parle d'aménagement.
     ...(interieurPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? ['amenager_interieur'] : []),
   ]);
@@ -10813,12 +10843,15 @@ async function runOrchestrator(params: {
     : tools;
   // Lot choix-cliquables : outils Studio au tour → la question d'habillage n'est jamais posée par le modèle.
   const systemStudio = studioAuTour ? `${system}\n\n${CONSIGNE_RENDU_STUDIO}` : system;
+  const systemExtension = !intentionMission.mission && (extensionAuTour || parcoursEnCours) ? `${systemStudio}\n\n${CONSIGNE_EXTENSION}` : systemStudio;
   const systemTour = intentionMission.mission
     ? `${systemStudio}\n\n${consigneIntentionMission(intentionMission)}`
-    : systemStudio;
+    : systemExtension;
   let missionProposee = false;
   let missionForcee = false;   // un seul tour imposé, même si l'outil échoue
   let renduForce = false;      // lot choix-cliquables : un seul tour imposé sur studio_lancer_rendu
+  let extensionForcee = false; // LOT X3 : un seul tour imposé sur le parcours d'extension
+  let blocChoixExtension: string | null = null; // LOT X3 : questions du parcours, placées à la toute fin de la réponse
   let dernierTexte = '';
 
   const messages = [...params.messages];
@@ -10897,7 +10930,11 @@ async function runOrchestrator(params: {
     if (forcerMission) missionForcee = true;
     // Lot choix-cliquables (incident du 06/11) : 3D préparée dans cette requête + rendu typé demandé, sans
     // appel à studio_lancer_rendu → tour IMPOSÉ sur l'outil (carte « Brief créatif » ou devis ; rien n'est lancé).
-    const forcerRendu = !forcerMission && doitForcerLancerRendu({
+    // LOT X3 : demande d'extension (ou réponse au parcours) → premier tour IMPOSÉ sur l'outil (le serveur lit, calcule, affiche).
+    const forcerExtension = !forcerMission && !intentionMission.mission && extensionAuTour && !extensionForcee && iter === 0
+      && toolsDuTour.some((tool) => tool.name === OUTIL_EXTENSION_MAISON);
+    if (forcerExtension) extensionForcee = true;
+    const forcerRendu = !forcerMission && !forcerExtension && doitForcerLancerRendu({
       texteUtilisateur: userText, appels: toolCallsLog, dejaForce: renduForce, briefCarte: Boolean(briefCarte),
       outilDisponible: !(mode === 'quick' && rapportParcellaireAffiche) && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu'),
     });
@@ -10906,6 +10943,7 @@ async function runOrchestrator(params: {
       model, system: systemTour, messages,
       tools: mode === 'quick' && rapportParcellaireAffiche ? [] : toolsDuTour,
       toolChoice: forcerMission ? { type: 'tool', name: 'proposer_mission' }
+        : forcerExtension ? { type: 'tool', name: OUTIL_EXTENSION_MAISON }
         : forcerRendu ? { type: 'tool', name: 'studio_lancer_rendu' } : undefined,
       webBudget: webUnavailable || intentionMission.mission ? { search: 0, fetch: 0 }
         : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
@@ -11004,6 +11042,19 @@ async function runOrchestrator(params: {
         // Le rapport factuel est suivi d'une analyse dans tous les modes.
         // En rapide, le tour suivant utilise ces faits sans autre outil.
         let contenuResultat = tronquerSortieOutil(output, aExtraitReglement(output) ? TOOL_OUTPUT_REGLEMENT_MAX_CHARS : TOOL_OUTPUT_MAX_CHARS);
+
+        // LOT X3 : le parcours d'extension AFFICHE lui-même son texte (estimation, verdicts) ; ses questions à choix
+        // sont posées à la toute fin de la réponse. Le modèle ne reçoit qu'une consigne courte : aucun chiffre à réécrire.
+        if (tu.name === OUTIL_EXTENSION_MAISON && output.status === 'ok') {
+          const d = (output as { data?: Record<string, unknown> }).data ?? {};
+          const texte = typeof d.texte_affiche === 'string' ? d.texte_affiche : '';
+          if (texte) {
+            sse.send({ type: 'token', delta: `\n\n${texte}\n\n` });
+            finalText += (finalText ? '\n\n' : '') + texte + '\n\n';
+          }
+          blocChoixExtension = typeof d.bloc_choix === 'string' ? d.bloc_choix : null;
+          contenuResultat = `[TEXTE ET QUESTIONS DÉJÀ AFFICHÉS À L'UTILISATEUR — ne les répète pas]\n${output.message ?? ''}\n[étape du parcours : ${String(d.etape ?? '')}]`;
+        }
 
         if (tu.name === 'get_etude_parcelle' && isOk) {
           const rapportFactuel = renderParcelStudyReport(output);
@@ -11207,6 +11258,12 @@ async function runOrchestrator(params: {
     } catch (e) {
       console.warn('[copilot] filet mission : tour imposé en échec', e);
     }
+  }
+
+  // LOT X3 : questions du parcours d'extension, à la toute fin de la réponse (le front en fait des puces cliquables).
+  if (blocChoixExtension && !finalText.includes(blocChoixExtension)) {
+    sse.send({ type: 'token', delta: `\n\n${blocChoixExtension}` });
+    finalText += `\n\n${blocChoixExtension}`;
   }
 
   // Lot C4 : le modèle ne calcule pas. Une opération posée par écrit sans qu'aucun moteur de calcul n'ait
@@ -11636,6 +11693,8 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).brief_carte = briefDuMessage(payload.message);
     // Lot formes-batiment : même principe pour la forme choisie dans la fiche (bloc ```mimmoza-forme```).
     (effectiveContext as unknown as Record<string,unknown>).forme_carte = formeDuMessage(payload.message);
+    // LOT X3 : le parcours d'extension lit les réponses dans le message REÇU (même principe : jamais persisté).
+    (effectiveContext as unknown as Record<string,unknown>).message_utilisateur = typeof payload.message === 'string' ? payload.message : '';
 
     plan = planLu;
     mode = PLAN_POLICY[plan].mode;

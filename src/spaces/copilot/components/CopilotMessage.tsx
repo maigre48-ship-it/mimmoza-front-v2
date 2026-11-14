@@ -31,6 +31,9 @@ import { devisAAfficher, estAppelDevis } from '../agent/agentLogique';
 import { CarteSuiviRendu } from '../studio3d/CarteSuiviRendu';
 import { appelsSuiviRemplaces, cartesSuivi } from '../studio3d/suiviRenduChat';
 import { CarteBriefCreatif } from '../studio3d/CarteBriefCreatif';
+// LOT X3 (14/11/2026) — parcours « extension de maison » : carte des valeurs et de leurs statuts (calculés par le serveur).
+import { CarteExtensionMaison } from '../studio3d/CarteExtensionMaison';
+import { lireVueExtension, OUTIL_EXTENSION_MAISON } from '../studio3d/extensionMaison';
 // Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
 import { LigneHabillage } from '../studio3d/LigneHabillage';
 // LOT P2 (11/11/2026) — image dans sa rue : carte « Fond de l'image » sous le devis d'une image.
@@ -187,6 +190,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
                 : <CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} />;
               return demande.origine === 'demande' ? brief : <><CopilotApiResultCard call={tc} />{brief}<ChoixFondImage call={tc} demande={demande} messageId={message.id} onSend={onSend} /></>;
             } }
+            if (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running') { const vue = lireVueExtension(tc.output); if (vue) return <CarteExtensionMaison vue={vue} />; }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de

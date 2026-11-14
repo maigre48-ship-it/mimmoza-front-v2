@@ -17,6 +17,8 @@ import { lienVisite, suivreTravail, urlSigneeRendu, type TravailStudio } from '@
 import { fichiersResultat, SONDAGE_SUIVI_CHAT_MS, vueCarteSuivi, type IndiceSuivi } from './suiviRenduChat';
 // LOT P2 (11/11/2026) — image dans sa rue : atelier « Ajuster le placement » puis nouveau travail avec le calage.
 import { AtelierPlacement } from './AtelierPlacement';
+// LOT X3 (14/11/2026) — projet d'extension : « maison existante conservée » et extension demandée.
+import { BlocExistantConserve } from './CarteExtensionMaison';
 import './CarteSuiviRendu.css';
 
 type Liens =
@@ -119,6 +121,7 @@ export function CarteSuiviRendu({ indice }: { indice: IndiceSuivi }) {
         </figure>)}
       </div>}
       {vue.etat === 'termine' && vue.image?.mention && <p className="mz-suivi-rendu__mention">{vue.image.mention}</p>}
+      {vue.existant && <BlocExistantConserve existant={vue.existant} />}
       {vue.etat === 'termine' && vue.image?.effacement && <div className="mz-suivi-rendu__effacement" role="note">
         <p className="mz-suivi-rendu__mention"><strong>{vue.image.effacement.mention}</strong></p>
         {vue.image.effacement.masque && <p className="mz-suivi-rendu__detail">{vue.image.effacement.masque}</p>}
