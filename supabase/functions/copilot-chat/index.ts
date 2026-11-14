@@ -69,7 +69,7 @@ import { briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, depotStudioS
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
-  CONSIGNE_EXTENSION, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
+  CONSIGNE_EXTENSION, DELAI_PATRIMOINE_MS, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
   OUTIL_EXTENSION_MAISON_DEF, reponseAuParcours, suiteDuParcours, type EnvExtension,
 } from './agent/extension.ts';
 // Lot choix-cliquables : questions à choix fermés → bloc ```mimmoza-choix (puces cliquables du front).
@@ -4696,6 +4696,11 @@ function envExtension(ctx: MimmozaContext, auth: AuthCtx | null): EnvExtension {
     texteUtilisateur: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '',
     depot: depotExtensionSupabase(getAdmin(), auth?.authHeader ? getUserClient(auth.authHeader) : null),
     fetch,
+    // LOT X3b : secteur protégé — servitudes GPU (AC1, AC2, AC4) et base Mérimée, mêmes fonctions que les outils du chat.
+    patrimoine: {
+      servitudes: INTERNAL_FUNCTIONS.servitudes ? (corps) => callInternalFunction(INTERNAL_FUNCTIONS.servitudes!, corps, DELAI_PATRIMOINE_MS) : null,
+      merimee: INTERNAL_FUNCTIONS.merimee ? (corps) => callInternalFunction(INTERNAL_FUNCTIONS.merimee!, corps, DELAI_PATRIMOINE_MS) : null,
+    },
   };
 }
 

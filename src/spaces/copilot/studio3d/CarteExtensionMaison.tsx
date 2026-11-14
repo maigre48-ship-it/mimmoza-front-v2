@@ -6,7 +6,7 @@
 // sources. Les questions restent les puces cliquables sous la réponse de Mimmo. Logique : extensionMaison.ts.
 // =============================================================================
 import { Home } from 'lucide-react';
-import { libelleEtape, ligneExtension, ligneSurfaceCreee, type ExistantTravail, type LigneStatut, type VueCarteExtension } from './extensionMaison';
+import { libelleEtape, ligneExtension, ligneSurfaceCreee, type ExistantTravail, type LigneStatut, type VueCarteExtension, type VueSecteur } from './extensionMaison';
 import './CarteExtensionMaison.css';
 
 function Statut({ l }: { l: LigneStatut }) {
@@ -21,6 +21,21 @@ export function LignesStatut({ lignes }: { lignes: readonly LigneStatut[] }) {
   </table>;
 }
 
+/** LOT X3b — pastille « Secteur protégé : oui / non trouvé / non vérifié », avec source et date, et le détail dépliable. */
+export function BlocSecteur({ secteur }: { secteur: VueSecteur }) {
+  return <div className={`mz-ext__bloc mz-ext__secteur is-${secteur.etat}`}>
+    <p><span className={`mz-ext__pastille is-${secteur.etat}`} role="status">{secteur.pastille}</span>
+      {secteur.date && <span className="mz-ext__note"> · consulté le {secteur.date}</span>}</p>
+    {secteur.protections.length > 0 && <ul>{secteur.protections.map(p => <li key={p}>{p}</li>)}</ul>}
+    <details><summary>Architecte des Bâtiments de France, autorisation et délai (indicatif)</summary>
+      <ul>{secteur.lignes.filter(l => !secteur.protections.includes(l)).map(l => <li key={l}>{l}</li>)}</ul>
+      {secteur.consultations.length > 0 && <p className="mz-ext__note">Sources consultées : {secteur.consultations.join(' ; ')}.</p>}
+      <p className="mz-ext__note">{secteur.mention}{' '}
+        {secteur.sources.map((s, i) => <span key={s.url}>{i > 0 ? ' · ' : ''}<a href={s.url} target="_blank" rel="noopener noreferrer">{s.titre}</a></span>)}</p>
+    </details>
+  </div>;
+}
+
 export function CarteExtensionMaison({ vue, dossier = false }: { vue: VueCarteExtension; dossier?: boolean }) {
   const ext = vue.extension;
   const surface = ext ? ligneSurfaceCreee(ext) : null;
@@ -30,6 +45,7 @@ export function CarteExtensionMaison({ vue, dossier = false }: { vue: VueCarteEx
       <strong>{libelleEtape(vue.etape)}</strong>
       <span className="mz-ext__ref">{vue.idu}{vue.commune ? ` · ${vue.commune}` : ''}</span>
     </header>
+    {vue.secteur && <BlocSecteur secteur={vue.secteur} />}
     {vue.maison && <div className="mz-ext__bloc">
       <p className="mz-ext__titre">{vue.maison.conservee === true ? 'Maison existante conservée' : vue.maison.conservee === false ? 'Maison existante démolie (projet neuf)' : 'Maison existante (base des bâtiments de l’IGN)'}</p>
       <LignesStatut lignes={vue.maison.lignes} />

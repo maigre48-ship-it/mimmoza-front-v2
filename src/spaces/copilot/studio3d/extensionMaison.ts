@@ -44,6 +44,51 @@ export interface VueCarteExtension {
   sources: string[];
   /** Projet transmissible (contrat X0 validé) : « Projet enregistré ». */
   projetEnregistre: boolean;
+  /** LOT X3b — secteur protégé (pastille, avis ABF, effet, délai, sources et date) ; null si non évalué. */
+  secteur: VueSecteur | null;
+}
+
+/** LOT X3b — secteur protégé tel que calculé par le serveur (servitudes GPU, base Mérimée). */
+export interface VueSecteur {
+  etat: 'oui' | 'non_trouve' | 'non_verifie';
+  /** « Secteur protégé : oui / non trouvé / non vérifié ». */
+  pastille: string;
+  protections: string[];
+  lignes: string[];
+  /** Services consultés et leur état (« Géoportail de l’urbanisme… : consulté », « base Mérimée… : n’a pas répondu »). */
+  consultations: string[];
+  /** Date de consultation, au format JJ/MM/AAAA. */
+  date: string | null;
+  sources: { titre: string; url: string }[];
+  mention: string;
+}
+
+const ETATS_SECTEUR: Record<string, string> = { oui: 'oui', non_trouve: 'non trouvé', non_verifie: 'non vérifié' };
+const ETAT_VERIF: Record<string, string> = { complete: 'consulté', partielle: 'consulté en partie', echec: 'non consulté (panne)', non_branchee: 'non branché' };
+const URL_SOURCE_SECTEUR = /^https:\/\/www\.(?:service-public\.gouv\.fr|culture\.gouv\.fr|legifrance\.gouv\.fr)\//;
+
+/** Secteur protégé de la vue (serveur) → pastille et détails ; un état inconnu n'est jamais lu « non trouvé ». */
+export function lireSecteur(v: unknown): VueSecteur | null {
+  if (!estObj(v)) return null;
+  const etat = v.etat === 'oui' || v.etat === 'non_trouve' || v.etat === 'non_verifie' ? v.etat : null;
+  if (!etat) return null;
+  const iso = txt(v.date, 10);
+  const date = iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : null;
+  return {
+    etat,
+    pastille: `Secteur protégé : ${ETATS_SECTEUR[etat]}`,
+    protections: (Array.isArray(v.protections) ? v.protections : []).flatMap((p) => (estObj(p) && txt(p.detail, 400) ? [txt(p.detail, 400)!] : [])).slice(0, 8),
+    lignes: textes(v.lignes, 12),
+    consultations: (Array.isArray(v.verifications) ? v.verifications : []).flatMap((x) => {
+      if (!estObj(x) || !txt(x.source, 160)) return [];
+      const e = typeof x.etat === 'string' && ETAT_VERIF[x.etat] ? ETAT_VERIF[x.etat] : 'état inconnu';
+      const note = txt(x.note, 200);
+      return [`${txt(x.source, 160)} : ${e}${note ? ` (${note})` : ''}`];
+    }).slice(0, 4),
+    date,
+    sources: (Array.isArray(v.sources) ? v.sources : []).flatMap((s) => (estObj(s) && txt(s.titre, 200) && typeof s.url === 'string' && URL_SOURCE_SECTEUR.test(s.url) ? [{ titre: txt(s.titre, 200)!, url: s.url }] : [])).slice(0, 6),
+    mention: txt(v.mention, 600) ?? '',
+  };
 }
 
 const LIBELLES_ETAPE: Record<string, string> = {
@@ -103,6 +148,7 @@ export function lireVueExtension(sortie: unknown): VueCarteExtension | null {
     avertissements: textes(v.avertissements, 10),
     sources: textes(v.sources, 6),
     projetEnregistre: d.projet_extension !== undefined && d.projet_extension !== null && lireProjetExtension(d.projet_extension).ok,
+    secteur: lireSecteur(v.secteur),
   };
 }
 

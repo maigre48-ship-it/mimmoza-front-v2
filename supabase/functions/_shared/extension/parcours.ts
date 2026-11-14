@@ -31,6 +31,7 @@ import {
 } from './bdtopoParcelle.ts';
 import { wgs84VersLambert93 } from './lambert93.ts';
 import { LIBELLE_ARCHITECTE, LIBELLE_REGIME, regimeIndicatif, type RegimeIndicatif } from './reglementation.ts';
+import { ligneCourteSecteur, sourceCourteSecteur, type SecteurProtege } from './secteurProtege.ts';
 
 export const OUTIL_EXTENSION_MAISON = 'extension_maison';
 export const VERSION_PARCOURS = 1;
@@ -295,6 +296,8 @@ export interface ContexteParcours {
   /** Façades sur voie (lot P9, déduites du cadastre et des parcelles voisines), WGS 84. */
   readonly facadesVoie: readonly { readonly debut: readonly [number, number]; readonly fin: readonly [number, number] }[];
   readonly raisonFacades: string | null;
+  /** LOT X3b — secteur protégé (servitudes GPU AC1 / AC2 / AC4 et base Mérimée), évalué par le serveur ; absent = non évalué. */
+  readonly secteur?: SecteurProtege | null;
 }
 
 /**
@@ -390,6 +393,8 @@ export interface VueExtension {
   readonly regime: { readonly libelle: string; readonly architecte: string; readonly ferme: boolean; readonly lignes: readonly string[]; readonly sources: readonly { titre: string; url: string }[]; readonly mention: string } | null;
   readonly avertissements: readonly string[];
   readonly sources: readonly string[];
+  /** LOT X3b — secteur protégé (pastille oui / non trouvé / non vérifié, avis ABF, effet, délai, sources et date). */
+  readonly secteur?: SecteurProtege | null;
 }
 
 export interface QuestionBloc { id: string; libelle: string; options: string[]; multiple: boolean; defaut?: string }
@@ -454,7 +459,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   const sources: string[] = [];
   const vueVide = (etape: Etape, msg: string): SortieParcours => ({
     etat, etape, attendues: [], texte: msg, blocChoix: null, projet: null, optionTravail: null, erreursProjet: [], regime: null, resultatMoteur: null,
-    vue: { v: 1, etape, idu: ctx.idu, commune: ctx.commune, maison: null, extension: null, regles: [], regime: null, avertissements: [msg], sources },
+    vue: { v: 1, etape, idu: ctx.idu, commune: ctx.commune, maison: null, extension: null, regles: [], regime: null, avertissements: [msg], sources, secteur: ctx.secteur ?? null },
   });
 
   if (!ctx.contourWgs84 || ctx.contourWgs84.length < 3) return vueVide('sans_parcelle', `Le contour cadastral de la parcelle ${ctx.idu} n’est pas disponible : je ne peux pas situer la maison existante.`);
@@ -489,13 +494,13 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     vue: {
       v: 1, etape, idu: ctx.idu, commune: ctx.commune, maison: maisonVue, extension: extra.extension ?? null, regles: extra.regles ?? [],
       regime: extra.regime ? { libelle: LIBELLE_REGIME[extra.regime.regime], architecte: LIBELLE_ARCHITECTE[extra.regime.architecte], ferme: extra.regime.ferme, lignes: extra.regime.lignes, sources: extra.regime.sources.map((s) => ({ ...s })), mention: extra.regime.mention } : null,
-      avertissements: avert, sources,
+      avertissements: avert, sources, secteur: ctx.secteur ?? null,
     },
   });
 
   // Étape 1 : conserver la maison ?
   if (etat.conserver === null) {
-    return sortie('conserver', `${presentation}\n\n**Voulez-vous conserver cette maison et l’agrandir, ou la démolir pour un projet neuf ?**`, [
+    return sortie('conserver', `${presentation}${ctx.secteur ? `\n\n${ligneCourteSecteur(ctx.secteur)}` : ''}\n\n**Voulez-vous conserver cette maison et l’agrandir, ou la démolir pour un projet neuf ?**`, [
       { id: Q.conserver.id, libelle: Q.conserver.libelle, options: [Q.conserver.oui, Q.conserver.non], multiple: false },
     ]);
   }
@@ -571,6 +576,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     existant: { sdpM2: m.surfacePlancher.valeur, statut: m.surfacePlancher.statut, minM2: m.surfacePlancher.minM2, maxM2: m.surfacePlancher.maxM2, empriseM2: m.empriseM2 },
     zoneU: ctx.zoneU,
     demandeur: etat.demandeur,
+    ...(ctx.secteur ? { secteurProtege: { valeur: ctx.secteur.seuil20, source: sourceCourteSecteur(ctx.secteur) } } : {}),
   });
 
   // Projet (contrat X0) : la maison conservée avec ses valeurs ET leurs statuts, corrections de l'utilisateur comprises.
@@ -616,6 +622,12 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
       : `Le moteur d’extension **refuse** ce placement :\n${refus.map((r) => `- ${r}`).join('\n')}${vueExt.suggestion ? `\n\n${vueExt.suggestion}` : ''}`,
     ...(alertes.length ? ['', ...alertes.map((a) => `- ${a}`)] : []),
     '',
+    ...(ctx.secteur ? [
+      `**Secteur protégé (indicatif) : ${ctx.secteur.libelle}** — ${sourceCourteSecteur(ctx.secteur)}.`,
+      ...ctx.secteur.lignes.map((x) => `- ${x}`),
+      `_${ctx.secteur.mention}_ Sources : ${ctx.secteur.sources.map((x) => `[${x.titre}](${x.url})`).join(', ')}.`,
+      '',
+    ] : []),
     `**Autorisation (indicatif) : ${LIBELLE_REGIME[regime.regime]} — ${LIBELLE_ARCHITECTE[regime.architecte]}.**`,
     ...regime.lignes.map((x) => `- ${x}`),
     '',

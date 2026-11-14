@@ -54,6 +54,12 @@ export interface EntreeRegime {
   /** Zone U d'un PLU : vrai, faux, ou inconnu (null) — avec sa source. */
   readonly zoneU: { readonly valeur: boolean | null; readonly source: string };
   readonly demandeur: 'particulier' | 'personne-morale' | null;
+  /**
+   * LOT X3b — secteur protégé (site patrimonial remarquable, abords de monument historique, site classé) : vrai = établi
+   * (seuil de 20 m², F36777) ; null = possible ou non vérifié (les deux verdicts sont évalués) ; faux = non trouvé dans
+   * des bases non exhaustives (le verdict en secteur protégé est dit s'il diffère). Absent : comportement du lot X3.
+   */
+  readonly secteurProtege?: { readonly valeur: boolean | null; readonly source: string };
 }
 
 export interface RegimeIndicatif {
@@ -128,6 +134,23 @@ export function regimeIndicatif(e: EntreeRegime): RegimeIndicatif {
       ? `Parcelle en zone U d’un PLU (${e.zoneU.source}) : déclaration préalable jusqu’à 40 m² créés, permis au-delà, et permis dès 20 m² si la surface totale dépasse 150 m².`
       : `Parcelle hors zone U d’un PLU (${e.zoneU.source}) : déclaration préalable jusqu’à 20 m² créés, permis au-delà.`);
     if (v.size > 1) lignes.push('La surface créée estimée est proche d’un seuil (fourchette de ± 15 % sur la surface de plancher) : le régime dépend des surfaces exactes du projet.');
+  }
+  // LOT X3b — secteur protégé (F36777 : DP jusqu'à 20 m² seulement, même en zone U).
+  const sp = e.secteurProtege;
+  if (sp) {
+    const enSecteur = verdicts(false);
+    const dire = (s: Set<'DP' | 'PC'>): string => [...s].join(' ou ');
+    if (sp.valeur === true) {
+      regime = enSecteur.size === 1 ? [...enSecteur][0]! : 'DP ou PC';
+      lignes.push(`Secteur protégé (${sp.source}) : déclaration préalable jusqu’à 20 m² créés seulement, même en zone U d’un PLU ; permis au-delà (F36777) — ici ${dire(enSecteur)}.`);
+    } else if (sp.valeur === null) {
+      const hors = regime === 'DP ou PC' ? new Set<'DP' | 'PC'>(['DP', 'PC']) : new Set<'DP' | 'PC'>([regime as 'DP' | 'PC']);
+      const tous = new Set([...hors, ...enSecteur]);
+      regime = tous.size === 1 ? [...tous][0]! : 'DP ou PC';
+      lignes.push(`Secteur protégé non établi (${sp.source}) : hors secteur protégé, ${dire(hors)} ; en secteur protégé (déclaration préalable jusqu’à 20 m² seulement, F36777), ${dire(enSecteur)}.`);
+    } else if ([...enSecteur].some((x) => x !== regime)) {
+      lignes.push(`Aucun secteur protégé trouvé (${sp.source}, bases non exhaustives) ; en secteur protégé, le seuil serait de 20 m² : ${dire(enSecteur)}.`);
+    }
   }
   if (regime === 'DP ou PC' && !confirmee && ex !== null) lignes.push('Le seuil de 150 m² est évalué sur une surface existante ESTIMÉE : indiquez la surface de plancher réelle pour conclure.');
 

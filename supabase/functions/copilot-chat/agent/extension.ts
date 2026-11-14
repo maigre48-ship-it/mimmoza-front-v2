@@ -11,6 +11,9 @@
 // Le serveur affiche lui-même le texte et les questions (aucun chiffre écrit par le modèle).
 // Lectures réseau (lecture seule, délais bornés, jamais bloquantes) : WFS Géoplateforme (BD TOPO), API BDNB (CSTB),
 // API Carto IGN (zonage GPU ; cadastre si la conception manque).
+// LOT X3b : secteur protégé (Architecte des Bâtiments de France) — servitudes du Géoportail de l'urbanisme (AC1, AC2, AC4)
+// et base Mérimée (monument à moins de 500 m), via les services internes injectés (`patrimoine`) ; calcul pur dans
+// _shared/extension/secteurProtege.ts ; un service muet ou en panne → « non vérifié », jamais « hors secteur protégé ».
 // =============================================================
 
 import { lireProjetExtension, type DonneesBdnb, type ProjetExtension } from '../../_shared/extension/contrat.ts';
@@ -20,6 +23,7 @@ import {
   avancerParcours, detecterIntentionExtension, lireEtat, OUTIL_EXTENSION_MAISON, reponseAuParcours, suiteDuParcours,
   type ContexteParcours, type RegleSite, type SortieParcours,
 } from '../../_shared/extension/parcours.ts';
+import { evaluerSecteurProtege, lireSecteurEnregistre, type ReponseService, type SecteurProtege } from '../../_shared/extension/secteurProtege.ts';
 import { facadesVoieDeLaParcelle } from './voisines-parcelle.ts';
 import type { OutilDef, ResultatOutil } from './types.ts';
 
@@ -98,6 +102,57 @@ export interface EnvExtension {
   depot: DepotExtension;
   fetch: typeof fetch;
   maintenant?: () => number;
+  /**
+   * LOT X3b — services internes de Mimmoza (servitudes du Géoportail de l'urbanisme, base Mérimée), appelés par le
+   * serveur ; null ou absent = service non branché (secteur « non vérifié », jamais « hors secteur protégé »).
+   */
+  patrimoine?: ServicesPatrimoine | null;
+}
+
+/** Appels des services internes (corps JSON → réponse JSON ; LÈVE en cas d'échec). */
+export interface ServicesPatrimoine {
+  servitudes: ((corps: Obj) => Promise<unknown>) | null;
+  merimee: ((corps: Obj) => Promise<unknown>) | null;
+}
+
+/** Délai maximal d'un service patrimoine (le parcours ne l'attend jamais plus longtemps). */
+export const DELAI_PATRIMOINE_MS = 15_000;
+
+async function appelBorne(f: ((corps: Obj) => Promise<unknown>) | null | undefined, corps: Obj): Promise<ReponseService> {
+  if (!f) return null;
+  let t: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const data = await Promise.race([
+      f(corps),
+      new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error('délai dépassé')), DELAI_PATRIMOINE_MS); }),
+    ]);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, raison: (e instanceof Error ? e.message : String(e)).slice(0, 200) };
+  } finally { if (t) clearTimeout(t); }
+}
+
+/**
+ * LOT X3b — secteur protégé de la parcelle : servitudes (AC1, AC2, AC4) et monuments à moins de 500 m, interrogés en
+ * parallèle au centre de la parcelle. Lecture seule, jamais bloquant.
+ */
+export async function consulterSecteurProtege(idu: string, lon: number, lat: number, services: ServicesPatrimoine | null | undefined, date: string): Promise<SecteurProtege> {
+  const [gpu, mh] = await Promise.all([
+    appelBorne(services?.servitudes, { lat, lon, cadastral_ref: idu }),
+    appelBorne(services?.merimee, { lat, lon }),
+  ]);
+  return evaluerSecteurProtege(idu, date, gpu, mh);
+}
+
+/** Dernier secteur évalué pour cette parcelle dans la conversation (réutilisé sauf s'il était « non vérifié »). */
+export function secteurDesSorties(sorties: readonly Obj[], idu: string): SecteurProtege | null {
+  for (const d of sorties) {
+    const vue = estObj(d) && estObj(d.vue) ? d.vue : null;
+    if (!vue || vue.idu !== idu) continue;
+    const s = lireSecteurEnregistre(vue.secteur);
+    return s && s.idu === idu && s.etat !== 'non_verifie' ? s : null;
+  }
+  return null;
 }
 
 // ── Sources externes (lecture seule) ────────────────────────────────────────────────────────────────────────
@@ -278,14 +333,19 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   let bdnb: DonneesBdnb | null = null;
   let noteBdnb: string | null = null;
   let zoneU: ContexteParcours['zoneU'] = { valeur: null, source: 'zonage non lu' };
+  const dateJour = new Date((env.maintenant ?? Date.now)()).toISOString().slice(0, 10);
+  let secteur: SecteurProtege | null = null;
   if (anneau) {
     const l93 = contourEnLambert93(anneau);
     const [lonC, latC] = lambert93VersWgs84(l93.reduce((a, p) => a + p[0], 0) / l93.length, l93.reduce((a, p) => a + p[1], 0) / l93.length);
-    const [bd, bn, zo] = await Promise.all([
+    const secteurConnu = secteurDesSorties(sorties, iduRetenu);
+    const [bd, bn, zo, sp] = await Promise.all([
       telechargerBatimentsParcelle(l93, env.fetch),
       lireJson(env.fetch, urlBdnbParcelle(iduRetenu)),
       lireJson(env.fetch, urlZonage(lonC, latC)),
+      secteurConnu ? Promise.resolve(secteurConnu) : consulterSecteurProtege(iduRetenu, lonC, latC, env.patrimoine, dateJour),
     ]);
+    secteur = sp;
     if ('batiments' in bd) batiments = bd.batiments; else raisonBdTopo = bd.raison;
     if ('data' in bn) { const l = lireBdnb(bn.data); bdnb = l.bdnb; noteBdnb = l.note; } else noteBdnb = `BDNB injoignable (${bn.raison}) : seule la BD TOPO sert à l’estimation.`;
     zoneU = 'data' in zo ? lireZonage(zo.data) : { valeur: null, source: `Géoportail de l’urbanisme injoignable (${zo.raison})` };
@@ -293,7 +353,7 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   const facades = c ? facadesVoieDeLaParcelle(c.parcelle) : { facades: [], raison: 'aucune fiche de parcelle avec ses voisines : côté rue non identifié' };
   const ctx: ContexteParcours = {
     idu: iduRetenu, commune: c?.commune ?? null, contourWgs84: anneau, surfaceParcelleM2: surface,
-    batiments, raisonBdTopo, dateBdTopo: new Date((env.maintenant ?? Date.now)()).toISOString().slice(0, 10),
+    batiments, raisonBdTopo, dateBdTopo: dateJour, secteur,
     bdnb, noteBdnb, zoneU, regles: reglesDeLaConception(c?.regles_plu),
     facadesVoie: facades.facades.map((f) => ({ debut: f.debut, fin: f.fin })), raisonFacades: facades.raison,
   };
