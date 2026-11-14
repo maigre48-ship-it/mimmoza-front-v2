@@ -35,6 +35,7 @@
 // =============================================================
 
 import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
+import { categorieServitude } from './logique.ts';
 
 const APICARTO_BASE = 'https://apicarto.ign.fr/api';
 const ASSIETTE_LAYERS = ['assiette-sup-s', 'assiette-sup-l', 'assiette-sup-p'] as const;
@@ -252,11 +253,22 @@ Deno.serve(async (req: Request) => {
       if (seen.has(key)) continue;
       seen.add(key);
 
-      const categorie = prop(p, ['categorie', 'cat', 'categori']);
+      // LOT P11 : `categorie` est vide dans les réponses réelles de l'API Carto ;
+      // la catégorie (AC1, AC2, AC4, PM1…) se lit alors dans idgen / idass /
+      // partition (voir logique.ts). Tous les consommateurs en profitent.
+      const categorieBrute = prop(p, ['categorie', 'cat', 'categori']);
+      const cat = categorieServitude({
+        categorie: categorieBrute,
+        idgen: prop(p, ['idgen']),
+        idass,
+        partition: prop(p, ['partition']),
+      });
+      const categorie = cat?.code ?? categorieBrute;
       const nom = prop(p, ['nomsuplitt', 'libelle', 'nomass']);
       items.push({
         categorie: categorie ?? null,
         categorie_label: categorie && SUP_CATEGORIES[String(categorie)] ? SUP_CATEGORIES[String(categorie)] : null,
+        categorie_deduite_de: cat?.origine ?? null,
         nom: nom ?? null,
         type_assiette: prop(p, ['typeass', 'type']) ?? null,
         idass: idass ?? null,
@@ -297,7 +309,8 @@ Deno.serve(async (req: Request) => {
     // 4) Agrégat par catégorie pour un résumé lisible.
     const byCat = new Map<string, number>();
     for (const it of items) {
-      const label = (it.categorie_label as string) ?? (it.categorie as string) ?? (it.nom as string) ?? 'SUP';
+      // Libellé de catégorie connu, sinon le nom (plus parlant qu'un code nu), sinon le code.
+      const label = (it.categorie_label as string) ?? (it.nom as string) ?? (it.categorie as string) ?? 'SUP';
       byCat.set(label, (byCat.get(label) ?? 0) + 1);
     }
     const categories = [...byCat.entries()]
