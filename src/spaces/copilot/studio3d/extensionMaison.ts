@@ -197,6 +197,88 @@ export interface ExistantTravail {
   refus: string[];
   /** Surface créée calculée par la machine de rendu (lot X4), si fournie. */
   surfaceCreee: string | null;
+  /** LOT X7 — image « à valider » : raisons lisibles (codes stables écrits par la machine de rendu). */
+  aValider: RaisonAValiderCarte[];
+  /** LOT X7 — arbre à abattre / arbuste à supprimer pour réaliser l'extension, avec le rappel PLU. */
+  vegetation: { lignes: string[]; rappelPlu: string } | null;
+  /** LOT X7 — hauteur à l'égout retenue par la machine de rendu, clôture sur rue (statut compris). */
+  rendu: LigneStatut[];
+}
+
+/** LOT X7 — une raison « à valider » telle qu'affichée (texte simple ; jamais un nom d'outil). */
+export interface RaisonAValiderCarte { code: string; texte: string }
+
+/**
+ * LOT X7 — textes affichés par code (mêmes codes que la machine de rendu, src/core/extension/livrableExtension.ts du
+ * Studio). Le site affiche SES textes : un code inconnu devient « autre » (le texte reçu n'est jamais montré tel quel).
+ */
+export const TEXTES_A_VALIDER: Readonly<Record<string, string>> = {
+  calage: 'Le placement de l’extension dans la photo n’est pas assez précis. Utilisez « Ajuster le placement » et cliquez quelques angles de votre maison.',
+  egout: 'La hauteur de la gouttière de votre maison n’est pas sûre (les sources ne concordent pas, ou une seule source non vérifiée). Indiquez-la si vous la connaissez, ou cliquez les angles de la maison à la gouttière dans « Ajuster le placement ».',
+  arbre_a_abattre: 'Un arbre de votre terrain devrait être abattu pour construire l’extension à cet endroit. L’image ne le montre pas encore supprimé : elle n’est pas livrée en l’état.',
+  arbuste_a_supprimer: 'Un arbuste de votre terrain devrait être supprimé pour construire l’extension à cet endroit. L’image ne le montre pas encore supprimé : elle n’est pas livrée en l’état.',
+  invisible: 'Depuis cette photo, l’extension est presque entièrement cachée (par la maison, la clôture ou la végétation). Choisissez une autre photo ou un autre point de vue.',
+  rendu_insuffisant: 'Le rendu de l’extension n’est pas assez réaliste pour être livré (matière ou fenêtres pas assez lisibles).',
+  premier_plan: 'Des éléments au premier plan (clôture, barreaux, poteau, branches devant l’extension) ne sont pas restitués fidèlement : l’image n’est pas livrée en l’état.',
+  scene: 'L’extension dessinée ne correspond pas exactement à celle qui a été vérifiée sur la photo : l’image n’est pas livrée.',
+  toit: 'La pente ou le sens du toit de votre maison sont estimés et cachent une partie de l’extension : précisez-les dans la conversation.',
+  gabarit: 'L’extension sort de la parcelle ou du cadre de la photo : vérifiez ses dimensions ou choisissez une autre photo.',
+  cloture: 'La hauteur de la clôture sur rue n’a pas pu être mesurée sur la photo : indiquez-la dans la conversation (« Clôture sur rue »).',
+  autre: 'Un contrôle automatique demande une vérification avant de livrer l’image.',
+};
+
+/** LOT X7 — rappel PLU affiché avec un arbre à abattre / arbuste à supprimer (repris du Studio si absent du résultat). */
+export const RAPPEL_PLU_ARBRE = 'À vérifier dans le PLU(i) avant tout abattage : espace boisé classé (code de l’urbanisme, art. L.113-1 et L.113-2), coupes et abattages soumis à déclaration préalable (art. R.421-23 g), arbres ou éléments de paysage protégés (art. L.151-23), obligations de plantation ou de compensation du règlement de zone ; à défaut de prescription, à confirmer auprès de la mairie.';
+
+/** LOT X7 — raisons « à valider » du résultat (une par code, textes du site). Pur. */
+export function raisonsAValider(rx: Obj | null): RaisonAValiderCarte[] {
+  if (!rx || !Array.isArray(rx.raisons_a_valider)) return [];
+  const vus = new Set<string>();
+  const out: RaisonAValiderCarte[] = [];
+  for (const r of rx.raisons_a_valider.slice(0, 12)) {
+    const c = estObj(r) && typeof r.code === 'string' && r.code in TEXTES_A_VALIDER ? r.code : 'autre';
+    if (vus.has(c)) continue;
+    vus.add(c);
+    out.push({ code: c, texte: TEXTES_A_VALIDER[c]! });
+  }
+  return out;
+}
+
+/** LOT X7 — arbre à abattre / arbuste à supprimer (bilan du moteur dans le résultat) et rappel PLU. Pur. */
+export function vegetationARetirer(rx: Obj | null): { lignes: string[]; rappelPlu: string } | null {
+  const v = rx && estObj(rx.vegetation) ? rx.vegetation : null;
+  const a = v && Array.isArray(v.a_supprimer) ? v.a_supprimer.filter(estObj) : [];
+  if (!a.length) return null;
+  const arbres = a.filter((x) => x.nature !== 'arbuste').length;
+  const arbustes = a.length - arbres;
+  const lignes = [
+    ...(arbres ? [`Arbre à abattre : ${arbres === 1 ? 'un arbre' : `${arbres} arbres`} de votre terrain gêne l’extension à cet endroit (position estimée sur la photo).`] : []),
+    ...(arbustes ? [`Arbuste à supprimer : ${arbustes === 1 ? 'un arbuste' : `${arbustes} arbustes`} de votre terrain gêne l’extension à cet endroit (position estimée sur la photo).`] : []),
+  ];
+  const mention = v && typeof v.mention_reglementaire === 'string' && v.mention_reglementaire.trim() ? v.mention_reglementaire.trim().slice(0, 700) : RAPPEL_PLU_ARBRE;
+  return { lignes, rappelPlu: mention };
+}
+
+/** LOT X7 — hauteur à l'égout retenue et clôture sur rue, lues dans le résultat (statut compris). Pur. */
+export function lignesRendu(rx: Obj | null): LigneStatut[] {
+  if (!rx) return [];
+  const out: LigneStatut[] = [];
+  const st = (x: unknown): StatutDonnee | null => (x === 'mesuree' || x === 'estimee' || x === 'supposee' || x === 'confirmee' ? x : null);
+  const eg = estObj(rx.egout_maison) ? rx.egout_maison : null;
+  const h = eg ? num(eg.hauteur_m) : null;
+  if (eg && h !== null) {
+    const s = st(eg.statut);
+    const origine = eg.origine === 'calage' ? 'indiquée par vous' : eg.origine === 'photo' ? 'mesurée sur la photo' : eg.origine === 'bdtopo' ? 'base des bâtiments de l’IGN' : 'source non précisée';
+    out.push({ libelle: 'Hauteur à l’égout retenue pour l’image', valeur: `${fr(h, 2)} m (${origine})`, statut: s, statutLibelle: s ? libelleStatut(s) : null, source: origine });
+  }
+  const cl = estObj(rx.cloture) ? rx.cloture : null;
+  if (cl) {
+    const s = st(cl.statut);
+    const hp = num(cl.hauteur_pleine_m);
+    const valeur = cl.nature === 'aucune' ? 'aucune (indiqué par vous)' : hp !== null ? `partie pleine ≈ ${fr(hp, 2)} m${cl.nature === 'declaree' ? ' (indiquée par vous)' : cl.statut === 'mesuree' ? ' (mesurée sur la photo)' : ''}` : 'non mesurée';
+    out.push({ libelle: 'Clôture sur rue', valeur, statut: s, statutLibelle: s ? libelleStatut(s) : null, source: s === 'mesuree' ? 'mesurée sur la photo' : s === 'confirmee' ? 'indiquée par vous' : 'supposée' });
+  }
+  return out;
 }
 
 /**
@@ -241,6 +323,9 @@ export function existantDuTravail(t: { options?: unknown; projet_extension?: unk
     maison,
     refus: rx ? textes(rx.refus, 10) : [],
     surfaceCreee: sdpX4 !== null ? `Surface de plancher créée ${statutX4} par le moteur : ≈ ${fr(sdpX4)} m²${fourchetteX4}` : null,
+    aValider: rx && rx.statut_x7 !== 'livrable' ? raisonsAValider(rx) : [],
+    vegetation: vegetationARetirer(rx),
+    rendu: lignesRendu(rx),
   };
 }
 

@@ -1,5 +1,5 @@
 // supabase/functions/_shared/extension/contrat.ts
-// COPIE (lot X3, 14/11/2026) de mimmozia-studio/src/core/extension/contrat.ts @ 0d3a044 (sha256 du fichier source : cee60519cff3189f32f725c4bd1b4c02ab75a531c00cd40bbb421583bc7b3853).
+// COPIE (lot X7, 16/11/2026) de mimmozia-studio/src/core/extension/contrat.ts @ lot X7 sur a73c418 (sha256 du fichier source : ff6dd62e5e8465afa3b1016e2272841f735639d2c3da24cc128e4500eb0b343a).
 // Copie VERBATIM (aucune ligne modifiée) : même validation au site (Deno et navigateur), au Studio et au worker.
 // Le Studio fait foi : toute évolution du contrat se fait d'abord dans le Studio, puis est recopiée ici.
 // ----- DÉBUT DE LA COPIE -----
@@ -60,6 +60,30 @@ export type FormeToitExtension = FormeToit | 'prolongement';
 export const FORMES_TOIT_EXTENSION: readonly FormeToitExtension[] = [...FORMES_TOIT, 'prolongement'];
 
 export type OrientationFaitage = 'grand-axe' | 'petit-axe';
+
+/**
+ * LOT X7 (16/11/2026) — menuiseries que le site peut proposer (bibliothèque ArchViz) : aluminium gris anthracite
+ * RAL 7016 (convention Mimmoza), aluminium blanc, bois (chêne verni). Toute autre valeur est refusée.
+ */
+export const MENUISERIES_CONTRAT = ['av-aluminium-noir', 'av-aluminium-blanc', 'av-chene-porte'] as const;
+export type MenuiserieContrat = (typeof MENUISERIES_CONTRAT)[number];
+
+/** LOT X7 — habillage de l'extension choisi par l'utilisateur (facultatif ; absent : convention Mimmoza, dite). */
+export interface HabillageDemande {
+  readonly menuiserie?: Donnee<MenuiserieContrat>;
+  /** « auto » : baies placées par la règle d'habillage (lot X5) ; « aucune » : façades aveugles (choix explicite). */
+  readonly baies?: Donnee<'auto' | 'aucune'>;
+}
+
+/**
+ * LOT X7 — clôture de la limite sur rue DÉCLARÉE par l'utilisateur (« Clôture sur rue : ≈ 1 m / ≈ 1,5 m / ≈ 2 m / plus
+ * / aucune »). Le worker la MESURE d'abord sur la photo ; la déclaration ne sert que si la mesure échoue (au lieu d'une
+ * hauteur SUPPOSÉE « à valider »). `hauteurM` absente avec `presence` vraie : « plus de 2 m », non chiffrée.
+ */
+export interface ClotureRue {
+  readonly presence: Donnee<boolean>;
+  readonly hauteurM?: Donnee<number>;
+}
 
 /**
  * Façade de l'existant à laquelle s'accroche l'extension, dite par rapport à la RUE (vue depuis la rue) : c'est ce que
@@ -133,6 +157,8 @@ export interface ExtensionDemandee {
   readonly dimensions: DimensionsExtension;
   readonly toiture?: ToitureExtension;
   readonly reculs?: ReculsExtension;
+  /** LOT X7 — menuiseries et baies choisies (facultatif). */
+  readonly habillage?: HabillageDemande;
 }
 
 export interface ProjetExtension {
@@ -146,6 +172,8 @@ export interface ProjetExtension {
   readonly extension?: ExtensionDemandee;
   /** Demandeur, pour les alertes réglementaires (lot X3) : personne morale ⇒ architecte toujours obligatoire. */
   readonly demandeur?: 'particulier' | 'personne-morale';
+  /** LOT X7 — clôture de la limite sur rue déclarée (facultatif). */
+  readonly clotureRue?: ClotureRue;
 }
 
 /** Projet NEUF implicite d'une fiche sans bloc `projet` : comportement inchangé (existant effacé). */
@@ -177,6 +205,8 @@ export const BORNES = {
   surfaceM2: [1, 100_000],
   longueurM: [0.5, 500],
   reculM: [0, 100],
+  /** LOT X7 — hauteur d'une clôture sur rue déclarée (m). */
+  clotureM: [0.3, 5],
 } as const;
 
 function lireDonnee<T>(
@@ -281,7 +311,7 @@ function lireExtension(v: unknown, erreurs: string[], avert: string[]): Extensio
     erreurs.push(`${c} : objet attendu pour un projet d'extension.`);
     return null;
   }
-  verifierCles(v, ['type', 'facade', 'existantId', 'dimensions', 'toiture', 'reculs'], c, erreurs);
+  verifierCles(v, ['type', 'facade', 'existantId', 'dimensions', 'toiture', 'reculs', 'habillage'], c, erreurs);
   const type = v['type'];
   if (!dans(type, TYPES_EXTENSION)) erreurs.push(`${c}.type : ${TYPES_EXTENSION.join(' | ')}.`);
   if (type === 'veranda') avert.push('Véranda : acceptée par le contrat, mais le volume vitré n’existe pas encore dans le moteur (lot X2b) — le travail sera refusé avec cette raison.');
@@ -343,6 +373,18 @@ function lireExtension(v: unknown, erreurs: string[], avert: string[]): Extensio
       reculs = out;
     }
   }
+  // LOT X7 — habillage choisi (menuiserie parmi MENUISERIES_CONTRAT, baies auto | aucune).
+  let habillage: HabillageDemande | undefined;
+  if (v['habillage'] !== undefined) {
+    const h = v['habillage'];
+    if (!estObjet(h)) erreurs.push(`${c}.habillage : objet { menuiserie?, baies? } attendu.`);
+    else {
+      verifierCles(h, ['menuiserie', 'baies'], `${c}.habillage`, erreurs);
+      const men = lireDonnee(h['menuiserie'], `${c}.habillage.menuiserie`, erreurs, parmi(MENUISERIES_CONTRAT), MENUISERIES_CONTRAT.join(' | '));
+      const baies = lireDonnee(h['baies'], `${c}.habillage.baies`, erreurs, parmi(['auto', 'aucune'] as const), 'auto | aucune');
+      habillage = { ...(men ? { menuiserie: men } : {}), ...(baies ? { baies } : {}) };
+    }
+  }
   if (!dans(type, TYPES_EXTENSION) || typeof existantId !== 'string') return null;
   return {
     type,
@@ -351,6 +393,7 @@ function lireExtension(v: unknown, erreurs: string[], avert: string[]): Extensio
     dimensions: dims,
     ...(toiture ? { toiture } : {}),
     ...(reculs ? { reculs } : {}),
+    ...(habillage && Object.keys(habillage).length ? { habillage } : {}),
   };
 }
 
@@ -363,7 +406,7 @@ export function lireProjetExtension(v: unknown): LectureProjet {
   const erreurs: string[] = [];
   const avert: string[] = [];
   if (!estObjet(v)) return { ok: false, erreurs: ['projet : objet attendu.'] };
-  verifierCles(v, ['format', 'version', 'nature', 'modeExistantParDefaut', 'existants', 'extension', 'demandeur'], 'projet', erreurs);
+  verifierCles(v, ['format', 'version', 'nature', 'modeExistantParDefaut', 'existants', 'extension', 'demandeur', 'clotureRue'], 'projet', erreurs);
   if (v['format'] !== PROJET_EXTENSION_FORMAT) erreurs.push(`projet.format : « ${PROJET_EXTENSION_FORMAT} » attendu.`);
   if (v['version'] !== PROJET_EXTENSION_VERSION) erreurs.push(`projet.version : ${PROJET_EXTENSION_VERSION} attendu (version inconnue : mettre à jour le Studio ou le worker).`);
   const nature = v['nature'];
@@ -396,6 +439,20 @@ export function lireProjetExtension(v: unknown): LectureProjet {
   if (nature === 'neuf' && existants.some((e) => e.mode === 'conserver')) {
     avert.push('Projet neuf avec un bâtiment existant CONSERVÉ : il restera sur la photo et dans la scène, à côté du projet.');
   }
+  // LOT X7 — clôture sur rue déclarée.
+  let clotureRue: ClotureRue | undefined;
+  if (v['clotureRue'] !== undefined) {
+    const cr = v['clotureRue'];
+    if (!estObjet(cr)) erreurs.push('projet.clotureRue : objet { presence, hauteurM? } attendu.');
+    else {
+      verifierCles(cr, ['presence', 'hauteurM'], 'projet.clotureRue', erreurs);
+      const presence = lireDonnee(cr['presence'], 'projet.clotureRue.presence', erreurs, (x: unknown): x is boolean => typeof x === 'boolean', 'booléen');
+      const hauteur = lireDonnee(cr['hauteurM'], 'projet.clotureRue.hauteurM', erreurs, nombreDans(BORNES.clotureM), `nombre entre ${BORNES.clotureM[0]} et ${BORNES.clotureM[1]} m`);
+      if (cr['presence'] === undefined) erreurs.push('projet.clotureRue.presence : obligatoire.');
+      if (presence && presence.valeur === false && hauteur) erreurs.push('projet.clotureRue : une hauteur est donnée alors que la clôture est déclarée absente.');
+      if (presence) clotureRue = hauteur ? { presence, hauteurM: hauteur } : { presence };
+    }
+  }
   if (erreurs.length) return { ok: false, erreurs };
   const projet: ProjetExtension = {
     format: PROJET_EXTENSION_FORMAT,
@@ -405,6 +462,7 @@ export function lireProjetExtension(v: unknown): LectureProjet {
     existants,
     ...(extension ? { extension } : {}),
     ...(v['demandeur'] !== undefined ? { demandeur: v['demandeur'] as 'particulier' | 'personne-morale' } : {}),
+    ...(clotureRue ? { clotureRue } : {}),
   };
   return { ok: true, projet, avertissements: avert };
 }

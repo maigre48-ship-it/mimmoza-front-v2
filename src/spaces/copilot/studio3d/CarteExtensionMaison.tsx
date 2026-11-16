@@ -82,6 +82,17 @@ export function BlocExistantConserve({ existant }: { existant: ExistantTravail }
     {existant.extension && <p>Extension : {existant.extension}</p>}
     {existant.surfaceCreee && <p>{existant.surfaceCreee}</p>}
     {existant.refus.length > 0 && <><p><strong>Refusée par le moteur d’extension :</strong></p><ul>{existant.refus.map(r => <li key={r}>{r}</li>)}</ul></>}
+    {/* LOT X7 — image « à valider » : raisons lisibles, arbre à abattre / arbuste à supprimer avec le rappel PLU. */}
+    {existant.aValider.length > 0 && <div className="mz-ext__a-valider" role="status">
+      <p><strong>Image à valider :</strong></p>
+      <ul>{existant.aValider.map(r => <li key={r.code} data-code={r.code}>{r.texte}</li>)}</ul>
+    </div>}
+    {existant.vegetation && <div className="mz-ext__vegetation" role="note">
+      <p><strong>Attention :</strong></p>
+      <ul>{existant.vegetation.lignes.map(l => <li key={l}>{l}</li>)}</ul>
+      <p className="mz-ext__note">{existant.vegetation.rappelPlu}</p>
+    </div>}
     <LignesStatut lignes={existant.maison} />
+    <LignesStatut lignes={existant.rendu} />
   </div>;
 }

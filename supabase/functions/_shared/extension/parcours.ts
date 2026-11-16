@@ -21,6 +21,7 @@ import {
   FORMES_TOIT, libelleStatut, lireProjetExtension, optionTravailExistant, PROJET_EXTENSION_FORMAT, PROJET_EXTENSION_VERSION,
   type CoteFacade, type Donnee, type DonneesBdnb, type ExistantProjet, type ExtensionDemandee, type FormeToit, type ProjetExtension,
   type ReculsExtension, type StatutDonnee, type TypeExtension,
+  type MenuiserieContrat, type OrientationFaitage,
 } from './contrat.ts';
 import { estimerMaisonExistante, maisonPrincipale, type MaisonExistante, type SurchargesExistant } from './maisonExistante.ts';
 import { calculerExtension, type CategorieLimite, type ParcelleMoteur, type ReglesExtension, type ResultatExtension } from './moteur.ts';
@@ -50,6 +51,15 @@ export const Q = {
   niveauxAjoutes: { id: 'x3_niveaux_ajoutes', libelle: 'Niveaux ajoutés' },
   surface: { id: 'x3_surface', libelle: 'Surface de plancher existante', inconnue: 'Je ne sais pas', saisie: 'Je l’indique' },
   demandeur: { id: 'x3_demandeur', libelle: 'Demandeur', particulier: 'Particulier', morale: 'Société (personne morale)' },
+  // LOT X7 — questions fermées pour un rendu d'extension fidèle (jamais une valeur proposée par le modèle). Posées avec
+  // les dimensions (toit, égout) et avec la surface (clôture, habillage) : une question posée et laissée sans réponse
+  // vaut « je ne sais pas » (la valeur reste ESTIMÉE et le dit), jamais une invention.
+  penteToit: { id: 'x3_pente_toit', libelle: 'Pente du toit de la maison' },
+  faitage: { id: 'x3_faitage', libelle: 'Sens du faîtage' },
+  egout: { id: 'x3_egout', libelle: 'Hauteur à l’égout de la maison', inconnue: 'Je ne sais pas (estimation)' },
+  cloture: { id: 'x3_cloture', libelle: 'Clôture sur rue' },
+  menuiserie: { id: 'x3_menuiserie', libelle: 'Menuiseries de l’extension' },
+  baie: { id: 'x3_baie', libelle: 'Baie vitrée' },
 } as const;
 
 export const OPTIONS_TOIT: Readonly<Record<FormeToit, string>> = { 'deux-pans': '2 pans', 'quatre-pans': '4 pans', plat: 'Toit plat', monopente: 'Monopente' };
@@ -62,6 +72,14 @@ const COTE_LISIBLE: Readonly<Record<CoteFacade, string>> = { gauche: 'gauche', d
 export const OPTIONS_DIMENSIONS = ['3 × 4 m', '4 × 5 m', '5 × 6 m'] as const;
 export const OPTIONS_HAUTEUR = { 1: 'Plain-pied', 2: 'Sur 2 niveaux' } as const;
 export const OPTIONS_NIVEAUX_AJOUTES = { 1: '1 niveau', 2: '2 niveaux' } as const;
+/** LOT X7 — classes de pente (valeur = centre de la classe, dite dans la source) ; « Je ne sais pas » laisse l'estimation. */
+export const OPTIONS_PENTE_TOIT: readonly [number | 'inconnue', string][] = [[25, 'Faible (≈ 25°)'], [35, 'Moyenne (≈ 35°)'], [45, 'Forte (≈ 45°)'], ['inconnue', 'Je ne sais pas']];
+export const OPTIONS_FAITAGE: readonly [OrientationFaitage | 'inconnu', string][] = [['grand-axe', 'Dans la longueur de la maison'], ['petit-axe', 'Dans la largeur de la maison'], ['inconnu', 'Je ne sais pas']];
+/** LOT X7 — clôture sur rue : hauteur approximative (m), « plus » (> 2 m, non chiffrée) ou « aucune ». */
+export const OPTIONS_CLOTURE: readonly [number | 'plus' | 'aucune', string][] = [[1, '≈ 1 m'], [1.5, '≈ 1,5 m'], [2, '≈ 2 m'], ['plus', 'Plus de 2 m'], ['aucune', 'Aucune clôture']];
+/** LOT X7 — menuiseries proposées (identifiants de la bibliothèque du Studio, contrat X0 `MENUISERIES_CONTRAT`). */
+export const OPTIONS_MENUISERIE: readonly [MenuiserieContrat, string][] = [['av-aluminium-noir', 'Anthracite'], ['av-aluminium-blanc', 'Blanc'], ['av-chene-porte', 'Bois']];
+export const OPTIONS_BAIE: readonly ['auto' | 'aucune', string][] = [['auto', 'Avec baie vitrée'], ['aucune', 'Sans baie (murs pleins)']];
 
 export const SOURCE_SAISIE = 'saisie utilisateur (parcours extension de Mimmo)';
 
@@ -81,11 +99,19 @@ export interface EtatParcours {
   readonly sdpExistanteM2: number | null;
   readonly sdpInconnue: boolean;
   readonly demandeur: 'particulier' | 'personne-morale' | null;
+  /** LOT X7 — null : pas encore répondu ; 'inconnue' / 'inconnu' : « je ne sais pas » (ou question laissée sans réponse). */
+  readonly penteToit?: number | 'inconnue' | null;
+  readonly faitage?: OrientationFaitage | 'inconnu' | null;
+  readonly egoutInconnu?: boolean;
+  readonly cloture?: number | 'plus' | 'aucune' | 'inconnue' | null;
+  readonly menuiserie?: MenuiserieContrat | 'inconnue' | null;
+  readonly baies?: 'auto' | 'aucune' | 'inconnue' | null;
 }
 
 export const ETAT_INITIAL: EtatParcours = {
   v: 1, idu: null, conserver: null, toit: null, niveaux: null, hauteurEgoutM: null, type: null, facade: null,
   largeurM: null, profondeurM: null, niveauxExtension: null, sdpExistanteM2: null, sdpInconnue: false, demandeur: null,
+  penteToit: null, faitage: null, egoutInconnu: false, cloture: null, menuiserie: null, baies: null,
 };
 
 type Obj = Record<string, unknown>;
@@ -112,6 +138,13 @@ export function lireEtat(v: unknown): EtatParcours {
     sdpExistanteM2: nb(v.sdpExistanteM2, 1, 100_000),
     sdpInconnue: v.sdpInconnue === true,
     demandeur: dans(v.demandeur, ['particulier', 'personne-morale'] as const) ? v.demandeur : null,
+    // LOT X7 — états antérieurs sans ces clés : « pas encore répondu ».
+    penteToit: v.penteToit === 'inconnue' ? 'inconnue' : nb(v.penteToit, 5, 70),
+    faitage: dans(v.faitage, ['grand-axe', 'petit-axe', 'inconnu'] as const) ? v.faitage : null,
+    egoutInconnu: v.egoutInconnu === true,
+    cloture: v.cloture === 'plus' || v.cloture === 'aucune' || v.cloture === 'inconnue' ? v.cloture : nb(v.cloture, 0.3, 5),
+    menuiserie: dans(v.menuiserie, ['av-aluminium-noir', 'av-aluminium-blanc', 'av-chene-porte', 'inconnue'] as const) ? v.menuiserie : null,
+    baies: dans(v.baies, ['auto', 'aucune', 'inconnue'] as const) ? v.baies : null,
   };
 }
 
@@ -206,7 +239,31 @@ export function lireReponses(etat: EtatParcours, texte: string, attendues: reado
   const niv = optionParmi(valeurDe(segs, Q.niveaux.libelle), OPTIONS_NIVEAUX);
   if (niv) e.niveaux = niv;
   const mEgout = /\begout\b[^0-9]{0,20}(\d+(?:[.,]\d+)?)\s*m\b/.exec(t);
-  if (mEgout) { const h = versNombre(mEgout[1]!); if (h >= 0.5 && h <= 200) e.hauteurEgoutM = h; }
+  if (mEgout) { const h = versNombre(mEgout[1]!); if (h >= 0.5 && h <= 200) { e.hauteurEgoutM = h; e.egoutInconnu = false; } }
+
+  // LOT X7 — pente, faîtage, égout, clôture, habillage : options fermées ; question posée sans réponse = « je ne sais pas ».
+  const pente = optionParmi(valeurDe(segs, Q.penteToit.libelle), OPTIONS_PENTE_TOIT);
+  if (pente !== null) e.penteToit = pente;
+  else if (attendues.includes(Q.penteToit.id) && (e.penteToit ?? null) === null) e.penteToit = 'inconnue';
+  const fa = optionParmi(valeurDe(segs, Q.faitage.libelle), OPTIONS_FAITAGE);
+  if (fa !== null) e.faitage = fa;
+  else if (attendues.includes(Q.faitage.id) && (e.faitage ?? null) === null) e.faitage = 'inconnu';
+  const eg = valeurDe(segs, Q.egout.libelle);
+  if (eg) {
+    const n = normaliser(eg);
+    const m = /(\d+(?:[.,]\d+)?)/.exec(n);
+    if (m && !/sais pas/.test(n)) { const h = versNombre(m[1]!); if (h >= 2 && h <= 15) { e.hauteurEgoutM = h; e.egoutInconnu = false; } }
+    else if (/sais pas|estimation/.test(n)) e.egoutInconnu = true;
+  } else if (attendues.includes(Q.egout.id) && e.hauteurEgoutM === null) e.egoutInconnu = true;
+  const cl = optionParmi(valeurDe(segs, Q.cloture.libelle), OPTIONS_CLOTURE);
+  if (cl !== null) e.cloture = cl;
+  else if (attendues.includes(Q.cloture.id) && (e.cloture ?? null) === null) e.cloture = 'inconnue';
+  const me = optionParmi(valeurDe(segs, Q.menuiserie.libelle), OPTIONS_MENUISERIE);
+  if (me !== null) e.menuiserie = me;
+  else if (attendues.includes(Q.menuiserie.id) && (e.menuiserie ?? null) === null) e.menuiserie = 'inconnue';
+  const ba = optionParmi(valeurDe(segs, Q.baie.libelle), OPTIONS_BAIE);
+  if (ba !== null) e.baies = ba;
+  else if (attendues.includes(Q.baie.id) && (e.baies ?? null) === null) e.baies = 'inconnue';
 
   // Type et façade.
   const type = optionParmi(valeurDe(segs, Q.type.libelle), Object.entries(OPTIONS_TYPE) as [TypeExtension, string][])
@@ -482,6 +539,9 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     ...(etat.niveaux ? { niveaux: etat.niveaux } : {}),
     ...(etat.hauteurEgoutM ? { hauteurEgoutM: etat.hauteurEgoutM } : {}),
     ...(etat.sdpExistanteM2 ? { surfacePlancherM2: etat.sdpExistanteM2 } : {}),
+    // LOT X7 — pente (classe choisie) et sens du faîtage CONFIRMÉS par l'utilisateur (toit en pente seulement).
+    ...(etat.toit && etat.toit !== 'plat' && typeof etat.penteToit === 'number' ? { penteDeg: etat.penteToit } : {}),
+    ...(etat.toit && etat.toit !== 'plat' && (etat.faitage === 'grand-axe' || etat.faitage === 'petit-axe') ? { orientationFaitage: etat.faitage } : {}),
   };
   const estimation = estimerMaisonExistante(entreeExistant(bat, origine, ctx.bdnb ?? undefined));
   const m = estimerMaisonExistante(entreeExistant(bat, origine, ctx.bdnb ?? undefined), surcharges);
@@ -541,18 +601,40 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     if (!etat.largeurM || !etat.profondeurM) q3.push({ id: Q.dimensions.id, libelle: Q.dimensions.libelle, options: [...OPTIONS_DIMENSIONS], multiple: false });
     if (type !== 'garage' && !etat.niveauxExtension) q3.push({ id: Q.hauteur.id, libelle: Q.hauteur.libelle, options: Object.values(OPTIONS_HAUTEUR), multiple: false });
   }
-  if (q3.length) {
-    return sortie('dimensions', type === 'surelevation'
+  // LOT X7 — posées avec les dimensions : pente et sens du faîtage (toit en pente), hauteur à l'égout si connue.
+  const q3x: QuestionBloc[] = [];
+  if (etat.toit && etat.toit !== 'plat' && (etat.penteToit ?? null) === null) q3x.push({ id: Q.penteToit.id, libelle: Q.penteToit.libelle, options: OPTIONS_PENTE_TOIT.map(([, l]) => l), multiple: false });
+  if (etat.toit && etat.toit !== 'plat' && (etat.faitage ?? null) === null) q3x.push({ id: Q.faitage.id, libelle: Q.faitage.libelle, options: OPTIONS_FAITAGE.map(([, l]) => l), multiple: false });
+  if (etat.hauteurEgoutM === null && !etat.egoutInconnu) q3x.push({ id: Q.egout.id, libelle: Q.egout.libelle, options: [Q.egout.inconnue], multiple: false });
+  const texteX7Toit = q3x.length
+    ? `\n\nPour dessiner votre maison fidèlement sur les images : ${[
+      q3x.some((x) => x.id === Q.penteToit.id) ? '**la pente du toit**' : null,
+      q3x.some((x) => x.id === Q.faitage.id) ? '**le sens du faîtage** (la ligne du haut du toit : dans la longueur ou dans la largeur de la maison)' : null,
+      q3x.some((x) => x.id === Q.egout.id) ? `**la hauteur à l’égout** (du sol au bas de la gouttière) si vous la connaissez — écrivez-la, par exemple « égout 5,2 m » ; sinon elle reste estimée (${fr(m.hauteurEgout.valeur, 1)} m, ${statutCourt(m.hauteurEgout.statut)})` : null,
+    ].filter(Boolean).join(', ')}. Sans réponse, la valeur reste estimée et l’image le dira.`
+    : '';
+  if (q3.length || q3x.length) {
+    const q3t = [...q3, ...q3x];
+    if (!q3.length) return sortie('dimensions', `Merci.${texteX7Toit}`, q3t);
+    return sortie('dimensions', (type === 'surelevation'
       ? '**Combien de niveaux ajouter** sur la maison ?'
-      : `**Quelles dimensions pour l’extension ${OPTIONS_TYPE[type].toLowerCase()}** ? La largeur se mesure le long de la façade de la maison, la profondeur en s’en éloignant (vous pouvez écrire par exemple « 4,5 × 6 m »).`, q3);
+      : `**Quelles dimensions pour l’extension ${OPTIONS_TYPE[type].toLowerCase()}** ? La largeur se mesure le long de la façade de la maison, la profondeur en s’en éloignant (vous pouvez écrire par exemple « 4,5 × 6 m »).`) + texteX7Toit, q3t);
   }
 
   // Étape 4 : surface de plancher existante réelle et demandeur.
   const q4: QuestionBloc[] = [];
   if (etat.sdpExistanteM2 === null && !etat.sdpInconnue) q4.push({ id: Q.surface.id, libelle: Q.surface.libelle, options: [Q.surface.inconnue, Q.surface.saisie], multiple: false });
   if (!etat.demandeur) q4.push({ id: Q.demandeur.id, libelle: Q.demandeur.libelle, options: [Q.demandeur.particulier, Q.demandeur.morale], multiple: false });
+  // LOT X7 — clôture sur rue (hauteur ou aucune) et habillage (menuiseries, baie vitrée), posés avec la surface.
+  const q4x: QuestionBloc[] = [];
+  if ((etat.cloture ?? null) === null) q4x.push({ id: Q.cloture.id, libelle: Q.cloture.libelle, options: OPTIONS_CLOTURE.map(([, l]) => l), multiple: false });
+  if ((etat.menuiserie ?? null) === null) q4x.push({ id: Q.menuiserie.id, libelle: Q.menuiserie.libelle, options: OPTIONS_MENUISERIE.map(([, l]) => l), multiple: false });
+  if ((etat.baies ?? null) === null && type !== 'garage') q4x.push({ id: Q.baie.id, libelle: Q.baie.libelle, options: OPTIONS_BAIE.map(([, l]) => l), multiple: false });
+  const texteX7 = q4x.length ? '\n\nPour l’image dans la rue : la **clôture sur rue** (sa hauteur approximative, ou aucune) et l’**habillage** de l’extension (couleur des menuiseries, baie vitrée ou non). Sans réponse : convention Mimmoza (menuiseries anthracite, baie placée par règle), dite sur l’image.' : '';
+  if (!q4.length && q4x.length) return sortie('surface', `Dernières précisions.${texteX7}`, q4x);
   if (q4.length) {
-    return sortie('surface', `Pour savoir s’il faut une déclaration préalable ou un permis, et si un architecte est obligatoire, j’ai besoin de la **surface de plancher RÉELLE de la maison aujourd’hui** (acte de vente, avis de taxe foncière, plans) — écrivez-la, par exemple « 118 m² ». Mon estimation (${fr(estimation.surfacePlancher.valeur, 0)} m², entre ${fr(estimation.surfacePlancher.minM2, 0)} et ${fr(estimation.surfacePlancher.maxM2, 0)} m²) n’est pas une mesure.`, q4);
+    q4.push(...q4x);
+    return sortie('surface', `Pour savoir s’il faut une déclaration préalable ou un permis, et si un architecte est obligatoire, j’ai besoin de la **surface de plancher RÉELLE de la maison aujourd’hui** (acte de vente, avis de taxe foncière, plans) — écrivez-la, par exemple « 118 m² ». Mon estimation (${fr(estimation.surfacePlancher.valeur, 0)} m², entre ${fr(estimation.surfacePlancher.minM2, 0)} et ${fr(estimation.surfacePlancher.maxM2, 0)} m²) n’est pas une mesure.` + texteX7, q4);
   }
 
   // Étape 5 : synthèse — moteur, régime, projet.
@@ -566,12 +648,19 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
       profondeurM: D(etat.profondeurM!, 'confirmee', SOURCE_SAISIE),
       ...(etat.niveauxExtension ? { niveaux: D(etat.niveauxExtension, 'confirmee', SOURCE_SAISIE) } : {}),
     };
+  // LOT X7 — habillage choisi (menuiseries, baie vitrée) : CONFIRMÉ ; absent si « je ne sais pas » (convention, dite).
+  const menuiserieChoisie = etat.menuiserie && etat.menuiserie !== 'inconnue' ? etat.menuiserie : null;
+  const baiesChoisies = etat.baies && etat.baies !== 'inconnue' ? etat.baies : null;
   const demande: ExtensionDemandee = {
     type,
     ...(type !== 'surelevation' ? { facade: { cote: etat.facade! } } : {}),
     existantId: m.id,
     dimensions,
     ...(Object.keys(rm.reculs).length ? { reculs: rm.reculs } : {}),
+    ...(menuiserieChoisie || baiesChoisies ? { habillage: {
+      ...(menuiserieChoisie ? { menuiserie: D(menuiserieChoisie, 'confirmee', `${SOURCE_SAISIE} ; menuiseries « ${OPTIONS_MENUISERIE.find(([k]) => k === menuiserieChoisie)![1]} »`) } : {}),
+      ...(baiesChoisies ? { baies: D(baiesChoisies, 'confirmee', `${SOURCE_SAISIE} ; ${baiesChoisies === 'auto' ? 'avec baie vitrée' : 'sans baie (murs pleins)'}`) } : {}),
+    } } : {}),
   };
   const res = calculerExtension({
     maison: m, demande, parcelle: pm, regles: rm.regles,
@@ -595,7 +684,11 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     formeToit: m.toit.forme.statut === 'confirmee'
       ? D(m.toit.forme.valeur, 'confirmee', `${SOURCE_SAISIE} ; estimation proposée : ${OPTIONS_TOIT[estimation.toit.forme.valeur]} (${statutCourt(estimation.toit.forme.statut)})`)
       : m.toit.forme,
-    ...(m.toit.forme.valeur !== 'plat' && (etat.toit === null || etat.toit === estimation.toit.forme.valeur) ? { penteToitDeg: m.toit.penteDeg } : {}),
+    // LOT X7 — pente (classe choisie, centre de la classe) et sens du faîtage CONFIRMÉS ; « je ne sais pas » : estimation.
+    ...(m.toit.forme.valeur !== 'plat' && typeof etat.penteToit === 'number'
+      ? { penteToitDeg: D(etat.penteToit, 'confirmee', `${SOURCE_SAISIE} ; classe de pente choisie (≈ ${etat.penteToit}°, centre de la classe)`) }
+      : m.toit.forme.valeur !== 'plat' && (etat.toit === null || etat.toit === estimation.toit.forme.valeur) ? { penteToitDeg: m.toit.penteDeg } : {}),
+    ...(m.toit.forme.valeur !== 'plat' && (etat.faitage === 'grand-axe' || etat.faitage === 'petit-axe') ? { orientationFaitage: D(etat.faitage, 'confirmee', `${SOURCE_SAISIE} ; sens du faîtage choisi (${etat.faitage === 'grand-axe' ? 'dans la longueur' : 'dans la largeur'} de la maison)`) } : {}),
     niveaux: m.niveaux,
     surfacePlancherM2: m.surfacePlancher.statut === 'confirmee'
       ? D(m.surfacePlancher.valeur, 'confirmee', m.surfacePlancher.source)
@@ -605,6 +698,11 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   const brut = {
     format: PROJET_EXTENSION_FORMAT, version: PROJET_EXTENSION_VERSION, nature: 'extension', modeExistantParDefaut: 'conserver',
     existants: [existant], extension: demande, ...(etat.demandeur ? { demandeur: etat.demandeur } : {}),
+    // LOT X7 — clôture sur rue DÉCLARÉE (« plus de 2 m » : présence seule ; « je ne sais pas » : rien).
+    ...(typeof etat.cloture === 'number'
+      ? { clotureRue: { presence: D(true, 'confirmee', SOURCE_SAISIE), hauteurM: D(etat.cloture, 'confirmee', `${SOURCE_SAISIE} ; clôture sur rue d’environ ${fr(etat.cloture, 1)} m`) } }
+      : etat.cloture === 'aucune' ? { clotureRue: { presence: D(false, 'confirmee', `${SOURCE_SAISIE} ; aucune clôture sur rue`) } }
+      : etat.cloture === 'plus' ? { clotureRue: { presence: D(true, 'confirmee', `${SOURCE_SAISIE} ; clôture sur rue de plus de 2 m (hauteur non chiffrée)`) } } : {}),
   };
   const lu = lireProjetExtension(JSON.parse(JSON.stringify(brut)));
   const projet = lu.ok ? lu.projet : null;
