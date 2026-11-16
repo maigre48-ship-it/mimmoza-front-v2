@@ -129,3 +129,32 @@ test('X3-F5 : options d’image — « existant » accepté ; « conserver » re
   assert.match(resumeOptions('image', { vues: ['face'], existant: 'conserver' }), /maison existante conservée/);
   assert.equal(validerOptions('film', { existant: 'conserver' }).ok, false);
 });
+
+test('X4-F1 : carte de résultat — surface créée avec le statut et la fourchette écrits par la machine de rendu (lot X4), refus', () => {
+  const projet = SORTIE_FIN.data.projet_extension;
+  // Format réel de `resultat.extension` (worker X4, resumeExtensionResultat) — rejeu P0646 côté rue 5 × 4.
+  const rx = { ok: true, type: 'laterale', existant_id: 'BATIMENT0000000312986202', refus: [], surface_plancher_creee_m2: 16.8, surface_plancher_creee_statut: 'estimee',
+    surface_plancher_creee_min_m2: 14, surface_plancher_creee_max_m2: 19, surface_plancher_creee_source: 'moteur d’extension', emprise_creee_m2: 20 };
+  const e = existantDuTravail({ options: { existant: 'conserver' }, projet_extension: projet, resultat_extension: rx })!;
+  assert.equal(e.surfaceCreee, 'Surface de plancher créée ESTIMÉE par le moteur : ≈ 16,8 m² (entre 14 et 19 m²)');
+  assert.deepEqual(e.refus, []);
+  // Statut inconnu ou fourchette incohérente : jamais présentée autrement qu'ESTIMÉE, fourchette omise.
+  const bizarre = existantDuTravail({ projet_extension: projet, resultat_extension: { ...rx, surface_plancher_creee_statut: 'mesurage', surface_plancher_creee_min_m2: 30 } })!;
+  assert.equal(bizarre.surfaceCreee, 'Surface de plancher créée ESTIMÉE par le moteur : ≈ 16,8 m²');
+  // Film d'une extension (sans option `existant`) : le bloc vient du projet de la fiche.
+  assert.equal(existantDuTravail({ options: {}, projet_extension: projet })!.titre, 'Maison existante conservée (projet d’extension)');
+});
+
+test('X4-F2 : échec d’un rendu d’extension refusé par le moteur — message de la machine de rendu affiché tel quel', () => {
+  const erreur = 'Extension non dessinée : le moteur d’extension refuse ce placement — Recul aux limites séparatives : 1,69 m < 3 m. Rien n’a été rendu (aucune image d’un projet refusé) : modifiez l’extension (côté, dimensions) ou les règles dans la conversation, puis relancez.';
+  const t = lireTravail({
+    id: '11111111-1111-4111-8111-111111111112', conversation_id: 'c', type: 'image', statut: 'echec', progression: 3, etape: null,
+    options: { vues: ['face'], existant: 'conserver' }, elements_omis: [], erreur, cree_le: '2026-11-14T10:00:00Z', maj_le: '2026-11-14T10:01:00Z', demarre_le: null, termine_le: null,
+    resultat: null, projet_extension: SORTIE_FIN.data.projet_extension,
+  })!;
+  const v = vueCarteSuivi(t, { jobId: t.id, origine: 'lance', type: 'image', statut: 'echec', machine: null, positionFile: null }, Date.parse('2026-11-14T11:00:00Z'));
+  assert.equal(v.etat, 'echec');
+  assert.ok(v.phrase.includes('Extension non dessinée : le moteur d’extension refuse ce placement — Recul aux limites séparatives : 1,69 m < 3 m.'), v.phrase);
+  assert.ok(v.existant, 'bloc « maison conservée » présent');
+  assert.deepEqual(v.existant!.refus, []);
+});

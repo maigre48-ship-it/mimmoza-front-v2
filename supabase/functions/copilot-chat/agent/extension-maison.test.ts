@@ -314,7 +314,7 @@ Deno.test('X3-13 : contrat X0 — copie VERBATIM du Studio (empreinte), validati
   assertEquals(inconnue.ok, false);
 });
 
-Deno.test('X3-14 : option de travail — « existant : conserver » refusé avec une zone à effacer (masque_existant) ; fiche complétée ; rendu fermé', () => {
+Deno.test('X3-14 : option de travail — « existant : conserver » refusé avec une zone à effacer (masque_existant) ; fiche complétée ; rendu ouvert (X4)', () => {
   const p = jouer(contexte('930470000P0646'), ['agrandir ma maison', 'Maison existante : Conserver la maison',
     'Toit de la maison : 2 pans · Niveaux de la maison : R+1 · Type d’extension : Arrière · Façade (vue de la rue) : À l’arrière',
     'Dimensions (largeur × profondeur) : 5 × 4 m · Hauteur de l’extension : Plain-pied', 'Surface de plancher existante : Je ne sais pas · Demandeur : Particulier'])[4]!.projet!;
@@ -322,7 +322,8 @@ Deno.test('X3-14 : option de travail — « existant : conserver » refusé avec
   assertEquals(f.projet_extension, p);
   assertEquals(f.charge, { x: 1 });
   assert(lireProjetExtension(f.projet_extension).ok);
-  assertEquals(RENDU_EXTENSION_OUVERT, false);
+  // LOT X4 site : rendu d'extension OUVERT (la machine de rendu dessine la maison conservée et l'extension).
+  assertEquals(RENDU_EXTENSION_OUVERT, true);
   assertMatch(MESSAGE_RENDU_EXTENSION_FERME, /RIEN N’A ÉTÉ LANCÉ/);
   assertEquals(optionsAvecExistant({ vues: ['face'] }, 'conserver'), { ok: true, valeur: { vues: ['face'], existant: 'conserver' } });
   const r = optionsAvecExistant({ fond: 'photo_rue', masque_existant: { chemin: 'a/b.png', octets: 1 } }, 'conserver');
@@ -401,8 +402,8 @@ Deno.test('X3-16 : outil — état relu d’un tour à l’autre, parcelle de la
   assertMatch(vide.message!, /adresse ou la référence cadastrale/);
 });
 
-// ── Rendu d'un projet d'extension : fermé tant que la machine de rendu ne sait pas le dessiner (lot X4) ─────
-Deno.test('X3-17 : rendu demandé dans une conversation qui porte un projet d’extension → refus dit, rien n’est lancé ; sans projet : devis inchangé', async () => {
+// ── Rendu d'un projet d'extension : ouvert au lot X4, depuis la 3D préparée seulement (devis complet : extension-rendu.test.ts) ─
+Deno.test('X3-17 : rendu demandé dans une conversation qui porte un projet d’extension → jamais depuis une version de conception, rien n’est lancé ; sans projet : devis inchangé', async () => {
   const { executerOutilStudio } = await import('./studio.ts');
   const p = jouer(contexte('930470000P0646'), ['agrandir ma maison', 'Maison existante : Conserver la maison',
     'Toit de la maison : 2 pans · Niveaux de la maison : R+1 · Type d’extension : Arrière · Façade (vue de la rue) : À l’arrière',
@@ -419,9 +420,16 @@ Deno.test('X3-17 : rendu demandé dans une conversation qui porte un projet d’
   });
   const envS = (sorties: Record<string, unknown>[]) => ({ userId: 'u-1', depot: depot(sorties) as never, secret: 's', requete: 'r-1', conversationId: 'c-1', origine: 'https://mimmoza.vercel.app' });
   const sortie = { etape: 'termine', projet_extension: p.projet, option_travail: p.optionTravail };
+  // LOT X4 site : rendu OUVERT, mais la seule source ici est une version de conception (pas de 3D préparée) : elle n'est
+  // JAMAIS prise pour une extension (elle ne contient pas la maison conservée) → « rien à rendre », rien n'est inséré.
   const r = await executerOutilStudio('studio_lancer_rendu', { type: 'film', brief: { a_toi_de_choisir: true } }, envS([sortie]));
-  assertEquals(r?.status, 'partial');
-  assertMatch(r!.message!, /RIEN N’A ÉTÉ LANCÉ.*EXTENSION/);
+  assertEquals(r?.status, 'not_found', r?.message);
+  assertMatch(r!.message!, /Rien à rendre/);
+  assertEquals(inserts, 0);
+  // Version demandée explicitement : refus dit.
+  const rv = await executerOutilStudio('studio_lancer_rendu', { type: 'film', source: 'version', brief: { a_toi_de_choisir: true } }, envS([sortie]));
+  assertEquals(rv?.status, 'partial');
+  assertMatch(rv!.message!, /RIEN N’A ÉTÉ LANCÉ.*3D préparée/);
   assertEquals(inserts, 0);
   // Parcours arrêté (« démolir ») ou projet absent : le devis habituel est rendu.
   const neuf = await executerOutilStudio('studio_lancer_rendu', { type: 'film', brief: { a_toi_de_choisir: true } }, envS([{ etape: 'neuf' }]));

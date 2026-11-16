@@ -53,6 +53,8 @@ export const Q = {
 } as const;
 
 export const OPTIONS_TOIT: Readonly<Record<FormeToit, string>> = { 'deux-pans': '2 pans', 'quatre-pans': '4 pans', plat: 'Toit plat', monopente: 'Monopente' };
+/** LOT X4 site — forme du toit dans une question (« Le toit de la maison est-il bien à 2 pans ? »). */
+export const TOIT_DANS_QUESTION: Readonly<Record<FormeToit, string>> = { 'deux-pans': 'à 2 pans', 'quatre-pans': 'à 4 pans', plat: 'plat (toit-terrasse)', monopente: 'à un seul pan (monopente)' };
 export const OPTIONS_NIVEAUX: readonly [number, string][] = [[1, 'Plain-pied'], [2, 'R+1'], [3, 'R+2'], [4, 'R+3']];
 export const OPTIONS_TYPE: Readonly<Record<TypeExtension, string>> = { laterale: 'Latérale', arriere: 'Arrière', surelevation: 'Surélévation', garage: 'Garage', veranda: 'Véranda (bientôt)' };
 export const OPTIONS_FACADE: Readonly<Record<CoteFacade, string>> = { gauche: 'À gauche', droite: 'À droite', arriere: 'À l’arrière', rue: 'Côté rue' };
@@ -518,8 +520,14 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   if (!typeValide) q.push({ id: Q.type.id, libelle: Q.type.libelle, options: (['laterale', 'arriere', 'surelevation', 'garage'] as TypeExtension[]).map((k) => OPTIONS_TYPE[k]), multiple: false });
   if (typeValide !== 'surelevation' && !etat.facade) q.push({ id: Q.facade.id, libelle: Q.facade.libelle, options: Object.values(OPTIONS_FACADE), multiple: false });
   if (q.length) {
+    // LOT X4 site — décision d'Albé : le toit de la maison conservée est CONFIRMÉ par l'utilisateur avant tout rendu
+    // d'extension (la machine de rendu dessine la maison avec ce toit). La question est posée explicitement ; la
+    // suggestion (estimation) n'est jamais présélectionnée : l'utilisateur clique la forme réelle.
+    const questionToit = !etat.toit
+      ? `\n\n**Le toit de votre maison est-il bien ${TOIT_DANS_QUESTION[estimation.toit.forme.valeur]} ?** C’est une estimation (${statutCourt(estimation.toit.forme.statut)}) : choisissez la forme réelle dans « ${Q.toit.libelle} ». Elle sert aussi à dessiner votre maison sur les images de l’extension.`
+      : '';
     const intro = !etat.toit || !etat.niveaux
-      ? `${presentation} Voici ce que j’en estime ; **confirmez ou corrigez** (les valeurs SUPPOSÉES ne sont pas des mesures) :\n\n${tableauMarkdown(lignes)}\n\nLa surface de plancher ci-dessus est une **estimation** ; je vous demanderai la surface réelle plus loin.`
+      ? `${presentation} Voici ce que j’en estime ; **confirmez ou corrigez** (les valeurs SUPPOSÉES ne sont pas des mesures) :\n\n${tableauMarkdown(lignes)}${questionToit}\n\nLa surface de plancher ci-dessus est une **estimation** ; je vous demanderai la surface réelle plus loin.`
       : 'Merci. **Quel agrandissement envisagez-vous**, et de quel côté de la maison, vu depuis la rue ?';
     return sortie(q.some((x) => x.id === Q.toit.id || x.id === Q.niveaux.id) ? 'confirmer' : 'type', intro, q);
   }

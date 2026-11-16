@@ -34,16 +34,53 @@ export const DELAI_SOURCE_MS = 10_000;
 /** Sorties d'outil relues pour retrouver l'état du parcours (les plus récentes d'abord). */
 export const ETATS_RELUS_MAX = 10;
 /**
- * Rendu (image, film, visite) d'un projet d'extension : FERMÉ tant que la machine de rendu ne sait pas dessiner la maison
- * conservée et l'extension (lot X4). Ouvert, le devis porterait `fiche.projet_extension` et l'option `existant`.
+ * Rendu (image, film, visite) d'un projet d'extension : OUVERT depuis le lot X4 (la machine de rendu dessine la maison
+ * conservée, modélisée, et l'extension calculée par son moteur ; rien n'est effacé). Le devis porte
+ * `fiche.projet_extension` pour TOUT type de rendu et, pour l'image, l'option `existant`. Repasser à `false` referme le
+ * rendu d'extension (message MESSAGE_RENDU_EXTENSION_FERME), sans autre changement.
  */
-export const RENDU_EXTENSION_OUVERT = false;
+export const RENDU_EXTENSION_OUVERT = true;
 /** Réponse de l'outil de rendu tant que le rendu d'extension est fermé. */
 export const MESSAGE_RENDU_EXTENSION_FERME =
   'RIEN N’A ÉTÉ LANCÉ. Cette conversation porte un projet d’EXTENSION (maison existante conservée) : la machine de rendu ' +
   'ne sait pas encore dessiner la maison conservée avec son extension (prochaine étape). Une image aujourd’hui montrerait un ' +
   'bâtiment neuf à la place : ne la propose pas. Dis-le simplement à l’utilisateur ; le projet (maison, extension, régime ' +
   'indicatif) reste enregistré dans la conversation.';
+
+/**
+ * LOT X4 site — décision d'Albé : la forme du toit de la maison conservée doit être CONFIRMÉE par l'utilisateur dans le
+ * parcours avant tout rendu d'extension (la machine de rendu s'en sert pour dessiner la maison et calculer ce qu'elle
+ * cache de l'extension). Vrai si chaque maison conservée du projet a `formeToit` au statut « confirmée ». Pur.
+ */
+export function toitConfirme(projet: ProjetExtension): boolean {
+  const conservees = projet.existants.filter((e) => e.mode === 'conserver');
+  return conservees.length > 0 && conservees.every((e) => e.formeToit?.statut === 'confirmee');
+}
+
+/** Réponse de l'outil de rendu quand le toit de la maison conservée n'a pas été confirmé dans le parcours. */
+export const MESSAGE_TOIT_A_CONFIRMER =
+  'RIEN N’A ÉTÉ LANCÉ. La forme du toit de la maison existante n’a pas été CONFIRMÉE dans le parcours d’extension : ' +
+  'la machine de rendu en a besoin pour dessiner la maison conservée et ce qu’elle cache de l’extension. Dis à l’utilisateur ' +
+  'en une phrase qu’il doit d’abord confirmer le toit de sa maison dans le parcours d’extension (il peut écrire « agrandir ma ' +
+  'maison » pour le reprendre) ; ne propose aucune forme de toit toi-même.';
+
+/** Réponse de l'outil de rendu quand le rendu d'extension est demandé depuis une version de conception. */
+export const MESSAGE_EXTENSION_VERSION =
+  'RIEN N’A ÉTÉ LANCÉ. Le rendu d’une extension se lance depuis la 3D préparée par Mimmo : une version enregistrée dans ' +
+  'l’Atelier 3D ne contient pas la maison conservée. Rappelle l’outil SANS la source « version » (la 3D préparée est prise).';
+
+/** Lignes du devis d'un rendu d'extension (ce que la machine de rendu dessine, et ce qui reste estimé). Pur. */
+export function avertissementsRenduExtension(projet: ProjetExtension, type: 'image' | 'film' | 'visite360'): string[] {
+  const e0 = projet.existants.find((e) => e.id === projet.extension?.existantId) ?? projet.existants[0];
+  const enPente = e0?.formeToit !== undefined && e0.formeToit.valeur !== 'plat';
+  const penteEstimee = enPente && (e0?.penteToitDeg?.statut !== 'confirmee' || e0?.orientationFaitage?.statut !== 'confirmee');
+  return [
+    'Projet d’EXTENSION : la maison existante est CONSERVÉE (rien n’est effacé) ; la machine de rendu dessine l’extension calculée par son moteur d’extension, à partir des réponses du parcours. Si le moteur refuse le placement, rien n’est rendu et la raison est dite.',
+    `Maison conservée modélisée depuis la base des bâtiments de l’IGN (BD TOPO) : forme du toit confirmée par vous${penteEstimee ? ' ; pente du toit et orientation du faîtage ESTIMÉES' : ''} ; la maison réelle peut différer de ce modèle.`,
+    'Le relief n’est pas transmis par Mimmo : la machine de rendu calcule sur un terrain supposé plat. Aucun habillage de bâtiment neuf (façade, balcons, toiture) ne s’applique à une extension.',
+    ...(type === 'image' ? ['Image dans la photo de la rue : là où la maison réelle est devant l’extension, la photo repasse devant ; si l’extension est presque entièrement cachée depuis cette photo, l’image revient « à valider » avec la raison.'] : []),
+  ];
+}
 
 /** Fiche du travail complétée du projet d'extension (contrat X0), au même niveau que `habillage_batiments`. */
 export function ficheAvecProjetExtension<T extends Record<string, unknown>>(fiche: T, projet: ProjetExtension): T & { projet_extension: ProjetExtension } {
@@ -245,6 +282,9 @@ export function etatPrecedent(sorties: readonly Obj[]): { etat: ReturnType<typeo
 /** Dernier `projet_extension` VALIDE de la conversation (contrat X0), avec l'option de travail. */
 export function projetDesSorties(sorties: readonly Obj[]): { projet: ProjetExtension; existant: 'conserver' | 'effacer' } | null {
   for (const d of sorties) {
+    // LOT X4 site : la maison a été déclarée « à démolir » APRÈS le dernier projet (parcours arrêté, projet neuf) :
+    // l'ancien projet d'extension ne vaut plus (le rendu étant ouvert, il dessinerait une extension non voulue).
+    if (estObj(d) && (d.projet_extension === undefined || d.projet_extension === null) && estObj(d.etat) && d.etat.conserver === false) return null;
     if (!estObj(d) || d.projet_extension === undefined || d.projet_extension === null) continue;
     const lu = lireProjetExtension(d.projet_extension);
     if (!lu.ok || lu.projet.nature !== 'extension') return null;
@@ -284,7 +324,11 @@ export function resultatParcours(s: SortieParcours): ResultatOutil {
       'DÉJÀ AFFICHÉ À L’UTILISATEUR par le serveur : l’estimation, les verdicts et ' + (s.blocChoix ? 'les questions à choix (puces sous ta réponse). ' : 'la synthèse. ') +
       'Écris au plus UNE phrase d’accompagnement, SANS aucun chiffre, sans reposer de question ni écrire de bloc mimmoza-choix. ' +
       (s.etape === 'termine'
-        ? 'Rendu photoréaliste d’une extension : pas encore disponible (la machine de rendu ne dessine pas encore la maison conservée) — ne propose pas de rendu.'
+        ? (RENDU_EXTENSION_OUVERT
+          ? (s.projet && s.resultatMoteur?.ok
+            ? 'Tu peux proposer, en une phrase, un rendu de l’extension (image dans la photo de la rue, film ou visite) : la machine de rendu dessinera la maison conservée et l’extension calculée ; ne promets ni délai ni image « insérée dans la rue » (elle le vérifie elle-même).'
+            : 'Le moteur d’extension refuse ce placement (ou le projet n’est pas transmissible) : ne propose pas de rendu tant que l’extension n’a pas été modifiée.')
+          : 'Rendu photoréaliste d’une extension : pas encore disponible (la machine de rendu ne dessine pas encore la maison conservée) — ne propose pas de rendu.')
         : ''),
   };
 }

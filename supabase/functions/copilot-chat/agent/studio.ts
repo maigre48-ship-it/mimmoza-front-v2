@@ -67,8 +67,12 @@ import { ligneHauteurFiche, poserVolumeSurVoie } from '../../../../src/spaces/co
 import { reglesFicheDepuisReglesLues } from '../../../../src/spaces/copilot/studio3d/reglesFiche.ts';
 import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
-// LOT X3 : projet d'extension de la conversation (maison conservée) — rendu fermé tant que le lot X4 n'est pas livré.
-import { ficheAvecProjetExtension, MESSAGE_RENDU_EXTENSION_FERME, optionsAvecExistant, projetDesSorties, RENDU_EXTENSION_OUVERT } from './extension.ts';
+// LOT X3 : projet d'extension de la conversation (maison conservée). LOT X4 site : rendu ouvert (drapeau), projet transmis
+// pour tout type de rendu, toit de la maison confirmé exigé, 3D préparée seulement (jamais une version de conception).
+import {
+  avertissementsRenduExtension, ficheAvecProjetExtension, MESSAGE_EXTENSION_VERSION, MESSAGE_RENDU_EXTENSION_FERME, MESSAGE_TOIT_A_CONFIRMER,
+  optionsAvecExistant, projetDesSorties, RENDU_EXTENSION_OUVERT, toitConfirme,
+} from './extension.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -1460,6 +1464,19 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       if (j.o.existant !== undefined) return erreur('L’image d’une extension (maison conservée) n’est pas encore activée dans la base (migration 20261114120000_studio_image_existant non appliquée). RIEN N’A ÉTÉ LANCÉ.', 'not_configured');
       return fondPhoto(j.o) ? refusFondPhoto() : refusImage();
     }
+    // LOT X4 site : le projet d'extension part avec TOUT rendu (film et visite compris), pas seulement l'image avec
+    // `existant` ; sinon un film ou une visite d'extension montrerait un volume neuf.
+    const ext = await projetExtensionConversation(env, uid);
+    if (j.o.existant !== undefined && !ext) return erreur('Le projet d’extension de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ.');
+    if (ext) {
+      if (!RENDU_EXTENSION_OUVERT) return erreur(MESSAGE_RENDU_EXTENSION_FERME, 'partial');
+      if (j.s.genre === 'version') return erreur(MESSAGE_EXTENSION_VERSION, 'partial');
+      if (!toitConfirme(ext.projet)) return erreur(MESSAGE_TOIT_A_CONFIRMER, 'partial');
+      // Devis d'image établi AVANT le projet d'extension (sans l'option `existant`) : il ne décrivait pas ce rendu.
+      if (j.t === 'image' && j.o.existant === undefined) {
+        return erreur('Le projet d’extension a été enregistré après ce devis : il ne le décrit pas. RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer pour établir le devis de l’extension, présente-le et attends l’accord.');
+      }
+    }
     let fiche: Obj;
     if (j.s.genre === 'version') {
       fiche = { version: 1, conception: { conception_id: j.s.conception_id, n: j.s.n, modele_ref: j.s.modele_ref }, titre: `Conception — version ${j.s.n}`, conversation_id: j.c, origine: 'mimmo', ...(briefDuJeton(j.b) ? { brief_rendu: briefDuJeton(j.b) } : {}) };
@@ -1469,13 +1486,13 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       // LOT P2 : façades sur voie (contrat §2) dans le site pour toute image ; LOT P9 : lues pour tout rendu, pour poser
       // le volume au recul sur voie (film et visite compris), recopiées dans le site seulement pour l'image.
       const facades = (await facadesVoiePreparation(env, uid, prep)).facades;
-      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' });
+      // LOT X4 site : un projet d'extension a besoin de la limite sur rue pour TOUT rendu (moteur d'extension du worker,
+      // qui la lit dans `charge.site.facadesVoie`), film et visite compris.
+      const avecExtension = ext !== null;
+      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension });
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }
-    // LOT X3 : projet d'extension (maison conservée) — seulement quand le rendu d'extension est ouvert (lot X4).
-    const ext = j.o.existant !== undefined ? await projetExtensionConversation(env, uid) : null;
-    if (j.o.existant !== undefined && !ext) return erreur('Le projet d’extension de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ.');
     if (ext) fiche = ficheAvecProjetExtension(fiche, ext.projet);
     fiche.devis_id = j.id;
     let t: TravailLu;
@@ -1514,11 +1531,15 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     const autorise = await env.depot.typeRenduAutorise('image', opts0.valeur);
     if (autorise === false) return fondPhoto(opts0.valeur) ? refusFondPhoto() : refusImage();
   }
-  const src = await resoudreSource(input, env);
-  if (!src.ok) return src.res;
-  // LOT X3 : un projet d'EXTENSION (maison conservée) ne se rend pas comme un bâtiment neuf : fermé jusqu'au lot X4.
+  // LOT X3 : un projet d'EXTENSION (maison conservée) ne se rend pas comme un bâtiment neuf.
+  // LOT X4 site : rendu ouvert ; il exige le toit de la maison confirmé et part de la 3D préparée par Mimmo (une version
+  // de conception ne contient pas la maison conservée) : la source automatique prend donc la 3D préparée.
   const extension = await projetExtensionConversation(env, uid);
   if (extension && !RENDU_EXTENSION_OUVERT) return erreur(MESSAGE_RENDU_EXTENSION_FERME, 'partial');
+  if (extension && input.source === 'version') return erreur(MESSAGE_EXTENSION_VERSION, 'partial');
+  if (extension && !toitConfirme(extension.projet)) return erreur(MESSAGE_TOIT_A_CONFIRMER, 'partial');
+  const src = await resoudreSource(extension ? { ...input, source: 'preparation' } : input, env);
+  if (!src.ok) return src.res;
   if (type === 'image' && fondPhoto(opts0.valeur) && src.source.genre !== 'preparation') {
     return erreur('L’image sur une photo de rue ne se fait pour l’instant qu’à partir de la 3D préparée par Mimmo (la fiche d’une version enregistrée ne transmet pas la façade sur voie). RIEN N’A ÉTÉ LANCÉ. Propose l’image d’étude, ou la 3D préparée (source « preparation »).');
   }
@@ -1541,11 +1562,13 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     else if (connu) { brief = briefDuJeton(connu.charge.b); origineBrief = 'connu'; }
   }
   // « Modifier l'habillage » demandé dans le chat : la carte s'ouvre, préremplie du brief connu.
-  if (input.ouvrir_brief === true && src.source.genre === 'preparation' && !briefCarteLu) {
+  // LOT X4 site : un projet d'extension n'a pas d'habillage de bâtiment neuf (la machine de rendu ne dessine que la maison
+  // conservée et l'extension) : ni carte, ni question d'habillage ; seule l'ambiance d'un brief fourni est reprise.
+  if (input.ouvrir_brief === true && src.source.genre === 'preparation' && !briefCarteLu && !extension) {
     const p = src.source.preparation;
     return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine) });
   }
-  if (!brief && src.source.genre === 'preparation') {
+  if (!brief && src.source.genre === 'preparation' && !extension) {
     let posee = false;
     try { posee = await env.depot.questionBriefPosee(uid, env.conversationId); } catch { posee = false; }
     const p = src.source.preparation;
@@ -1572,6 +1595,9 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (brief && brief.ambiance !== opts.valeur.ambiance) {
     brief = { ...brief, ambiance: opts.valeur.ambiance as BriefRendu['ambiance'], defauts: ambianceExplicite ? brief.defauts.filter((c) => c !== 'ambiance') : brief.defauts };
   }
+  // LOT X4 site : l'ambiance est dans les options ; le reste du brief (façade, balcons, toiture…) ne vaut que pour un
+  // bâtiment neuf : il n'est ni chiffré ni présenté pour une extension.
+  if (extension) { brief = null; origineBrief = null; }
 
   // Composition de bâtiments nommés (A à H) : balcons et style ne sont pas transmis (voir clausesBrief).
   // Bâtiments du contrat v2 (≥ 2) : l'habillage est appliqué à chacun (habillageBatiments, E1-rendu).
@@ -1620,7 +1646,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     ...(type === 'image' ? { fond: LIBELLES_FOND[fondDe(opts.valeur)] } : {}),
-    avertissements: [...avertissementsSource(src.source), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments) : []), ...(fondImage?.avertissements ?? [])],
+    avertissements: [...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments) : []), ...(fondImage?.avertissements ?? [])],
     valable_jusqu_a: `${heureParis(charge.exp)} (heure de Paris)`,
   };
   const noteFond = type !== 'image' ? ''

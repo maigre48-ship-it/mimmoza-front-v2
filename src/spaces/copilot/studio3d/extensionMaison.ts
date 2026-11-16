@@ -184,6 +184,7 @@ export function ligneSurfaceCreee(v: NonNullable<VueCarteExtension['extension']>
 // ── Rendu d'un projet d'extension (carte de résultat, Dossier 3D) ───────────────────────────────────────────
 const TYPES: Record<string, string> = { laterale: 'Extension latérale', arriere: 'Extension arrière', surelevation: 'Surélévation', garage: 'Garage accolé', veranda: 'Véranda' };
 const COTES: Record<string, string> = { gauche: 'côté gauche', droite: 'côté droit', arriere: 'à l’arrière', rue: 'côté rue' };
+const STATUTS_SURFACE: Record<string, string> = { estimee: 'ESTIMÉE', supposee: 'SUPPOSÉE', mesuree: 'MESURÉE', confirmee: 'CONFIRMÉE' };
 const TOITS: Record<string, string> = { 'deux-pans': '2 pans', 'quatre-pans': '4 pans', plat: 'toit plat', monopente: 'monopente' };
 
 export interface ExistantTravail {
@@ -227,13 +228,19 @@ export function existantDuTravail(t: { options?: unknown; projet_extension?: unk
   ] : [];
   const rx = estObj(t.resultat_extension) ? t.resultat_extension : null;
   const sdpX4 = rx ? num(rx.surface_plancher_creee_m2) : null;
+  // LOT X4 site : statut et fourchette écrits par la machine de rendu (`surface_plancher_creee_statut`, `_min_m2`,
+  // `_max_m2`) ; statut absent → « ESTIMÉE » (le moteur ne mesure jamais une surface créée).
+  const statutX4 = rx && typeof rx.surface_plancher_creee_statut === 'string' ? STATUTS_SURFACE[rx.surface_plancher_creee_statut] ?? 'ESTIMÉE' : 'ESTIMÉE';
+  const minX4 = rx ? num(rx.surface_plancher_creee_min_m2) : null;
+  const maxX4 = rx ? num(rx.surface_plancher_creee_max_m2) : null;
+  const fourchetteX4 = minX4 !== null && maxX4 !== null && minX4 <= maxX4 ? ` (entre ${fr(minX4, 0)} et ${fr(maxX4, 0)} m²)` : '';
   return {
     titre: 'Maison existante conservée (projet d’extension)',
     phrase: 'La maison existante est gardée telle quelle : rien n’est effacé de l’image.',
     extension,
     maison,
     refus: rx ? textes(rx.refus, 10) : [],
-    surfaceCreee: sdpX4 !== null ? `Surface de plancher créée ESTIMÉE par le moteur : ≈ ${fr(sdpX4)} m²` : null,
+    surfaceCreee: sdpX4 !== null ? `Surface de plancher créée ${statutX4} par le moteur : ≈ ${fr(sdpX4)} m²${fourchetteX4}` : null,
   };
 }
 
