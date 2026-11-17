@@ -17,7 +17,10 @@
 // =============================================================
 
 import { lireProjetExtension, type DonneesBdnb, type ProjetExtension } from '../../_shared/extension/contrat.ts';
-import { anneauParcelle, contourEnLambert93, telechargerBatimentsParcelle, type BatimentBdTopo } from '../../_shared/extension/bdtopoParcelle.ts';
+import {
+  anneauParcelle, BATIMENTS_MEMORISES_MAX, batimentsSurParcelle, contourEnLambert93, lireLectureMemorisee, telechargerBatimentsParcelle,
+  type BatimentBdTopo, type LectureBdTopoMemorisee,
+} from '../../_shared/extension/bdtopoParcelle.ts';
 import { lambert93VersWgs84 } from '../../_shared/extension/lambert93.ts';
 import {
   avancerParcours, detecterIntentionExtension, lireEtat, OUTIL_EXTENSION_MAISON, reponseAuParcours, suiteDuParcours,
@@ -99,8 +102,9 @@ export const OUTIL_EXTENSION_MAISON_DEF: OutilDef = {
     "lit la maison existante dans la base des bâtiments de l'IGN, l'estime (toit, hauteurs, niveaux, surface) avec les " +
     "statuts de chaque valeur, pose les questions (conserver la maison, confirmer l'estimation, type, façade vue de la rue, " +
     "dimensions, surface de plancher RÉELLE), fait tourner le moteur d'extension et donne le régime INDICATIF (déclaration " +
-    "préalable / permis, architecte). Le SERVEUR lit lui-même les réponses de l'utilisateur et affiche le texte et les " +
-    "questions : n'écris aucun chiffre, ne pose aucune question à sa place. À appeler à chaque message du parcours.",
+    "préalable / permis, architecte). L'application lit elle-même les réponses de l'utilisateur et affiche le texte et les " +
+    "questions : n'écris aucun chiffre, ne pose aucune question à sa place ; écris seulement la phrase de relance rendue. " +
+    "À appeler à chaque message du parcours.",
   input_schema: {
     type: 'object',
     properties: {
@@ -113,9 +117,11 @@ export const OUTIL_EXTENSION_MAISON_DEF: OutilDef = {
 
 /** Consigne ajoutée au prompt système quand le parcours est en cours ou demandé. */
 export const CONSIGNE_EXTENSION = [
-  '# EXTENSION DE MAISON — PARCOURS GUIDÉ PAR LE SERVEUR',
+  '# EXTENSION DE MAISON — PARCOURS GUIDÉ',
   `Appelle \`${OUTIL_EXTENSION_MAISON}\` (sans inventer de paramètre ; \`idu\` seulement si l’utilisateur a donné la parcelle).`,
-  '- Le serveur AFFICHE lui-même l’estimation, les verdicts et les questions à choix : n’écris ensuite qu’UNE phrase d’accompagnement, sans aucun chiffre, sans reposer les questions, sans bloc mimmoza-choix.',
+  '- L’estimation, les verdicts et les questions à choix sont DÉJÀ affichés à l’utilisateur par l’application : écris ensuite EXACTEMENT la phrase de relance donnée par le résultat de l’outil, et rien d’autre (aucun chiffre, aucune question reposée, aucun bloc mimmoza-choix).',
+  '- Ne parle jamais du « serveur », de « la fiche », du « moteur », d’un outil, d’un lot ou d’un nom technique : l’utilisateur ne connaît que Mimmo.',
+  '- N’annonce un résultat (gabarit, régime, image, dossier) que s’il figure dans la sortie de l’outil de CE tour ; ne demande rien que l’outil n’a pas demandé à cette étape.',
   '- Ne calcule rien, ne place rien, n’affirme aucune conformité : le régime (déclaration préalable / permis) est INDICATIF et se vérifie en mairie.',
   '- Une valeur SUPPOSÉE ou estimée n’est jamais une mesure ; une règle PLU estimée n’a pas été lue dans le règlement.',
 ].join('\n');
@@ -310,27 +316,64 @@ function erreur(message: string, status = 'error'): ResultatOutil {
   return { status, source: SOURCE_EXTENSION, message };
 }
 
+/**
+ * LOT X8 — phrase de relance EXACTE écrite par le modèle après l'affichage du parcours (une par étape). Sans chiffre,
+ * sans nom interne, sans annoncer un résultat absent. Le modèle ne l'improvise plus (essai du 17/11 : « le serveur a
+ * affiché le gabarit » alors que rien n'avait été calculé).
+ */
+export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 'resultatMoteur'>): string {
+  switch (s.etape) {
+    case 'sans_parcelle': return 'Donnez-moi l’adresse ou la référence cadastrale de la maison, et je reprends.';
+    case 'sans_bdtopo': return 'Vos réponses sont gardées : cliquez « Réessayer » dans un instant pour reprendre au même point.';
+    case 'aucun_batiment': return 'Vérifiez la référence de la parcelle : si elle est juste, la maison n’est pas encore dans la base de l’IGN.';
+    case 'conserver': return 'Dites-moi, avec le choix ci-dessous, si vous conservez la maison.';
+    case 'neuf': return 'Dites-moi si vous voulez préparer le projet neuf.';
+    case 'confirmer': return 'Confirmez ou corrigez ces valeurs avec les choix ci-dessous.';
+    case 'type': return 'Choisissez le type d’agrandissement et son côté avec les choix ci-dessous.';
+    case 'dimensions': return 'Répondez avec les choix ci-dessous, ou écrivez directement vos valeurs.';
+    case 'surface': return 'Répondez aux dernières questions ci-dessous.';
+    case 'termine':
+      if (!RENDU_EXTENSION_OUVERT) return 'Le projet d’extension est enregistré dans cette conversation.';
+      return s.projet && s.resultatMoteur?.ok
+        ? 'Si vous le souhaitez, je peux maintenant préparer une image de l’extension dans la photo de la rue.'
+        : 'Modifiez les dimensions ou le côté de l’extension pour que je puisse la placer.';
+  }
+}
+
 /** Résultat d'outil : données pour le front (vue, projet) et consigne courte pour le modèle. */
-export function resultatParcours(s: SortieParcours): ResultatOutil {
+export function resultatParcours(s: SortieParcours, lectureBdTopo: LectureBdTopoMemorisee | null = null): ResultatOutil {
+  const relance = phraseDeRelance(s);
   return {
     status: 'ok', source: SOURCE_EXTENSION,
     data: {
       etape: s.etape, etat: s.etat, attendues: s.attendues, vue: s.vue,
-      texte_affiche: s.texte, bloc_choix: s.blocChoix,
+      texte_affiche: s.texte, bloc_choix: s.blocChoix, phrase_relance: relance,
       ...(s.projet ? { projet_extension: s.projet, option_travail: s.optionTravail } : {}),
       ...(s.erreursProjet.length ? { erreurs_projet: s.erreursProjet } : {}),
+      // LOT X8 — lecture BD TOPO de la parcelle, réutilisée si la BD TOPO ne répond pas à un tour suivant.
+      ...(lectureBdTopo ? { bdtopo_lue: lectureBdTopo } : {}),
     },
     message:
-      'DÉJÀ AFFICHÉ À L’UTILISATEUR par le serveur : l’estimation, les verdicts et ' + (s.blocChoix ? 'les questions à choix (puces sous ta réponse). ' : 'la synthèse. ') +
-      'Écris au plus UNE phrase d’accompagnement, SANS aucun chiffre, sans reposer de question ni écrire de bloc mimmoza-choix. ' +
-      (s.etape === 'termine'
-        ? (RENDU_EXTENSION_OUVERT
-          ? (s.projet && s.resultatMoteur?.ok
-            ? 'Tu peux proposer, en une phrase, un rendu de l’extension (image dans la photo de la rue, film ou visite) : la machine de rendu dessinera la maison conservée et l’extension calculée ; ne promets ni délai ni image « insérée dans la rue » (elle le vérifie elle-même).'
-            : 'Le moteur d’extension refuse ce placement (ou le projet n’est pas transmissible) : ne propose pas de rendu tant que l’extension n’a pas été modifiée.')
-          : 'Rendu photoréaliste d’une extension : pas encore disponible (la machine de rendu ne dessine pas encore la maison conservée) — ne propose pas de rendu.')
+      'DÉJÀ AFFICHÉ À L’UTILISATEUR : ' + (s.etape === 'sans_bdtopo' || s.etape === 'sans_parcelle' || s.etape === 'aucun_batiment'
+        ? 'pourquoi le parcours ne peut pas avancer à ce tour. '
+        : 'l’estimation, les verdicts' + (s.blocChoix ? ' et les questions à choix (puces sous ta réponse). ' : ' et la synthèse. ')) +
+      `Écris EXACTEMENT cette phrase, et rien d’autre : « ${relance} » ` +
+      'N’ajoute aucun chiffre, aucune question, aucun bloc mimmoza-choix ; ne parle ni de « serveur », ni de « fiche », ni de « moteur » ; ' +
+      'n’annonce aucun résultat (gabarit, régime, image) qui ne figure pas dans cette sortie.' +
+      (s.etape === 'termine' && RENDU_EXTENSION_OUVERT && s.projet && s.resultatMoteur?.ok
+        ? ' Si l’utilisateur accepte l’image, ne promets ni délai ni image « insérée dans la rue » : la machine de rendu le vérifie elle-même.'
         : ''),
   };
+}
+
+/** LOT X8 — dernière lecture BD TOPO mémorisée pour CETTE parcelle dans la conversation (la plus récente). */
+export function lectureBdTopoDesSorties(sorties: readonly Obj[], idu: string): LectureBdTopoMemorisee | null {
+  for (const d of sorties) {
+    if (!estObj(d) || d.bdtopo_lue === undefined) continue;
+    const l = lireLectureMemorisee(d.bdtopo_lue);
+    if (l && l.idu === idu) return l;
+  }
+  return null;
 }
 
 // ── Exécution ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -374,10 +417,13 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   // Sources en parallèle (lecture seule, jamais bloquantes).
   let batiments: BatimentBdTopo[] | null = null;
   let raisonBdTopo: string | null = null;
+  let lecture: LectureBdTopoMemorisee | null = null;
+  let bdtopoReutilisee: string | null = null;
   let bdnb: DonneesBdnb | null = null;
   let noteBdnb: string | null = null;
   let zoneU: ContexteParcours['zoneU'] = { valeur: null, source: 'zonage non lu' };
   const dateJour = new Date((env.maintenant ?? Date.now)()).toISOString().slice(0, 10);
+  let dateBdTopo = dateJour;
   let secteur: SecteurProtege | null = null;
   if (anneau) {
     const l93 = contourEnLambert93(anneau);
@@ -390,19 +436,30 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
       secteurConnu ? Promise.resolve(secteurConnu) : consulterSecteurProtege(iduRetenu, lonC, latC, env.patrimoine, dateJour),
     ]);
     secteur = sp;
-    if ('batiments' in bd) batiments = bd.batiments; else raisonBdTopo = bd.raison;
+    if (bd.ok) {
+      batiments = bd.batiments;
+      // LOT X8 — mémorise les bâtiments de la parcelle (lus à ce tour) pour un tour où la BD TOPO ne répondrait pas.
+      const surParcelle = batimentsSurParcelle(bd.batiments, l93);
+      if (surParcelle.length && surParcelle.length <= BATIMENTS_MEMORISES_MAX) lecture = { idu: iduRetenu, date: dateJour, batiments: surParcelle };
+    } else {
+      raisonBdTopo = bd.raison;
+      // LOT X8 — erreur passagère après deux tentatives : la lecture d'un tour précédent (même parcelle) est réutilisée,
+      // datée et signalée ; sans lecture précédente, le parcours s'arrête sans rien estimer (réponses gardées).
+      lecture = lectureBdTopoDesSorties(sorties, iduRetenu);
+      if (lecture) { batiments = [...lecture.batiments]; dateBdTopo = lecture.date; bdtopoReutilisee = bd.raison; }
+    }
     if ('data' in bn) { const l = lireBdnb(bn.data); bdnb = l.bdnb; noteBdnb = l.note; } else noteBdnb = `BDNB injoignable (${bn.raison}) : seule la BD TOPO sert à l’estimation.`;
     zoneU = 'data' in zo ? lireZonage(zo.data) : { valeur: null, source: `Géoportail de l’urbanisme injoignable (${zo.raison})` };
   }
   const facades = c ? facadesVoieDeLaParcelle(c.parcelle) : { facades: [], raison: 'aucune fiche de parcelle avec ses voisines : côté rue non identifié' };
   const ctx: ContexteParcours = {
     idu: iduRetenu, commune: c?.commune ?? null, contourWgs84: anneau, surfaceParcelleM2: surface,
-    batiments, raisonBdTopo, dateBdTopo: dateJour, secteur,
+    batiments, raisonBdTopo, dateBdTopo, secteur, bdtopoReutilisee,
     bdnb, noteBdnb, zoneU, regles: reglesDeLaConception(c?.regles_plu),
     facadesVoie: facades.facades.map((f) => ({ debut: f.debut, fin: f.fin })), raisonFacades: facades.raison,
   };
   const s = avancerParcours(prec.etat, env.texteUtilisateur ?? '', prec.attendues, ctx);
-  return resultatParcours(s);
+  return resultatParcours(s, lecture);
 }
 
 // ── Supabase ────────────────────────────────────────────────────────────────────────────────────────────────

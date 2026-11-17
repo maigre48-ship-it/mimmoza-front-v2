@@ -230,9 +230,10 @@ export type ResultatBdTopo =
   | { readonly ok: true; readonly batiments: BatimentBdTopo[]; readonly avertissements: string[]; readonly url: string }
   | { readonly ok: false; readonly raison: string; readonly url: string };
 
-/** Lecture réseau (fetch injecté, délai borné). Ne lève jamais. */
-export async function telechargerBatimentsParcelle(contourL93: readonly SommetL93[], f: typeof fetch, delaiMs = DELAI_WFS_MS): Promise<ResultatBdTopo> {
-  const url = urlBatimentsParcelle(contourL93);
+/** LOT X8 — attente avant la seconde tentative (erreurs passagères de la Géoplateforme : HTTP 400/5xx, réseau). */
+export const ATTENTE_NOUVEL_ESSAI_MS = 800;
+
+async function unEssai(url: string, f: typeof fetch, delaiMs: number): Promise<ResultatBdTopo> {
   const ac = new AbortController();
   const minuteur = setTimeout(() => ac.abort(), delaiMs);
   try {
@@ -245,4 +246,57 @@ export async function telechargerBatimentsParcelle(contourL93: readonly SommetL9
   } finally {
     clearTimeout(minuteur);
   }
+}
+
+/**
+ * Lecture réseau (fetch injecté, délai borné). Ne lève jamais. LOT X8 : en cas d'échec (HTTP ou réseau), UNE seconde
+ * tentative après `attenteMs` ; la raison rendue dit que deux tentatives ont échoué.
+ */
+export async function telechargerBatimentsParcelle(contourL93: readonly SommetL93[], f: typeof fetch, delaiMs = DELAI_WFS_MS, attenteMs = ATTENTE_NOUVEL_ESSAI_MS): Promise<ResultatBdTopo> {
+  const url = urlBatimentsParcelle(contourL93);
+  const premier = await unEssai(url, f, delaiMs);
+  if (premier.ok) return premier;
+  await new Promise((r) => setTimeout(r, attenteMs));
+  const second = await unEssai(url, f, delaiMs);
+  if (second.ok) return second;
+  return { ok: false, raison: `${second.raison} (2 tentatives)`.slice(0, 300), url };
+}
+
+// ── LOT X8 : lecture BD TOPO mémorisée d'un tour à l'autre ─────────────────────────────────────────────────────
+/** Bâtiments BD TOPO de la parcelle tels que lus à un tour précédent (date de lecture), pour un tour où la BD TOPO ne répond pas. */
+export interface LectureBdTopoMemorisee { readonly idu: string; readonly date: string; readonly batiments: readonly BatimentBdTopo[] }
+
+/** Plafond de bâtiments mémorisés (parcelle de maison : quelques bâtiments). */
+export const BATIMENTS_MEMORISES_MAX = 20;
+
+const texteBorne = (v: unknown, max: number): string | null => (typeof v === 'string' && v.length <= max ? v : null);
+
+/** Relit une lecture mémorisée (sortie d'outil d'un tour précédent). Tout objet mal formé est écarté ; rien n'est corrigé. */
+export function lireLectureMemorisee(v: unknown): LectureBdTopoMemorisee | null {
+  if (!estObj(v) || typeof v.idu !== 'string' || !/^[0-9A-Z]{14}$/.test(v.idu)) return null;
+  if (typeof v.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.date) || !Array.isArray(v.batiments)) return null;
+  if (!v.batiments.length || v.batiments.length > BATIMENTS_MEMORISES_MAX) return null;
+  const bats: BatimentBdTopo[] = [];
+  for (const b of v.batiments) {
+    if (!estObj(b) || typeof b.id !== 'string' || !b.id || b.id.length > 80 || !Array.isArray(b.anneaux) || !b.anneaux.length) return null;
+    const anneaux: SommetL93[][] = [];
+    for (const a of b.anneaux) {
+      if (!Array.isArray(a) || a.length < 3 || a.length > 2000) return null;
+      const pts: SommetL93[] = [];
+      for (const p of a) {
+        if (!Array.isArray(p) || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) return null;
+        pts.push([p[0] as number, p[1] as number]);
+      }
+      anneaux.push(pts);
+    }
+    const etages = nombre(b.etages);
+    bats.push({
+      id: b.id, anneaux,
+      hauteurM: nombre(b.hauteurM), etages: etages !== null && Number.isInteger(etages) && etages >= 1 ? etages : null,
+      altitudeSolM: nombre(b.altitudeSolM), altitudeToitMinM: nombre(b.altitudeToitMinM), altitudeToitMaxM: nombre(b.altitudeToitMaxM),
+      usage: texteBorne(b.usage, 120), nature: texteBorne(b.nature, 120), legere: b.legere === true,
+      dateModification: texteBorne(b.dateModification, 40),
+    });
+  }
+  return { idu: v.idu, date: v.date, batiments: bats };
 }

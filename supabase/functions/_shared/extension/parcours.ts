@@ -62,6 +62,8 @@ export const Q = {
   cloture: { id: 'x3_cloture', libelle: 'Clôture sur rue' },
   menuiserie: { id: 'x3_menuiserie', libelle: 'Menuiseries de l’extension' },
   baie: { id: 'x3_baie', libelle: 'Baie vitrée' },
+  // LOT X8 — une source n'a pas répondu : une puce pour reprendre le parcours au même point (réponses gardées).
+  reprendre: { id: 'x3_reprendre', libelle: 'Parcours d’extension', option: 'Réessayer' },
 } as const;
 
 export const OPTIONS_TOIT: Readonly<Record<FormeToit, string>> = { 'deux-pans': '2 pans', 'quatre-pans': '4 pans', plat: 'Toit plat', monopente: 'Monopente' };
@@ -359,6 +361,11 @@ export interface ContexteParcours {
   readonly raisonFacades: string | null;
   /** LOT X3b — secteur protégé (servitudes GPU AC1 / AC2 / AC4 et base Mérimée), évalué par le serveur ; absent = non évalué. */
   readonly secteur?: SecteurProtege | null;
+  /**
+   * LOT X8 — la BD TOPO n'a pas répondu à CE tour (raison) et `batiments` est la lecture d'un tour précédent (même
+   * parcelle, `dateBdTopo` = date de cette lecture). Absent ou null : lecture faite à ce tour.
+   */
+  readonly bdtopoReutilisee?: string | null;
 }
 
 /**
@@ -508,6 +515,17 @@ function lignesMaison(m: MaisonExistante, bdnb: DonneesBdnb | null): LigneVue[] 
   return l;
 }
 
+/**
+ * LOT X8 — ce qui est gardé si l'utilisateur ne donne pas la hauteur à l'égout. Jamais « estimée » accolé à « mesurée » :
+ * une valeur de la BD TOPO est dite comme telle ; une estimation est dite estimée.
+ */
+export function texteEgoutSansReponse(valeurM: number, statut: StatutDonnee): string {
+  const v = `${fr(valeurM, 1)} m`;
+  if (statut === 'mesuree') return `sinon on garde ${v} (valeur de la BD TOPO)`;
+  if (statut === 'confirmee') return `sinon on garde ${v} (valeur que vous avez donnée)`;
+  return `sinon on garde l’estimation de ${v} (${statutCourt(statut)})`;
+}
+
 function tableauMarkdown(lignes: readonly LigneVue[]): string {
   return ['| | Valeur | Statut |', '|---|---|---|', ...lignes.map((x) => `| ${x.libelle} | ${x.valeur} | ${x.statut ? statutCourt(x.statut) : '—'} |`)].join('\n');
 }
@@ -527,11 +545,18 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   });
 
   if (!ctx.contourWgs84 || ctx.contourWgs84.length < 3) return vueVide('sans_parcelle', `Le contour cadastral de la parcelle ${ctx.idu} n’est pas disponible : je ne peux pas situer la maison existante.`);
-  if (!ctx.batiments) return vueVide('sans_bdtopo', `La base des bâtiments de l’IGN (BD TOPO) n’a pas répondu (${ctx.raisonBdTopo ?? 'raison inconnue'}). Rien n’est estimé ; réessayez dans un instant.`);
+  if (!ctx.batiments) {
+    // LOT X8 — aucune lecture précédente à réutiliser : rien n'est estimé, mais les réponses déjà données sont GARDÉES
+    // dans l'état ; la puce « Réessayer » reprend le parcours au même point.
+    const v = vueVide('sans_bdtopo', `La base des bâtiments de l’IGN (BD TOPO) n’a pas répondu (${ctx.raisonBdTopo ?? 'raison inconnue'}). Rien n’est estimé pour l’instant ; vos réponses sont gardées. Cliquez « ${Q.reprendre.option} » dans un instant pour reprendre au même point.`);
+    const qr: QuestionBloc[] = [{ id: Q.reprendre.id, libelle: Q.reprendre.libelle, options: [Q.reprendre.option], multiple: false }];
+    return { ...v, attendues: qr.map((x) => x.id), blocChoix: blocChoix(qr) };
+  }
   const contourL93 = contourEnLambert93(ctx.contourWgs84);
   const origine = origineParcelle(contourL93);
   const surParcelle = batimentsSurParcelle(ctx.batiments, contourL93);
   sources.push(`${MENTION_BDTOPO}${ctx.dateBdTopo ? `, lue le ${ctx.dateBdTopo}` : ''}`);
+  if (ctx.bdtopoReutilisee) avert.push(`La base des bâtiments de l’IGN (BD TOPO) n’a pas répondu à ce tour (${ctx.bdtopoReutilisee}) : la lecture du ${ctx.dateBdTopo ?? 'tour précédent'} est réutilisée pour la même parcelle.`);
   if (ctx.bdnb) sources.push('BDNB (CSTB) — base de données nationale des bâtiments');
   if (ctx.noteBdnb) avert.push(ctx.noteBdnb);
   if (!surParcelle.length) return vueVide('aucun_batiment', `Aucun bâtiment de la BD TOPO n’a son emprise sur la parcelle ${ctx.idu} : il n’y a pas de maison existante à conserver. Si la maison est récente, elle n’est peut-être pas encore dans la base de l’IGN.`);
@@ -616,8 +641,8 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     ? `\n\nPour dessiner votre maison fidèlement sur les images : ${[
       q3x.some((x) => x.id === Q.penteToit.id) ? '**la pente du toit**' : null,
       q3x.some((x) => x.id === Q.faitage.id) ? '**le sens du faîtage** (la ligne du haut du toit : dans la longueur ou dans la largeur de la maison)' : null,
-      q3x.some((x) => x.id === Q.egout.id) ? `**la hauteur à l’égout** (du sol au bas de la gouttière) si vous la connaissez — écrivez-la, par exemple « égout 5,2 m » ; sinon elle reste estimée (${fr(m.hauteurEgout.valeur, 1)} m, ${statutCourt(m.hauteurEgout.statut)})` : null,
-    ].filter(Boolean).join(', ')}. Sans réponse, la valeur reste estimée et l’image le dira.`
+      q3x.some((x) => x.id === Q.egout.id) ? `**la hauteur à l’égout** (du sol au bas de la gouttière) si vous la connaissez — écrivez-la, par exemple « égout 5,2 m » ; ${texteEgoutSansReponse(m.hauteurEgout.valeur, m.hauteurEgout.statut)}` : null,
+    ].filter(Boolean).join(', ')}. Sans réponse, une valeur non mesurée reste estimée et l’image le dira.`
     : '';
   if (q3.length || q3x.length) {
     const q3t = [...q3, ...q3x];

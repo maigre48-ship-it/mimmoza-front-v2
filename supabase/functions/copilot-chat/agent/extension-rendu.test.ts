@@ -164,12 +164,13 @@ Deno.test('X4S-2 : parcours — question explicite sur le toit, suggestion jamai
 });
 
 Deno.test('X4S-3 : message au modèle en fin de parcours — rendu proposable si le moteur place l’extension, jamais s’il la refuse', () => {
-  na.match(resultatParcours(FIN).message!, /Tu peux proposer, en une phrase, un rendu de l’extension/);
+  // LOT X8 : phrase de relance EXACTE (plus d'improvisation du modèle).
+  na.match(resultatParcours(FIN).message!, /je peux maintenant préparer une image de l’extension/);
   const refus = jouer([PARCOURS[0]!, PARCOURS[1]!, 'Toit de la maison : 2 pans · Niveaux de la maison : R+1 · Type d’extension : Latérale · Façade (vue de la rue) : À droite',
     'Dimensions (largeur × profondeur) : 6 × 4 m · Hauteur de l’extension : Plain-pied', PARCOURS[4]!])[4]!;
   na.equal(refus.resultatMoteur!.ok, false);
-  na.match(resultatParcours(refus).message!, /ne propose pas de rendu/);
-  na.doesNotMatch(resultatParcours(refus).message!, /Tu peux proposer/);
+  na.match(resultatParcours(refus).message!, /Modifiez les dimensions ou le côté de l’extension/);
+  na.doesNotMatch(resultatParcours(refus).message!, /préparer une image/);
 });
 
 Deno.test('X4S-4 : FILM d’une extension — devis depuis la 3D préparée, puis fiche avec projet_extension ET facadesVoie, sans option existant', async () => {
