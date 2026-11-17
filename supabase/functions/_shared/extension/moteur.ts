@@ -113,6 +113,12 @@ export interface HabillageExtension {
   readonly toiture?: Donnee<string>;
 }
 
+/**
+ * LOT X8b — préfixe du refus « extension plus haute que la maison » (latérale / arrière). Le parcours le reconnaît et
+ * propose alors les choix réellement disponibles (« Même hauteur que la maison » / « Plain-pied »).
+ */
+export const PREFIXE_REFUS_HAUTEUR = 'Extension plus haute que la maison';
+
 export interface OptionsMoteurExtension {
   /** Égout et niveaux de l'existant (latérale / arrière). */
   readonly memeHauteur?: boolean;
@@ -570,7 +576,7 @@ export function calculerExtension(e: EntreeMoteurExtension): ResultatExtension {
   const vide = (raisons: string[]): ResultatExtension => ({ ok: false, type, existantId: m.id, refus: raisons, diagnostics: diag, facade: null, volume: null, reculs: [], surfaces: null, hypotheses: hyp, suggestion: null, remplaceToitureExistante: false });
 
   if (dem.existantId !== m.id) return vide([`La demande vise le bâtiment ${dem.existantId}, pas ${m.id}.`]);
-  if (type === 'veranda') return vide(['Véranda : non encore produite par le moteur (volume vitré, lot X2b). Choisissez latérale, arrière, garage ou surélévation.']);
+  if (type === 'veranda') return vide(['Véranda : pas encore produite (volume vitré). Choisissez latérale, arrière, garage ou surélévation.']);
 
   const limites = e.parcelle && e.parcelle.contour.length >= 3 ? classerLimites(e.parcelle) : null;
   if (!limites) diag.push({ code: 'parcelle', niveau: 'alerte', message: 'Parcelle inconnue : reculs, emprise au sol et débord hors parcelle NON CONTRÔLÉS.' });
@@ -623,9 +629,15 @@ export function calculerExtension(e: EntreeMoteurExtension): ResultatExtension {
   } else {
     niveaux = dims.niveaux ?? D(1, 'supposee', 'plain-pied SUPPOSÉ');
     egout = dims.hauteurEgoutM ?? (dims.niveaux ? D(dims.niveaux.valeur * REGLES_EXTENSION.hauteurNiveauM, 'estimee', `${dims.niveaux.valeur} niveau(x) × 3 m`) : D(REGLES_EXTENSION.egoutPlainPiedM, 'supposee', 'plain-pied : 3 m SUPPOSÉS'));
+    // LOT X8b — pas plus de niveaux que la maison mais 3 m par niveau dépassent son égout : l'extension est alignée sur
+    // l'égout existant (dit), au lieu d'un refus sans issue. Une hauteur à l'égout DEMANDÉE n'est jamais modifiée.
+    if (!dims.hauteurEgoutM && dims.niveaux && dims.niveaux.valeur <= m.niveaux.valeur && egout.valeur > hEgoutExistant + REGLES_EXTENSION.toleranceEgoutM) {
+      egout = D(hEgoutExistant, 'estimee', `${dims.niveaux.valeur} niveau(x) × 3 m = ${fr(egout.valeur)} m dépasserait l’égout de la maison : aligné sur l’égout existant (${fr(hEgoutExistant)} m, ${libelleStatutCourt(m.hauteurEgout.statut)})`);
+      diag.push({ code: 'hauteur', niveau: 'info', message: `Hauteur à l’égout de l’extension alignée sur celle de la maison (${fr(hEgoutExistant)} m) : ${dims.niveaux.valeur} niveau(x) à 3 m l’auraient dépassée.` });
+    }
   }
   if (egout.valeur > hEgoutExistant + REGLES_EXTENSION.toleranceEgoutM) {
-    return vide([`Hauteur à l’égout ${fr(egout.valeur)} m > égout de la maison existante ${fr(hEgoutExistant)} m (${libelleStatutCourt(m.hauteurEgout.statut)}) : par défaut l’extension reste sous l’égout existant. Réduisez la hauteur ou cochez « même hauteur ».`]);
+    return vide([`${PREFIXE_REFUS_HAUTEUR} : hauteur à l’égout ${fr(egout.valeur)} m (${egout.source}) au-dessus de l’égout de la maison existante, ${fr(hEgoutExistant)} m (${libelleStatutCourt(m.hauteurEgout.statut)}). Une extension latérale ou arrière reste au plus à la hauteur de la maison : choisissez « Même hauteur que la maison » ou « Plain-pied ».`]);
   }
   const hMin = garage ? REGLES_EXTENSION.hauteurMinGarageM : REGLES_EXTENSION.hauteurMinM;
 
@@ -660,7 +672,7 @@ export function calculerExtension(e: EntreeMoteurExtension): ResultatExtension {
     if (!surPignon) raisons.push('la façade choisie n’est pas un pignon du corps principal (elle est parallèle au faîtage)');
     else if (Math.abs(Math.abs(s) - demiL) > 0.3) raisons.push('la façade choisie n’est pas l’about du corps principal');
     if (dims.largeurM && Math.abs(dims.largeurM.valeur - largPignon) > REGLES_EXTENSION.toleranceLargeurPignonM) raisons.push(`largeur ${fr(dims.largeurM.valeur)} m ≠ largeur du pignon ${fr(largPignon)} m (± 0,15 m)`);
-    if (Math.abs(egout.valeur - hEgoutExistant) > REGLES_EXTENSION.toleranceEgoutM) raisons.push(`hauteur à l’égout ${fr(egout.valeur)} m ≠ égout existant ${fr(hEgoutExistant)} m (cochez « même hauteur »)`);
+    if (Math.abs(egout.valeur - hEgoutExistant) > REGLES_EXTENSION.toleranceEgoutM) raisons.push(`hauteur à l’égout ${fr(egout.valeur)} m ≠ égout existant ${fr(hEgoutExistant)} m (choisissez « Même hauteur que la maison »)`);
     if (dem.toiture?.penteDeg && Math.abs(dem.toiture.penteDeg.valeur - m.toit.penteDeg.valeur) > REGLES_EXTENSION.tolerancePenteDeg) raisons.push(`pente ${fr(dem.toiture.penteDeg.valeur, 0)}° ≠ pente existante ${fr(m.toit.penteDeg.valeur, 0)}°`);
     if (raisons.length) return vide([`2 pans dans le prolongement refusés : ${raisons.join(' ; ')}. Choisissez un toit plat ou un monopente adossé.`]);
     if (m.toit.forme.statut !== 'confirmee') diag.push({ code: 'toiture-existante', niveau: 'alerte', message: `Prolongement d’une toiture existante ${libelleStatutCourt(m.toit.forme.statut)} : confirmez la toiture existante.` });

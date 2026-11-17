@@ -169,7 +169,8 @@ Deno.test('X4S-3 : message au modèle en fin de parcours — rendu proposable si
   const refus = jouer([PARCOURS[0]!, PARCOURS[1]!, 'Toit de la maison : 2 pans · Niveaux de la maison : R+1 · Type d’extension : Latérale · Façade (vue de la rue) : À droite',
     'Dimensions (largeur × profondeur) : 6 × 4 m · Hauteur de l’extension : Plain-pied', PARCOURS[4]!])[4]!;
   na.equal(refus.resultatMoteur!.ok, false);
-  na.match(resultatParcours(refus).message!, /Modifiez les dimensions ou le côté de l’extension/);
+  // LOT X8b : d'autres côtés de la maison passent avec les mêmes dimensions → ils sont proposés en puces.
+  na.match(resultatParcours(refus).message!, /Choisissez un autre côté ci-dessous, et je replace l’extension\./);
   na.doesNotMatch(resultatParcours(refus).message!, /préparer une image/);
 });
 

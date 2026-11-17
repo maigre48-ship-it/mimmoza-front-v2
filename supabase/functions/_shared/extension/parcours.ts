@@ -24,7 +24,7 @@ import {
   type MenuiserieContrat, type OrientationFaitage,
 } from './contrat.ts';
 import { estimerMaisonExistante, maisonPrincipale, type MaisonExistante, type SurchargesExistant } from './maisonExistante.ts';
-import { calculerExtension, type CategorieLimite, type ParcelleMoteur, type ReglesExtension, type ResultatExtension } from './moteur.ts';
+import { calculerExtension, PREFIXE_REFUS_HAUTEUR, type CategorieLimite, type ParcelleMoteur, type ReglesExtension, type ResultatExtension } from './moteur.ts';
 import { aire, type Pt } from './geometrie.ts';
 import {
   batimentsSurParcelle, contourEnLambert93, entreeExistant, origineParcelle, versRepere, MENTION_BDTOPO,
@@ -75,6 +75,8 @@ export const OPTIONS_FACADE: Readonly<Record<CoteFacade, string>> = { gauche: '�
 const COTE_LISIBLE: Readonly<Record<CoteFacade, string>> = { gauche: 'gauche', droite: 'droite', arriere: 'arrière', rue: 'rue' };
 export const OPTIONS_DIMENSIONS = ['3 × 4 m', '4 × 5 m', '5 × 6 m'] as const;
 export const OPTIONS_HAUTEUR = { 1: 'Plain-pied', 2: 'Sur 2 niveaux' } as const;
+/** LOT X8b — 3e choix de « Hauteur de l’extension » : égout et niveaux de la maison existante (statut et source hérités). */
+export const HAUTEUR_MEME = 'Même hauteur que la maison';
 export const OPTIONS_NIVEAUX_AJOUTES = { 1: '1 niveau', 2: '2 niveaux' } as const;
 /** LOT X7 — classes de pente (valeur = centre de la classe, dite dans la source) ; « Je ne sais pas » laisse l'estimation. */
 export const OPTIONS_PENTE_TOIT: readonly [number | 'inconnue', string][] = [[25, 'Faible (≈ 25°)'], [35, 'Moyenne (≈ 35°)'], [45, 'Forte (≈ 45°)'], ['inconnue', 'Je ne sais pas']];
@@ -110,12 +112,14 @@ export interface EtatParcours {
   readonly cloture?: number | 'plus' | 'aucune' | 'inconnue' | null;
   readonly menuiserie?: MenuiserieContrat | 'inconnue' | null;
   readonly baies?: 'auto' | 'aucune' | 'inconnue' | null;
+  /** LOT X8b — « Même hauteur que la maison » choisi (latérale / arrière). */
+  readonly memeHauteur?: boolean;
 }
 
 export const ETAT_INITIAL: EtatParcours = {
   v: 1, idu: null, conserver: null, toit: null, niveaux: null, hauteurEgoutM: null, type: null, facade: null,
   largeurM: null, profondeurM: null, niveauxExtension: null, sdpExistanteM2: null, sdpInconnue: false, demandeur: null,
-  penteToit: null, faitage: null, egoutInconnu: false, cloture: null, menuiserie: null, baies: null,
+  penteToit: null, faitage: null, egoutInconnu: false, cloture: null, menuiserie: null, baies: null, memeHauteur: false,
 };
 
 type Obj = Record<string, unknown>;
@@ -149,6 +153,7 @@ export function lireEtat(v: unknown): EtatParcours {
     cloture: v.cloture === 'plus' || v.cloture === 'aucune' || v.cloture === 'inconnue' ? v.cloture : nb(v.cloture, 0.3, 5),
     menuiserie: dans(v.menuiserie, ['av-aluminium-noir', 'av-aluminium-blanc', 'av-chene-porte', 'inconnue'] as const) ? v.menuiserie : null,
     baies: dans(v.baies, ['auto', 'aucune', 'inconnue'] as const) ? v.baies : null,
+    memeHauteur: v.memeHauteur === true,
   };
 }
 
@@ -287,8 +292,10 @@ export function lireReponses(etat: EtatParcours, texte: string, attendues: reado
   if (mL) { const v = versNombre(mL[1]!); if (v >= 0.5 && v <= 500) e.largeurM = v; }
   const mP = /\bprofondeur\b[^0-9]{0,12}(\d+(?:[.,]\d+)?)\s*m\b/.exec(t);
   if (mP) { const v = versNombre(mP[1]!); if (v >= 0.5 && v <= 500) e.profondeurM = v; }
-  const h = optionParmi(valeurDe(segs, Q.hauteur.libelle), Object.entries(OPTIONS_HAUTEUR).map(([k, v]) => [Number(k), v] as [number, string]));
-  if (h) e.niveauxExtension = h;
+  const vh = valeurDe(segs, Q.hauteur.libelle);
+  const h = optionParmi(vh, Object.entries(OPTIONS_HAUTEUR).map(([k, v]) => [Number(k), v] as [number, string]));
+  if (vh && normaliser(vh).startsWith(normaliser(HAUTEUR_MEME))) { e.memeHauteur = true; e.niveauxExtension = null; }
+  else if (h) { e.niveauxExtension = h; e.memeHauteur = false; }
   const na = optionParmi(valeurDe(segs, Q.niveauxAjoutes.libelle), Object.entries(OPTIONS_NIVEAUX_AJOUTES).map(([k, v]) => [Number(k), v] as [number, string]));
   if (na) e.niveauxExtension = na;
 
@@ -411,7 +418,7 @@ export function reglesMoteur(regles: readonly RegleSite[]): { regles: ReglesExte
   const h = garder('hauteur_max_m', false);
   if (h && (h.valeur as number) > 0) out.hauteurMaxM = donnee(h, h.valeur as number);
   const dire = (nom: string, d: Donnee<number> | undefined, unite: string, facteur = 1): void => {
-    if (!d) { lignes.push(`${nom} : inconnu — le moteur applique une hypothèse SUPPOSÉE (bloquante) et le dit.`); return; }
+    if (!d) { lignes.push(`${nom} : inconnu — une hypothèse SUPPOSÉE (bloquante) est appliquée, et signalée.`); return; }
     lignes.push(`${nom} : ${fr(d.valeur * facteur, 1)} ${unite} — ${d.statut === 'estimee' ? 'lu dans le règlement (à vérifier)' : 'ESTIMÉ, non lu dans le règlement'} (${d.source}).`);
   };
   dire('Recul à la voie', out.voieM, 'm');
@@ -577,7 +584,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   const m = estimerMaisonExistante(entreeExistant(bat, origine, ctx.bdnb ?? undefined), surcharges);
   const lignes = lignesMaison(m, ctx.bdnb);
   const maisonVue = { id: m.id, conservee: etat.conserver, lignes, hypotheses: [...m.hypotheses, ...m.avertissements] };
-  if (autres.length) avert.push(`${autres.length} autre(s) bâtiment(s) BD TOPO sur la parcelle (annexes, abris) : conservés et pris comme obstacles par le moteur.`);
+  if (autres.length) avert.push(`${autres.length} autre(s) bâtiment(s) BD TOPO sur la parcelle (annexes, abris) : conservés et pris comme obstacles pour placer l’extension.`);
   const presentation = `Sur la parcelle ${ctx.idu}${ctx.commune ? ` (${ctx.commune})` : ''}, la base de l’IGN (BD TOPO) décrit un bâtiment de ${fr(m.empriseM2, 0)} m² d’emprise au sol.`;
 
   const sortie = (etape: Etape, texteQ: string, questions: QuestionBloc[], extra: Partial<Pick<SortieParcours, 'projet' | 'optionTravail' | 'erreursProjet' | 'regime' | 'resultatMoteur'>> & { extension?: VueExtension['extension']; regles?: string[]; dossier?: VueDossier } = {}): SortieParcours => ({
@@ -630,7 +637,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     if (!etat.niveauxExtension) q3.push({ id: Q.niveauxAjoutes.id, libelle: Q.niveauxAjoutes.libelle, options: Object.values(OPTIONS_NIVEAUX_AJOUTES), multiple: false });
   } else {
     if (!etat.largeurM || !etat.profondeurM) q3.push({ id: Q.dimensions.id, libelle: Q.dimensions.libelle, options: [...OPTIONS_DIMENSIONS], multiple: false });
-    if (type !== 'garage' && !etat.niveauxExtension) q3.push({ id: Q.hauteur.id, libelle: Q.hauteur.libelle, options: Object.values(OPTIONS_HAUTEUR), multiple: false });
+    if (type !== 'garage' && !etat.niveauxExtension && !etat.memeHauteur) q3.push({ id: Q.hauteur.id, libelle: Q.hauteur.libelle, options: [...Object.values(OPTIONS_HAUTEUR), HAUTEUR_MEME], multiple: false });
   }
   // LOT X7 — posées avec les dimensions : pente et sens du faîtage (toit en pente), hauteur à l'égout si connue.
   const q3x: QuestionBloc[] = [];
@@ -671,13 +678,16 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   // Étape 5 : synthèse — moteur, régime, projet.
   const rm = reglesMoteur(ctx.regles);
   const pm = parcelleMoteur(contourL93, origine, ctx.facadesVoie, ctx.surfaceParcelleM2);
-  if (!pm.categories?.some((c) => c === 'voie')) avert.push(`Limite sur rue non identifiée${ctx.raisonFacades ? ` (${ctx.raisonFacades})` : ''} : sans elle, le moteur ne sait pas où sont la gauche, la droite et l’arrière, et refuse l’extension.`);
+  if (!pm.categories?.some((c) => c === 'voie')) avert.push(`Limite sur rue non identifiée${ctx.raisonFacades ? ` (${ctx.raisonFacades})` : ''} : sans elle, Mimmoza ne sait pas où sont la gauche, la droite et l’arrière, et ne peut pas placer l’extension.`);
+  // LOT X8b — « même hauteur » : choisie, ou autant de niveaux que la maison (latérale / arrière). Égout et niveaux de
+  // l'existant, avec leur statut et leur source ; jamais pour un garage ni une surélévation.
+  const memeHauteur = type !== 'garage' && type !== 'surelevation' && (etat.memeHauteur === true || (etat.niveauxExtension !== null && etat.niveauxExtension === m.niveaux.valeur));
   const dimensions: ExtensionDemandee['dimensions'] = type === 'surelevation'
     ? { niveaux: D(etat.niveauxExtension!, 'confirmee', SOURCE_SAISIE) }
     : {
       largeurM: D(etat.largeurM!, 'confirmee', SOURCE_SAISIE),
       profondeurM: D(etat.profondeurM!, 'confirmee', SOURCE_SAISIE),
-      ...(etat.niveauxExtension ? { niveaux: D(etat.niveauxExtension, 'confirmee', SOURCE_SAISIE) } : {}),
+      ...(etat.niveauxExtension && !memeHauteur ? { niveaux: D(etat.niveauxExtension, 'confirmee', SOURCE_SAISIE) } : {}),
     };
   // LOT X7 — habillage choisi (menuiseries, baie vitrée) : CONFIRMÉ ; absent si « je ne sais pas » (convention, dite).
   const menuiserieChoisie = etat.menuiserie && etat.menuiserie !== 'inconnue' ? etat.menuiserie : null;
@@ -693,10 +703,15 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
       ...(baiesChoisies ? { baies: D(baiesChoisies, 'confirmee', `${SOURCE_SAISIE} ; ${baiesChoisies === 'auto' ? 'avec baie vitrée' : 'sans baie (murs pleins)'}`) } : {}),
     } } : {}),
   };
-  const res = calculerExtension({
-    maison: m, demande, parcelle: pm, regles: rm.regles,
-    options: { autresBatiments: autres.map((b) => ({ id: b.id, anneau: b.anneaux[0]!.map((p) => versRepere(p, origine)) })) },
-  });
+  const optionsMoteur = { ...(memeHauteur ? { memeHauteur: true } : {}), autresBatiments: autres.map((b) => ({ id: b.id, anneau: b.anneaux[0]!.map((p) => versRepere(p, origine)) })) };
+  const res = calculerExtension({ maison: m, demande, parcelle: pm, regles: rm.regles, options: optionsMoteur });
+  // LOT X8b — refus de placement (hors hauteur) d'une extension latérale ou arrière : les AUTRES côtés de la maison sont
+  // essayés avec les mêmes dimensions et la même hauteur ; ceux qui passent sont proposés en puces (calcul, pas d'avis).
+  const refusHauteur = !res.ok && res.refus.some((r) => r.startsWith(PREFIXE_REFUS_HAUTEUR));
+  const autresCotes: CoteFacade[] = !res.ok && !refusHauteur && (type === 'laterale' || type === 'arriere') && etat.facade
+    ? (['gauche', 'droite', 'arriere', 'rue'] as CoteFacade[]).filter((c) => c !== etat.facade
+      && calculerExtension({ maison: m, demande: { ...demande, facade: { cote: c } }, parcelle: pm, regles: rm.regles, options: optionsMoteur }).ok)
+    : [];
   const sdpC = res.surfaces?.surfacePlancherCreeeM2 ?? null;
   const empC = res.surfaces ? res.surfaces.empriseCreeeM2.valeur : type === 'surelevation' ? 0 : (etat.largeurM! * etat.profondeurM!);
   const regime = regimeIndicatif({
@@ -744,7 +759,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   const vueExt: NonNullable<VueExtension['extension']> = {
     type: OPTIONS_TYPE[type],
     facade: type === 'surelevation' ? null : OPTIONS_FACADE[etat.facade!],
-    dimensions: type === 'surelevation' ? `${etat.niveauxExtension} niveau(x) ajouté(s) sur le corps principal` : `${fr(etat.largeurM!, 2)} × ${fr(etat.profondeurM!, 2)} m${etat.niveauxExtension ? `, ${etat.niveauxExtension === 1 ? 'plain-pied' : `${etat.niveauxExtension} niveaux`}` : ''}`,
+    dimensions: type === 'surelevation' ? `${etat.niveauxExtension} niveau(x) ajouté(s) sur le corps principal` : `${fr(etat.largeurM!, 2)} × ${fr(etat.profondeurM!, 2)} m${memeHauteur ? `, même hauteur que la maison (${m.niveaux.valeur === 1 ? 'plain-pied' : `${m.niveaux.valeur} niveaux`}, égout ${fr(m.hauteurEgout.valeur, 1)} m)` : etat.niveauxExtension ? `, ${etat.niveauxExtension === 1 ? 'plain-pied' : `${etat.niveauxExtension} niveaux`}` : ''}`,
     verdict: res.ok ? 'ok' : 'refus',
     refus, alertes,
     empriseCreeeM2: res.surfaces ? res.surfaces.empriseCreeeM2.valeur : null,
@@ -755,8 +770,8 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     `**Votre projet : ${type === 'surelevation' ? 'surélévation' : type === 'garage' ? 'garage accolé' : `extension ${OPTIONS_TYPE[type].toLowerCase()}`}${type !== 'surelevation' ? `, côté ${COTE_LISIBLE[etat.facade!]} (vu de la rue)` : ''}, ${vueExt.dimensions}** — maison existante **conservée**.`,
     '',
     res.ok
-      ? `Le moteur d’extension la place sans refus${sdpC ? ` : surface de plancher créée ESTIMÉE ≈ ${fr(sdpC.valeur, 1)} m² (entre ${fr(sdpC.minM2, 0)} et ${fr(sdpC.maxM2, 0)} m²)` : ''}${res.surfaces ? `, emprise au sol créée ${fr(res.surfaces.empriseCreeeM2.valeur, 1)} m²` : ''}.`
-      : `Le moteur d’extension **refuse** ce placement :\n${refus.map((r) => `- ${r}`).join('\n')}${vueExt.suggestion ? `\n\n${vueExt.suggestion}` : ''}`,
+      ? `L’extension se place sans refus${sdpC ? ` : surface de plancher créée ESTIMÉE ≈ ${fr(sdpC.valeur, 1)} m² (entre ${fr(sdpC.minM2, 0)} et ${fr(sdpC.maxM2, 0)} m²)` : ''}${res.surfaces ? `, emprise au sol créée ${fr(res.surfaces.empriseCreeeM2.valeur, 1)} m²` : ''}.`
+      : `L’extension **ne peut pas être placée** ainsi :\n${refus.map((r) => `- ${r}`).join('\n')}${vueExt.suggestion ? `\n\n${vueExt.suggestion}` : ''}${autresCotes.length ? `\n\nAvec les mêmes dimensions et la même hauteur, l’extension se place sur ${autresCotes.length > 1 ? 'ces côtés' : 'ce côté'} de la maison (vu de la rue) : ${autresCotes.map((c) => OPTIONS_FACADE[c].toLowerCase()).join(', ')}. Choisissez-en un ci-dessous.` : ''}`,
     ...(alertes.length ? ['', ...alertes.map((a) => `- ${a}`)] : []),
     '',
     ...(ctx.secteur ? [
@@ -777,7 +792,11 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   // LOT D9 — dossier DP / PC : aperçu des pièces (serveur, déterministe) ; régime « DP ou PC » → la carte demande le choix.
   const dossier = projet && res.ok ? dossierPrevisionnel(regime.regime, ctx.secteur?.etat ?? null) : undefined;
   if (dossier && dossier.choix.length === 2) lignesTexte.push('', '**Pour préparer votre dossier :** déclaration préalable ou permis de construire ? Choisissez sur la carte (« Préparer un dossier DP » ou « … PC »).');
-  return sortie('termine', lignesTexte.join('\n'), [], {
+  // LOT X8b — extension plus haute que la maison : les deux choix qui la rendent plaçable, en puces (jamais « cochez »).
+  const qHauteur: QuestionBloc[] = refusHauteur
+    ? [{ id: Q.hauteur.id, libelle: Q.hauteur.libelle, options: [HAUTEUR_MEME, OPTIONS_HAUTEUR[1]], multiple: false }]
+    : autresCotes.length ? [{ id: Q.facade.id, libelle: Q.facade.libelle, options: autresCotes.map((c) => OPTIONS_FACADE[c]), multiple: false }] : [];
+  return sortie('termine', lignesTexte.join('\n'), qHauteur, {
     projet, optionTravail: projet ? { existant: optionTravailExistant(projet) } : null, erreursProjet: 'erreurs' in lu ? lu.erreurs : [],
     regime, resultatMoteur: res, extension: vueExt, regles: rm.lignes, ...(dossier ? { dossier } : {}),
   });

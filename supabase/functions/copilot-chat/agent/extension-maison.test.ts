@@ -238,7 +238,7 @@ Deno.test('X3-9 : P0646 latérale droite 6 × 4 — REFUS expliqué (RNU SUPPOS�
   assertEquals(fin.etape, 'termine');
   assertEquals(fin.vue.extension!.verdict, 'refus');
   assertMatch(fin.vue.extension!.refus.join(' '), /1,69 m < 3,00 m.*R\.111-17 SUPPOSÉ/);
-  assertMatch(fin.texte, /\*\*refuse\*\*/);
+  assertMatch(fin.texte, /\*\*ne peut pas être placée\*\* ainsi/);
   // Surface existante non connue : l'estimation (183 m²) n'entraîne aucune alerte ferme.
   assertEquals(fin.regime!.ferme, fin.regime!.regime === 'DP');
   assert(fin.projet !== null, 'le projet reste transmissible (le moteur du Studio refusera et le dira)');

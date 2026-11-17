@@ -23,7 +23,7 @@ import {
 } from '../../_shared/extension/bdtopoParcelle.ts';
 import { lambert93VersWgs84 } from '../../_shared/extension/lambert93.ts';
 import {
-  avancerParcours, detecterIntentionExtension, lireEtat, OUTIL_EXTENSION_MAISON, reponseAuParcours, suiteDuParcours,
+  avancerParcours, detecterIntentionExtension, lireEtat, OUTIL_EXTENSION_MAISON, Q, reponseAuParcours, suiteDuParcours,
   type ContexteParcours, type RegleSite, type SortieParcours,
 } from '../../_shared/extension/parcours.ts';
 import { evaluerSecteurProtege, lireSecteurEnregistre, type ReponseService, type SecteurProtege } from '../../_shared/extension/secteurProtege.ts';
@@ -78,7 +78,7 @@ export function avertissementsRenduExtension(projet: ProjetExtension, type: 'ima
   const enPente = e0?.formeToit !== undefined && e0.formeToit.valeur !== 'plat';
   const penteEstimee = enPente && (e0?.penteToitDeg?.statut !== 'confirmee' || e0?.orientationFaitage?.statut !== 'confirmee');
   return [
-    'Projet d’EXTENSION : la maison existante est CONSERVÉE (rien n’est effacé) ; la machine de rendu dessine l’extension calculée par son moteur d’extension, à partir des réponses du parcours. Si le moteur refuse le placement, rien n’est rendu et la raison est dite.',
+    'Projet d’EXTENSION : la maison existante est CONSERVÉE (rien n’est effacé) ; la machine de rendu dessine l’extension placée par Mimmoza à partir des réponses du parcours. Si l’extension ne peut pas être placée, rien n’est rendu et la raison est dite.',
     `Maison conservée modélisée depuis la base des bâtiments de l’IGN (BD TOPO) : forme du toit confirmée par vous${penteEstimee ? ' ; pente du toit et orientation du faîtage ESTIMÉES' : ''} ; la maison réelle peut différer de ce modèle.`,
     'Le relief n’est pas transmis par Mimmo : la machine de rendu calcule sur un terrain supposé plat. Aucun habillage de bâtiment neuf (façade, balcons, toiture) ne s’applique à une extension.',
     ...(type === 'image' ? ['Image dans la photo de la rue : là où la maison réelle est devant l’extension, la photo repasse devant ; si l’extension est presque entièrement cachée depuis cette photo, l’image revient « à valider » avec la raison.'] : []),
@@ -321,7 +321,7 @@ function erreur(message: string, status = 'error'): ResultatOutil {
  * sans nom interne, sans annoncer un résultat absent. Le modèle ne l'improvise plus (essai du 17/11 : « le serveur a
  * affiché le gabarit » alors que rien n'avait été calculé).
  */
-export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 'resultatMoteur'>): string {
+export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 'resultatMoteur'> & { readonly attendues?: readonly string[] }): string {
   switch (s.etape) {
     case 'sans_parcelle': return 'Donnez-moi l’adresse ou la référence cadastrale de la maison, et je reprends.';
     case 'sans_bdtopo': return 'Vos réponses sont gardées : cliquez « Réessayer » dans un instant pour reprendre au même point.';
@@ -334,6 +334,9 @@ export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 're
     case 'surface': return 'Répondez aux dernières questions ci-dessous.';
     case 'termine':
       if (!RENDU_EXTENSION_OUVERT) return 'Le projet d’extension est enregistré dans cette conversation.';
+      // LOT X8b — extension plus haute que la maison : les choix de hauteur sont proposés en puces.
+      if (s.attendues?.includes(Q.hauteur.id)) return 'Choisissez la hauteur de l’extension ci-dessous, et je la replace.';
+      if (s.attendues?.includes(Q.facade.id)) return 'Choisissez un autre côté ci-dessous, et je replace l’extension.';
       return s.projet && s.resultatMoteur?.ok
         ? 'Si vous le souhaitez, je peux maintenant préparer une image de l’extension dans la photo de la rue.'
         : 'Modifiez les dimensions ou le côté de l’extension pour que je puisse la placer.';
