@@ -38,6 +38,10 @@ import type { ConfirmedTerrain } from './studio3d/terrainCadastre';
 import { urlStudio3D } from '@/spaces/promoteur/shared/ouvrirStudio3D';
 // R2 — chat → Studio en un clic, dans la page (panneau même origine), sans perte.
 import { StudioIntegre, type DemandeStudioIntegre } from './studio3d/StudioIntegre';
+// LOT D9 — « Préparer mon dossier » (carte Extension de maison) → Studio intégré, espace Dossier.
+import { blocDossierPourStudio, EVENEMENT_PREPARER_DOSSIER, rendusLivresPourDossier, verifierPreparationDossier } from './studio3d/dossierExtension';
+import { derniereVueExtension } from './studio3d/extensionMaison';
+import { listerTravaux, urlSigneeRendu } from '@/lib/studio/travaux';
 import { adresseStudioIntegre, baseStudioIntegre, projetIdChat } from './studio3d/projetChat';
 import { prechargerRelief, reliefAvecDelai } from './studio3d/reliefCache';
 import { parcelleRetenue, retenirParcelle } from './studio3d/parcelleConfirmee';
@@ -369,7 +373,7 @@ export default function MimmozIAPage() {
   const mission3dRef = useRef(mission3d); mission3dRef.current = mission3d;
   const studio3dRef = useRef(studio3d);
   studio3dRef.current = studio3d;
-  const voirEn3D = useCallback(async (fiche: JarvisDraft, conversationId: string, terrainArg?: ConfirmedTerrain & { adresse?: string | null }, options?: { mission?: boolean; estCourante?: () => boolean; remplacerMaquette?: boolean }): Promise<IssueOuvertureStudio> => {
+  const voirEn3D = useCallback(async (fiche: JarvisDraft, conversationId: string, terrainArg?: ConfirmedTerrain & { adresse?: string | null }, options?: { mission?: boolean; estCourante?: () => boolean; remplacerMaquette?: boolean; complements?: Readonly<Record<string, unknown>> }): Promise<IssueOuvertureStudio> => {
     const verifierContexteMission = () => { if (options?.mission && (useCopilotStore.getState().currentConversationId !== conversationId || !options.estCourante?.())) throw new Error('La préparation de mission ou la conversation a changé. Aucun projet ne sera ouvert.'); };
     verifierContexteMission();
     // Mission : la parcelle confirmée vaut pour la mission seulement ; la parcelle retenue de la conversation n'est pas modifiée.
@@ -394,7 +398,8 @@ export default function MimmozIAPage() {
     // Même contenu qu'à l'ouverture précédente, Studio encore chargé : on le remontre, sans renvoi.
     const empreinte = empreinteProjet(construit.projet);
     const avant = studio3dRef.current;
-    if (avant.demande && avant.conversationId === conversationId && avant.empreinte === empreinte) {
+    // LOT D9 — avec des compléments (dossier), le projet est RENVOYÉ : le Studio doit recevoir la demande de dossier.
+    if (!options?.complements && avant.demande && avant.conversationId === conversationId && avant.empreinte === empreinte) {
       setStudio3d({ ...avant, ouvert: true });
       return;
     }
@@ -411,10 +416,40 @@ export default function MimmozIAPage() {
           : { etat: 'differe', promesse: reliefAvecDelai(parcelles, insee), relancer: () => reliefAvecDelai(parcelles, insee) },
         implantation: reliefConnu ? null : retenue.implantation ?? null,
         imagesNonEnvoyees: conserves.filter(f => f.kind === 'image').length,
+        ...(options?.complements ? { complements: options.complements } : {}),
       },
       ouvert: true, empreinte, conversationId,
     });
   }, []);
+  /*
+   * LOT D9 — « PRÉPARER MON DOSSIER ». Le bouton de la carte (parcours terminé) envoie le régime choisi ; ici : contrôles,
+   * rendus LIVRÉS de la conversation (URL signées 1 h, proposés comme insertion — aucun choisi d'office), puis ouverture du
+   * Studio intégré avec `projetExtension` et le bloc `dossier`. Rien n'est envoyé ailleurs ; aucun jeton consommé.
+   */
+  const preparerDossier = useCallback(async (regime: 'DP' | 'PC') => {
+    const state = useCopilotStore.getState();
+    const conversationId = state.currentConversationId;
+    const fiche = latestJarvisDraft(state.messages);
+    const v = verifierPreparationDossier({ conversationId, vue: derniereVueExtension(state.messages as never), ficheDisponible: !!fiche, regime });
+    if (!v.ok) { setAttachError(v.message); return; }
+    const vue = derniereVueExtension(state.messages as never)!;
+    const travaux = await listerTravaux(conversationId!, 12).catch(() => ({ disponible: false as const }));
+    const candidats = travaux.disponible ? rendusLivresPourDossier(travaux.valeur) : [];
+    const rendus = (await Promise.all(candidats.map(async (r) => {
+      try { return { id: r.id, libelle: r.libelle, url: await urlSigneeRendu(r.chemin, 3600), date: r.date, statut: r.statut }; } catch { return null; }
+    }))).filter((r): r is NonNullable<typeof r> => r !== null);
+    const dossier = blocDossierPourStudio({ regime, dossier: v.dossier, secteur: vue.secteur ? { etat: vue.secteur.etat, date: vue.secteur.date } : null, projet: v.projet, rendus });
+    await voirEn3D(fiche!, conversationId!, undefined, { complements: { projetExtension: v.projet, dossier } });
+  }, [voirEn3D]);
+  useEffect(() => {
+    const surDossier = (e: Event) => {
+      const r = (e as CustomEvent<{ regime?: unknown }>).detail?.regime;
+      if (r !== 'DP' && r !== 'PC') return;
+      void preparerDossier(r).catch(error => setAttachError(error instanceof Error ? error.message : 'Ouverture du dossier impossible.'));
+    };
+    window.addEventListener(EVENEMENT_PREPARER_DOSSIER, surDossier);
+    return () => window.removeEventListener(EVENEMENT_PREPARER_DOSSIER, surDossier);
+  }, [preparerDossier]);
   const preparerMission3D = useCallback((mission: Mission) => {
     const state = useCopilotStore.getState();
     if (!missionVisualisable(mission, state.currentConversationId)) throw new Error('Ouvrez la conversation de cette mission pour préparer son projet.');

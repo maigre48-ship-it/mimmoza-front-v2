@@ -33,6 +33,8 @@ export interface DemandeStudioIntegre {
   relief: { etat: "inclus"; source: "cache" | "mesure" } | { etat: "differe"; promesse: Promise<IssueRelief>; relancer: () => Promise<IssueRelief> } | { etat: "sans-parcelle" };
   implantation: PoseChat | null;
   imagesNonEnvoyees: number;
+  /** LOT D9 — « Préparer mon dossier » : `projetExtension` (contrat X0) et `dossier` joints au message « projet ». */
+  complements?: Readonly<Record<string, unknown>>;
 }
 
 type EtatRelief = { texte: string; erreur: boolean; enCours: boolean };
@@ -105,7 +107,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
     const demarrer = () => {
       const f = cadre.current?.contentWindow;
       if (!f || poignee) return;
-      poignee = demarrerPoigneeDeMain(f, origine, demande.sessionId, demande.projet, { maintenir: true, dureeMaxMs: 90_000 });
+      poignee = demarrerPoigneeDeMain(f, origine, demande.sessionId, demande.projet, { maintenir: true, dureeMaxMs: 90_000, ...(demande.complements ? { complements: demande.complements } : {}) });
     };
     const surMessage = (evt: MessageEvent) => {
       if (evt.source !== cadre.current?.contentWindow) return;

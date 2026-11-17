@@ -84,7 +84,11 @@ export function demarrerPoigneeDeMain(
   origineStudio: string,
   sessionId: string,
   projetAttendu: ProjetMimmozaV2 | null,
-  options: { readonly intervalleMs?: number; readonly dureeMaxMs?: number; readonly maintenir?: boolean; readonly intervalleMaintienMs?: number; readonly minuterie?: Minuterie } = {},
+  options: {
+    readonly intervalleMs?: number; readonly dureeMaxMs?: number; readonly maintenir?: boolean; readonly intervalleMaintienMs?: number; readonly minuterie?: Minuterie;
+    /** LOT D9 — blocs joints au message « projet » (`projetExtension`, `dossier`), à côté du contrat v2 inchangé. */
+    readonly complements?: Readonly<Record<string, unknown>>;
+  } = {},
 ): { surPret(attendProjet: boolean): void; arreter(): void; readonly actif: () => boolean; readonly connecte: () => boolean } {
   const m = options.minuterie ?? minuterieNavigateur;
   const debut = m.maintenant();
@@ -105,7 +109,9 @@ export function demarrerPoigneeDeMain(
       if (!actif) return;
       if (attendProjet && projetAttendu && !projetEnvoye) {
         projetEnvoye = true;
-        onglet.postMessage(creerMessage("projet", sessionId, projetAttendu), origineStudio);
+        const m = creerMessage("projet", sessionId, projetAttendu);
+        // Les clés du contrat priment : un complément ne peut pas remplacer format, canal, session ni projet.
+        onglet.postMessage(options.complements ? { ...options.complements, ...m } : m, origineStudio);
       }
       if (!options.maintenir) { arreter(); return; }
       if (!connecte) {

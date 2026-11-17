@@ -12,6 +12,8 @@
 // =============================================================================
 
 import { libelleStatut, lireProjetExtension, type ProjetExtension, type StatutDonnee } from '../../../../supabase/functions/_shared/extension/contrat.ts';
+// LOT D9 — aperçu du dossier DP / PC (« Préparer mon dossier »).
+import { lireVueDossier, type VueDossierCarte } from './dossierExtension.ts';
 
 export const OUTIL_EXTENSION_MAISON = 'extension_maison';
 /** Début de la mention écrite par la machine de rendu quand l'existant est conservé (worker, lot X2). */
@@ -46,6 +48,10 @@ export interface VueCarteExtension {
   projetEnregistre: boolean;
   /** LOT X3b — secteur protégé (pastille, avis ABF, effet, délai, sources et date) ; null si non évalué. */
   secteur: VueSecteur | null;
+  /** LOT D9 — aperçu des pièces du dossier DP / PC (serveur) ; null hors fin de parcours. */
+  dossier: VueDossierCarte | null;
+  /** LOT D9 — projet d'extension validé (contrat X0), transmis au Studio par « Préparer mon dossier » ; null sinon. */
+  projetExtension: ProjetExtension | null;
 }
 
 /** LOT X3b — secteur protégé tel que calculé par le serveur (servitudes GPU, base Mérimée). */
@@ -149,7 +155,15 @@ export function lireVueExtension(sortie: unknown): VueCarteExtension | null {
     sources: textes(v.sources, 6),
     projetEnregistre: d.projet_extension !== undefined && d.projet_extension !== null && lireProjetExtension(d.projet_extension).ok,
     secteur: lireSecteur(v.secteur),
+    dossier: lireVueDossier(v.dossier),
+    projetExtension: projetValide(d.projet_extension),
   };
+}
+
+function projetValide(v: unknown): ProjetExtension | null {
+  if (v === undefined || v === null) return null;
+  const lu = lireProjetExtension(v);
+  return lu.ok ? lu.projet : null;
 }
 
 export interface MessageAvecOutils { toolCalls?: readonly { name: string; status: string; output?: unknown }[] }

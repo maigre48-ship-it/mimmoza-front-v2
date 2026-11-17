@@ -33,6 +33,8 @@ import {
 import { wgs84VersLambert93 } from './lambert93.ts';
 import { LIBELLE_ARCHITECTE, LIBELLE_REGIME, regimeIndicatif, type RegimeIndicatif } from './reglementation.ts';
 import { ligneCourteSecteur, sourceCourteSecteur, type SecteurProtege } from './secteurProtege.ts';
+// LOT D9 — aperçu déterministe des pièces du dossier DP / PC (bouton « Préparer mon dossier » de la carte).
+import { dossierPrevisionnel, type VueDossier } from './dossier.ts';
 
 export const OUTIL_EXTENSION_MAISON = 'extension_maison';
 export const VERSION_PARCOURS = 1;
@@ -449,7 +451,10 @@ export interface VueExtension {
     readonly suggestion: string | null;
   } | null;
   readonly regles: readonly string[];
-  readonly regime: { readonly libelle: string; readonly architecte: string; readonly ferme: boolean; readonly lignes: readonly string[]; readonly sources: readonly { titre: string; url: string }[]; readonly mention: string } | null;
+  /** LOT D9 — `code` : régime indicatif brut (« DP », « PC », « DP ou PC », « inconnu »), lu par le bouton « Préparer mon dossier ». */
+  readonly regime: { readonly code?: RegimeIndicatif['regime']; readonly libelle: string; readonly architecte: string; readonly ferme: boolean; readonly lignes: readonly string[]; readonly sources: readonly { titre: string; url: string }[]; readonly mention: string } | null;
+  /** LOT D9 — aperçu des pièces du dossier (fin du parcours, extension placée, projet transmissible) ; absent sinon. */
+  readonly dossier?: VueDossier;
   readonly avertissements: readonly string[];
   readonly sources: readonly string[];
   /** LOT X3b — secteur protégé (pastille oui / non trouvé / non vérifié, avis ABF, effet, délai, sources et date). */
@@ -550,13 +555,14 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   if (autres.length) avert.push(`${autres.length} autre(s) bâtiment(s) BD TOPO sur la parcelle (annexes, abris) : conservés et pris comme obstacles par le moteur.`);
   const presentation = `Sur la parcelle ${ctx.idu}${ctx.commune ? ` (${ctx.commune})` : ''}, la base de l’IGN (BD TOPO) décrit un bâtiment de ${fr(m.empriseM2, 0)} m² d’emprise au sol.`;
 
-  const sortie = (etape: Etape, texteQ: string, questions: QuestionBloc[], extra: Partial<Pick<SortieParcours, 'projet' | 'optionTravail' | 'erreursProjet' | 'regime' | 'resultatMoteur'>> & { extension?: VueExtension['extension']; regles?: string[] } = {}): SortieParcours => ({
+  const sortie = (etape: Etape, texteQ: string, questions: QuestionBloc[], extra: Partial<Pick<SortieParcours, 'projet' | 'optionTravail' | 'erreursProjet' | 'regime' | 'resultatMoteur'>> & { extension?: VueExtension['extension']; regles?: string[]; dossier?: VueDossier } = {}): SortieParcours => ({
     etat, etape, attendues: questions.map((q) => q.id), texte: texteQ, blocChoix: blocChoix(questions),
     projet: extra.projet ?? null, optionTravail: extra.optionTravail ?? null, erreursProjet: extra.erreursProjet ?? [], regime: extra.regime ?? null, resultatMoteur: extra.resultatMoteur ?? null,
     vue: {
       v: 1, etape, idu: ctx.idu, commune: ctx.commune, maison: maisonVue, extension: extra.extension ?? null, regles: extra.regles ?? [],
-      regime: extra.regime ? { libelle: LIBELLE_REGIME[extra.regime.regime], architecte: LIBELLE_ARCHITECTE[extra.regime.architecte], ferme: extra.regime.ferme, lignes: extra.regime.lignes, sources: extra.regime.sources.map((s) => ({ ...s })), mention: extra.regime.mention } : null,
+      regime: extra.regime ? { code: extra.regime.regime, libelle: LIBELLE_REGIME[extra.regime.regime], architecte: LIBELLE_ARCHITECTE[extra.regime.architecte], ferme: extra.regime.ferme, lignes: extra.regime.lignes, sources: extra.regime.sources.map((s) => ({ ...s })), mention: extra.regime.mention } : null,
       avertissements: avert, sources, secteur: ctx.secteur ?? null,
+      ...(extra.dossier ? { dossier: extra.dossier } : {}),
     },
   });
 
@@ -743,8 +749,11 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     ...rm.lignes.map((x) => `- ${x}`),
   ];
   if (!projet) avert.push(`Projet non transmissible (contrat refusé) : ${('erreurs' in lu ? lu.erreurs : []).join(' ; ')}`);
+  // LOT D9 — dossier DP / PC : aperçu des pièces (serveur, déterministe) ; régime « DP ou PC » → la carte demande le choix.
+  const dossier = projet && res.ok ? dossierPrevisionnel(regime.regime, ctx.secteur?.etat ?? null) : undefined;
+  if (dossier && dossier.choix.length === 2) lignesTexte.push('', '**Pour préparer votre dossier :** déclaration préalable ou permis de construire ? Choisissez sur la carte (« Préparer un dossier DP » ou « … PC »).');
   return sortie('termine', lignesTexte.join('\n'), [], {
     projet, optionTravail: projet ? { existant: optionTravailExistant(projet) } : null, erreursProjet: 'erreurs' in lu ? lu.erreurs : [],
-    regime, resultatMoteur: res, extension: vueExt, regles: rm.lignes,
+    regime, resultatMoteur: res, extension: vueExt, regles: rm.lignes, ...(dossier ? { dossier } : {}),
   });
 }

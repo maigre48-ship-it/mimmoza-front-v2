@@ -28,3 +28,8 @@
 .mz-ext__pastille.is-non_verifie { background: #fef3c7; color: #92400e; }
 .mz-ext__secteur.is-oui { border-left: 3px solid #dc2626; padding-left: 8px; }
 .mz-ext__secteur.is-non_verifie { border-left: 3px solid #d97706; padding-left: 8px; }
+
+/* LOT D9 — « Préparer mon dossier ». */
+.mz-ext__dossier ul { margin: 4px 0; padding-left: 18px; }
+.mz-ext__actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.mz-ext__bouton { border: 1px solid currentColor; border-radius: 8px; padding: 4px 10px; background: transparent; cursor: pointer; font-weight: 600; }

@@ -7,6 +7,7 @@
 // =============================================================================
 import { Home } from 'lucide-react';
 import { libelleEtape, ligneExtension, ligneSurfaceCreee, type ExistantTravail, type LigneStatut, type VueCarteExtension, type VueSecteur } from './extensionMaison';
+import { EVENEMENT_PREPARER_DOSSIER, etatPreparerDossier, type VueDossierCarte } from './dossierExtension';
 import './CarteExtensionMaison.css';
 
 function Statut({ l }: { l: LigneStatut }) {
@@ -33,6 +34,28 @@ export function BlocSecteur({ secteur }: { secteur: VueSecteur }) {
       <p className="mz-ext__note">{secteur.mention}{' '}
         {secteur.sources.map((s, i) => <span key={s.url}>{i > 0 ? ' · ' : ''}<a href={s.url} target="_blank" rel="noopener noreferrer">{s.titre}</a></span>)}</p>
     </details>
+  </div>;
+}
+
+/**
+ * LOT D9 — « Préparer mon dossier » : aperçu des pièces établi par le SERVEUR (aucun texte du modèle), puis ouverture du
+ * Studio intégré sur l'espace Dossier. Régime « DP ou PC » : deux boutons, la personne choisit. Gratuit (dit ici).
+ */
+export function BlocPreparerDossier({ vue }: { vue: VueCarteExtension }) {
+  const etat = etatPreparerDossier(vue);
+  const d: VueDossierCarte | null = vue.dossier;
+  if (!etat.visible || !d) return null;
+  const ouvrir = (regime: 'DP' | 'PC') => window.dispatchEvent(new CustomEvent(EVENEMENT_PREPARER_DOSSIER, { detail: { regime, idu: vue.idu } }));
+  const listes = (['DP', 'PC'] as const).filter((r) => d.pieces[r]?.length);
+  return <div className="mz-ext__bloc mz-ext__dossier" data-testid="carte-dossier">
+    <p className="mz-ext__titre">Dossier de {d.choix.length === 1 ? (d.choix[0] === 'DP' ? 'déclaration préalable' : 'permis de construire') : 'déclaration préalable ou de permis de construire'}</p>
+    {etat.question && <p role="status">{etat.question}</p>}
+    {listes.map((r) => <details key={r} open={listes.length === 1}>
+      <summary>Pièces {r === 'DP' ? 'de la déclaration préalable (cerfa 16702)' : 'du permis de construire (cerfa 13406)'}</summary>
+      <ul>{d.pieces[r]!.map((p) => <li key={p.code}><b>{p.code}</b> {p.intitule} — {p.origine}{p.condition ? ` (${p.condition})` : ''}</li>)}</ul>
+    </details>)}
+    <p className="mz-ext__actions">{etat.boutons.map((b) => <button key={b.regime} type="button" className="mz-ext__bouton" onClick={() => ouvrir(b.regime)}>{b.libelle}</button>)}</p>
+    <p className="mz-ext__note">{d.cout} {d.mention}</p>
   </div>;
 }
 
@@ -70,6 +93,7 @@ export function CarteExtensionMaison({ vue, dossier = false }: { vue: VueCarteEx
     {vue.regles.length > 0 && <details><summary>Règles d’implantation utilisées ({vue.regles.length})</summary><ul>{vue.regles.map(r => <li key={r}>{r}</li>)}</ul></details>}
     {vue.avertissements.length > 0 && <ul className="mz-ext__alertes">{vue.avertissements.map(a => <li key={a}>{a}</li>)}</ul>}
     {vue.projetEnregistre && <p className="mz-ext__note">Projet d’extension enregistré dans la conversation (maison conservée, corrections comprises).</p>}
+    {!dossier && <BlocPreparerDossier vue={vue} />}
     {vue.sources.length > 0 && <p className="mz-ext__note">Sources : {vue.sources.join(' ; ')}.</p>}
   </section>;
 }
