@@ -21,6 +21,8 @@ import { demarrerPoigneeDeMain, examinerMessageStudio, originesStudio } from "@/
 import type { ProjetMimmozaV2 } from "@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2";
 import { DELAI_STUDIO_MUET_MS, lireFermetureStudio, messageRelief, messageStudioMuet, type PoseChat } from "./projetChat";
 import type { IssueRelief } from "./reliefCache";
+// LOT F5 — relevé de l'existant VALIDÉ dans le Studio (lecture de plan / photo calée), renvoyé au site.
+import { lireRetourReleve, TYPE_RETOUR_RELEVE, type SyntheseReleve } from "./planExistantStudio";
 import "./StudioIntegre.css";
 
 export interface DemandeStudioIntegre {
@@ -33,7 +35,8 @@ export interface DemandeStudioIntegre {
   relief: { etat: "inclus"; source: "cache" | "mesure" } | { etat: "differe"; promesse: Promise<IssueRelief>; relancer: () => Promise<IssueRelief> } | { etat: "sans-parcelle" };
   implantation: PoseChat | null;
   imagesNonEnvoyees: number;
-  /** LOT D9 — « Préparer mon dossier » : `projetExtension` (contrat X0) et `dossier` joints au message « projet ». */
+  /** LOT D9 — « Préparer mon dossier » : `projetExtension` (contrat X0) et `dossier` joints au message « projet ».
+   *  LOT F5 — aussi `planExistant` (plan à lire) et `photoCalee` (photo et plan de calage d'un travail d'image). */
   complements?: Readonly<Record<string, unknown>>;
 }
 
@@ -41,12 +44,14 @@ type EtatRelief = { texte: string; erreur: boolean; enCours: boolean };
 
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 
-export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
+export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve }: {
   demande: DemandeStudioIntegre | null;
   ouvert: boolean;
   onFermer: (vers: "projet" | "bilan") => void;
   /** Conception (agent) : appelé à chaque « prêt » du Studio, avec sa fenêtre et son origine exacte. */
   onCadrePret?: (fenetre: Window, origine: string) => void;
+  /** LOT F5 — relevé de l'existant posé (validé) dans le Studio : synthèse relue pour les écrans du site. */
+  onReleve?: (synthese: SyntheseReleve) => void;
 }) {
   const cadre = useRef<HTMLIFrameElement | null>(null);
   const [connecte, setConnecte] = useState(false);
@@ -58,6 +63,9 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
   fermer.current = onFermer;
   const cadrePret = useRef(onCadrePret);
   cadrePret.current = onCadrePret;
+  const surReleve = useRef(onReleve);
+  surReleve.current = onReleve;
+  const [releve, setReleve] = useState<string | null>(null);
   const relancer = useRef<(() => void) | null>(null);
   const [ifc, setIfc] = useState<string | null>(null);
   // LIAISON 03/11 — Studio qui ne répond pas : un message clair au lieu d'un « Ouverture de Studio… » sans fin.
@@ -92,6 +100,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
     if (!demande) return;
     setConnecte(false);
     setMuet(false);
+    setReleve(null);
     issueRelief.current = null;
     reliefEnvoye.current = false;
     const origine = new URL(demande.url).origin;
@@ -113,6 +122,14 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
       if (evt.source !== cadre.current?.contentWindow) return;
       const vers = lireFermetureStudio(evt.data);
       if (vers && evt.origin === origine) { fermer.current(vers); return; }
+      // LOT F5 — relevé validé : même fenêtre, même origine, session de cette demande ; relu sans rien compléter.
+      if (evt.origin === origine && (evt.data as { type?: unknown } | null)?.type === TYPE_RETOUR_RELEVE) {
+        const rr = lireRetourReleve(evt.data, demande.sessionId, Date.now());
+        if (!rr.ok) { setReleve(`Relevé du Studio ignoré : ${rr.raison}.`); return; }
+        setReleve(`Relevé de l’existant reçu : ${rr.synthese.baies.length} baie(s)${rr.synthese.pieces.length ? `, ${rr.synthese.pieces.length} pièce(s)` : ""}.`);
+        surReleve.current?.(rr.synthese);
+        return;
+      }
       const d = examinerMessageStudio({ origin: evt.origin, data: evt.data }, autorisees, window.location.origin, new Set([demande.sessionId]), Boolean(ENV.DEV));
       if (d.type === "pret") {
         poignee?.surPret(d.attendProjet); setConnecte(true); setMuet(false); envoyerRelief();
@@ -160,6 +177,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
         <button type="button" className="studio-integre__back" disabled={!connecte} onClick={telechargerIfc} title="Export IFC 4 du modèle ouvert dans Studio"><Download size={15} /> IFC 4</button>
         <button type="button" className="studio-integre__back" onClick={() => onFermer("bilan")}>{demande?.projet.etudeId ? "Bilan" : "Bilan (étude à relier)"}</button>
         {ifc && <span className="studio-integre__chip" role="status">{ifc}</span>}
+        {releve && <span className="studio-integre__chip" role="status">{releve}</span>}
         {!connecte && !muet && <span className="studio-integre__chip"><Loader2 size={13} className="studio-integre__spin" /> Ouverture de Studio…</span>}
         {!connecte && muet && <span className="studio-integre__chip is-error" role="alert">{messageStudioMuet(demande.url, window.location.origin)}</span>}
         {relief && <span className={`studio-integre__chip${relief.erreur ? " is-error" : ""}`} role="status">

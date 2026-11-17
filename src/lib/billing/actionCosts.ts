@@ -26,8 +26,8 @@ export const ACTION_COSTS = {
   // Ils figurent ici pour que l'interface puisse les AFFICHER : sans cela,
   // l'utilisateur etait debite sans avoir jamais vu le prix.
   // ⚠️ Doivent rester identiques a TARIFS dans featureBilling.ts.
-  rehab_analyse_plan:  3,   // gpt-4o vision, image detail high (~0,05 € reel)
-  rehab_transcription: 5,   // gpt-4o vision, 16 000 tokens de sortie (~0,16 € reel)
+  // LOT F5 (17/11/2026) : rehab_analyse_plan (3) et rehab_transcription (5) RETIRES — la lecture de plan se fait
+  // dans le Studio (calcul local, gratuit) ; les deux fonctions serveur repondent 410 sans debiter.
   export_rapport_ia:  10,   // Anthropic sonnet, jusqu'a 8 600 tokens (~0,25 € reel)
 } as const;
 

@@ -8,6 +8,7 @@
 import { Home } from 'lucide-react';
 import { libelleEtape, ligneExtension, ligneSurfaceCreee, type ExistantTravail, type LigneStatut, type VueCarteExtension, type VueSecteur } from './extensionMaison';
 import { EVENEMENT_PREPARER_DOSSIER, etatPreparerDossier, type VueDossierCarte } from './dossierExtension';
+import { etatLirePlanExistant, EVENEMENT_IMPORTER_PLAN_EXISTANT } from './planExistantStudio';
 import './CarteExtensionMaison.css';
 
 function Statut({ l }: { l: LigneStatut }) {
@@ -59,6 +60,20 @@ export function BlocPreparerDossier({ vue }: { vue: VueCarteExtension }) {
   </div>;
 }
 
+/**
+ * LOT F5 — « Lire le plan de l'existant » : le plan de la maison (fourni sur une autre page, ou PDF de la conversation)
+ * est lu par le Studio, calé sur l'emprise de la maison conservée. Gratuit (calcul local), dit ici.
+ */
+export function BlocLirePlanExistant({ vue }: { vue: VueCarteExtension }) {
+  if (!etatLirePlanExistant(vue)) return null;
+  return <div className="mz-ext__bloc" data-testid="carte-plan-existant">
+    <p className="mz-ext__titre">Plan de la maison existante</p>
+    <p>Vous avez les plans de la maison (DXF, PDF, PNG ou JPEG) ? Le Studio les lit, les cale sur l’emprise de la maison et vous pose les questions sur ce qui reste incertain ; vous pouvez aussi relever les façades sur la photo calée.</p>
+    <p className="mz-ext__actions"><button type="button" className="mz-ext__bouton" onClick={() => window.dispatchEvent(new CustomEvent(EVENEMENT_IMPORTER_PLAN_EXISTANT, { detail: { idu: vue.idu } }))}>Lire le plan de l’existant</button></p>
+    <p className="mz-ext__note">Gratuit : la lecture se fait dans le Studio, sur votre ordinateur ; aucun jeton n’est consommé.</p>
+  </div>;
+}
+
 export function CarteExtensionMaison({ vue, dossier = false }: { vue: VueCarteExtension; dossier?: boolean }) {
   const ext = vue.extension;
   const surface = ext ? ligneSurfaceCreee(ext) : null;
@@ -93,6 +108,7 @@ export function CarteExtensionMaison({ vue, dossier = false }: { vue: VueCarteEx
     {vue.regles.length > 0 && <details><summary>Règles d’implantation utilisées ({vue.regles.length})</summary><ul>{vue.regles.map(r => <li key={r}>{r}</li>)}</ul></details>}
     {vue.avertissements.length > 0 && <ul className="mz-ext__alertes">{vue.avertissements.map(a => <li key={a}>{a}</li>)}</ul>}
     {vue.projetEnregistre && <p className="mz-ext__note">Projet d’extension enregistré dans la conversation (maison conservée, corrections comprises).</p>}
+    {!dossier && <BlocLirePlanExistant vue={vue} />}
     {!dossier && <BlocPreparerDossier vue={vue} />}
     {vue.sources.length > 0 && <p className="mz-ext__note">Sources : {vue.sources.join(' ; ')}.</p>}
   </section>;

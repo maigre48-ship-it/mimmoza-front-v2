@@ -5,6 +5,8 @@ import type { FichierTransfert } from './transfertStudio';
 
 export interface JarvisStoredFile extends FichierTransfert {
   kind: 'image' | 'pdf';
+  /** LOT F5 — taille en octets lue dans le stockage (contrôle avant de transmettre un plan au Studio) ; absente si inconnue. */
+  taille?: number;
 }
 
 /** Les fichiers 3D sont conservés sous l'ID de conversation, dans le bucket privé. */
@@ -36,10 +38,12 @@ export async function listJarvisTransferFiles(conversationId: string): Promise<J
       const kind = lower.endsWith('.pdf') ? 'pdf'
         : /\.(jpe?g|png|webp)$/.test(lower) ? 'image' : null;
       if (!kind) return [];
+      const taille = (file.metadata as { size?: unknown } | null | undefined)?.size;
       return [{
         path: `${auth.user!.id}/${conversationId}/${file.name}`,
         nom: file.name.replace(/^[0-9a-f-]{36}-/i, '').replace(/_/g, ' '),
         kind,
+        ...(typeof taille === 'number' && Number.isFinite(taille) && taille > 0 ? { taille } : {}),
       } satisfies JarvisStoredFile];
     });
 }

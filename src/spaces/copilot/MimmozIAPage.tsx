@@ -41,6 +41,15 @@ import { StudioIntegre, type DemandeStudioIntegre } from './studio3d/StudioInteg
 // LOT D9 — « Préparer mon dossier » (carte Extension de maison) → Studio intégré, espace Dossier.
 import { blocDossierPourStudio, EVENEMENT_PREPARER_DOSSIER, rendusLivresPourDossier, verifierPreparationDossier } from './studio3d/dossierExtension';
 import { derniereVueExtension } from './studio3d/extensionMaison';
+// LOT F5 — lecture du plan de l'existant confiée au Studio intégré (aucun jeton), photo calée, relevé validé en retour.
+import {
+  blocPhotoCalee, blocPlanExistant, contexteCopilotReleve, DUREE_URL_PLAN_S, etatLirePlanExistant, EVENEMENT_IMPORTER_PLAN_EXISTANT,
+  lignesReleve, memoriserReleve, MENTION_LECTURE_LOCALE, oublierPlanEnAttente, photoCaleePourStudio, planEnAttente,
+  type BlocPhotoCalee, type SyntheseReleve,
+} from './studio3d/planExistantStudio';
+import { signerTransferts } from './studio3d/transfertStudio';
+import { userStorage } from '@/lib/storage/userScopedStorage';
+import { setActiveCopilotContext } from './store/activeCopilotContext.store';
 import { listerTravaux, urlSigneeRendu } from '@/lib/studio/travaux';
 import { adresseStudioIntegre, baseStudioIntegre, projetIdChat } from './studio3d/projetChat';
 import { prechargerRelief, reliefAvecDelai } from './studio3d/reliefCache';
@@ -426,6 +435,16 @@ export default function MimmozIAPage() {
    * rendus LIVRÉS de la conversation (URL signées 1 h, proposés comme insertion — aucun choisi d'office), puis ouverture du
    * Studio intégré avec `projetExtension` et le bloc `dossier`. Rien n'est envoyé ailleurs ; aucun jeton consommé.
    */
+  /** LOT F5 — photo calée du travail d'image (photo + plan de calage déposés par la machine de rendu), adresses signées 1 h. */
+  const photoCaleeDeLaConversation = useCallback(async (conversationId: string): Promise<BlocPhotoCalee | null> => {
+    const travaux = await listerTravaux(conversationId, 12).catch(() => ({ disponible: false as const }));
+    const p = travaux.disponible ? photoCaleePourStudio(travaux.valeur) : null;
+    if (!p) return null;
+    try {
+      const [photo, plan] = await Promise.all([urlSigneeRendu(p.photoPath, DUREE_URL_PLAN_S), urlSigneeRendu(p.planPath, DUREE_URL_PLAN_S)]);
+      return blocPhotoCalee(p, photo, plan, Date.now());
+    } catch { return null; }
+  }, []);
   const preparerDossier = useCallback(async (regime: 'DP' | 'PC') => {
     const state = useCopilotStore.getState();
     const conversationId = state.currentConversationId;
@@ -439,8 +458,68 @@ export default function MimmozIAPage() {
       try { return { id: r.id, libelle: r.libelle, url: await urlSigneeRendu(r.chemin, 3600), date: r.date, statut: r.statut }; } catch { return null; }
     }))).filter((r): r is NonNullable<typeof r> => r !== null);
     const dossier = blocDossierPourStudio({ regime, dossier: v.dossier, secteur: vue.secteur ? { etat: vue.secteur.etat, date: vue.secteur.date } : null, projet: v.projet, rendus });
-    await voirEn3D(fiche!, conversationId!, undefined, { complements: { projetExtension: v.projet, dossier } });
-  }, [voirEn3D]);
+    // LOT F5 — la photo calée du travail d'image part aussi : « Relever sur la photo » la trouve dans le Studio.
+    const photoCalee = await photoCaleeDeLaConversation(conversationId!);
+    const issue = await voirEn3D(fiche!, conversationId!, undefined, { complements: { projetExtension: v.projet, dossier, ...(photoCalee ? { photoCalee } : {}) } });
+    // LOT F5 — parcelle non confirmée : la demande de dossier n'est pas perdue en silence.
+    if (issue === 'parcelle-requise') setAttachError('Confirmez d’abord la parcelle de la maison (question ci-dessus), puis cliquez de nouveau « Préparer mon dossier ».');
+  }, [voirEn3D, photoCaleeDeLaConversation]);
+  /*
+   * LOT F5 — « LIRE LE PLAN DE L'EXISTANT » : remplace la transcription de plans par un modèle de langage. Le plan fourni
+   * (déposé sur une autre page du site, sinon les PDF de la conversation) est transmis au Studio intégré, qui l'ouvre sur
+   * « Plans & dossier › Plan de l'existant › Importer un plan » ; la lecture se fait dans le navigateur, sans jeton.
+   */
+  const [noticePlan, setNoticePlan] = useState<string | null>(null);
+  const preparerPlanExistant = useCallback(async () => {
+    const state = useCopilotStore.getState();
+    const conversationId = state.currentConversationId;
+    const fiche = latestJarvisDraft(state.messages);
+    const vue = derniereVueExtension(state.messages as never);
+    if (!conversationId) { setNoticePlan('Ouvrez d’abord la conversation de la maison avec Mimmo.'); return; }
+    if (!etatLirePlanExistant(vue) || !vue?.projetExtension) {
+      setNoticePlan('Le plan de l’existant se lit sur une maison conservée : terminez d’abord avec Mimmo le parcours « agrandir ma maison » (maison existante conservée), puis cliquez « Lire le plan de l’existant » sur la carte.');
+      return;
+    }
+    if (!fiche) { setNoticePlan('Le Studio a besoin de la préparation 3D de la parcelle : demandez d’abord « voir en 3D » à Mimmo, puis cliquez de nouveau « Lire le plan de l’existant ».'); return; }
+    const attente = planEnAttente(Date.now());
+    let fichiers: { nom: string; type: string; taille: number; octets?: ArrayBuffer; url?: string }[] = [];
+    if (attente) {
+      fichiers = [{ nom: attente.nom, type: attente.type, taille: attente.taille, octets: attente.octets }];
+    } else {
+      const pdf = (await listJarvisTransferFiles(conversationId).catch(() => [] as JarvisStoredFile[])).filter(f => f.kind === 'pdf' && typeof f.taille === 'number').slice(0, 6);
+      for (const f of pdf) {
+        const [signe] = await signerTransferts([f]).catch(() => []);
+        if (signe) fichiers.push({ nom: f.nom, type: 'application/pdf', taille: f.taille!, url: signe.url });
+      }
+    }
+    const b = blocPlanExistant({ provenance: attente ? attente.provenance : 'conversation', fichiers, maintenantMs: Date.now() });
+    if (!b.ok) { setNoticePlan(b.raison); return; }
+    const photoCalee = await photoCaleeDeLaConversation(conversationId);
+    const issue = await voirEn3D(fiche, conversationId, undefined, { complements: { projetExtension: vue.projetExtension, planExistant: b.bloc, ...(photoCalee ? { photoCalee } : {}) } });
+    if (issue === 'parcelle-requise') { setNoticePlan('Confirmez d’abord la parcelle de la maison (question ci-dessus), puis cliquez de nouveau « Lire le plan de l’existant ».'); return; }
+    if (attente) oublierPlanEnAttente();
+    const noms = b.bloc.fichiers.map(f => f.nom).join(', ');
+    setNoticePlan(`${noms ? `Plan transmis au Studio (${noms})` : 'Studio ouvert sur « Plan de l’existant » : choisissez votre plan (DXF, PDF, PNG ou JPEG)'}${photoCalee ? ' ; la photo calée de votre image est aussi disponible pour « Relevé sur la photo calée »' : ''}. ${MENTION_LECTURE_LOCALE}`);
+  }, [voirEn3D, photoCaleeDeLaConversation]);
+  useEffect(() => {
+    const surPlan = () => { void preparerPlanExistant().catch(error => setNoticePlan(error instanceof Error ? error.message : 'Ouverture du Studio impossible.')); };
+    window.addEventListener(EVENEMENT_IMPORTER_PLAN_EXISTANT, surPlan);
+    return () => window.removeEventListener(EVENEMENT_IMPORTER_PLAN_EXISTANT, surPlan);
+  }, [preparerPlanExistant]);
+  // LOT F5 — arrivée depuis une autre page avec un plan déposé (« Lire ce plan dans le Studio ») : on dit quoi faire.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('plan-existant')) return;
+    const p = planEnAttente(Date.now());
+    setNoticePlan(p
+      ? `Plan « ${p.nom} » prêt à être lu. Ouvrez la conversation de la maison (ou dites à Mimmo « agrandir ma maison » avec son adresse) ; quand le projet est enregistré avec la maison conservée, cliquez « Lire le plan de l’existant » sur la carte. ${MENTION_LECTURE_LOCALE}`
+      : 'Aucun plan en attente (la page a été rechargée ?) : déposez de nouveau le plan, ou choisissez-le directement dans le Studio.');
+  }, []);
+  /** LOT F5 — relevé VALIDÉ dans le Studio : mémorisé (écrans du site), donné au copilote (surfaces avec statuts). */
+  const surReleveStudio = useCallback((s: SyntheseReleve) => {
+    memoriserReleve(userStorage, s, useCopilotStore.getState().currentConversationId);
+    setActiveCopilotContext({ pageSnapshot: contexteCopilotReleve(s) });
+    setNoticePlan(lignesReleve(s).join(' '));
+  }, []);
   useEffect(() => {
     const surDossier = (e: Event) => {
       const r = (e as CustomEvent<{ regime?: unknown }>).detail?.regime;
@@ -630,7 +709,11 @@ export default function MimmozIAPage() {
 
   return (
     <div className={pageClass}>
-      <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} />
+      <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} onReleve={surReleveStudio} />
+      {noticePlan && <div role="status" style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 900, maxWidth: 'min(720px, 92vw)', background: '#f5f3ff', border: '1px solid #c4b5fd', color: '#312e81', borderRadius: 10, padding: '8px 12px', fontSize: 13, lineHeight: 1.4, boxShadow: '0 6px 20px rgba(15,23,42,.12)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <span style={{ flex: 1 }}>{noticePlan}</span>
+        <button type="button" onClick={() => setNoticePlan(null)} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#312e81' }}><X size={14} /></button>
+      </div>}
       {/* Agent autonome : panneau Missions / À valider / Mémoire (fermé par défaut) */}
       <PanneauAgent />
       {/* LOT D1 : réponses longues, ordre et rapport de mission présentés comme des documents (fermé par défaut) */}
