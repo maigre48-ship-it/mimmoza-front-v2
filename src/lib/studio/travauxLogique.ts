@@ -14,6 +14,8 @@ import { lireElementsOmis, type ElementOmis } from './manifesteVisite.ts';
 // LOT P2 (11/11/2026) — image dans sa rue : options de fond (mêmes règles que la base et le serveur).
 import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from './fondImage.ts';
 // LOT P5-SITE (12/11/2026) — effacement de l'existant : masque corrigé dans l'atelier, mention du résultat.
+// LOT X9 — photo réelle obligatoire pour une image d'extension.
+import { photoRequiseDuResultat, type PhotoRequise } from './photoReelle.ts';
 import { libelleEffacement, lireExistant, lireMasqueExistantOption, type ExistantResultat, type LibelleEffacement, type MasqueExistantOption } from './masqueExistant.ts';
 
 export type { ElementOmis } from './manifesteVisite.ts';
@@ -131,6 +133,8 @@ export interface ResultatImage {
   avertissements: string[];
   /** LOT P2 — null : pas de photomontage demandé (image d'étude) ou résultat antérieur au lot. */
   photomontage: PhotomontageResultat | null;
+  /** LOT X9 — image d'extension sans vraie photo : aucune image, une photo de la maison est demandée. */
+  photo_requise?: PhotoRequise | null;
 }
 
 /** Ligne `studio_jobs` lue depuis la base (normalisée). */
@@ -396,7 +400,11 @@ function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | Resultat
     });
     const principale = texte(brut.image_path) ?? images[0]?.jpeg_path ?? null;
     const qualite = brut.qualite === 'finale' || brut.qualite === 'apercu' ? brut.qualite : null;
-    return principale ? { image_path: principale, images, qualite, avertissements, photomontage: lirePhotomontage(brut.photomontage) } : null;
+    // LOT X9 — image d'extension SANS image (aucune vraie photo) : résultat lisible, sans fichier, avec `photo_requise`.
+    if (!principale && estObjet(brut.photo_requise)) {
+      return { image_path: '', images: [], qualite, avertissements, photomontage: lirePhotomontage(brut.photomontage), photo_requise: photoRequiseDuResultat(brut) };
+    }
+    return principale ? { image_path: principale, images, qualite, avertissements, photomontage: lirePhotomontage(brut.photomontage), ...(estObjet(brut.photo_requise) ? { photo_requise: photoRequiseDuResultat(brut) } : {}) } : null;
   }
   if (type === 'film') {
     const video = texte(brut.video_path);

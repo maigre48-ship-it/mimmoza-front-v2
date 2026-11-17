@@ -28,6 +28,9 @@ import {
   type ResultatImage, type ResultatVisite, type TravailStudio, type TypeTravail, type VueImage,
 } from '@/lib/studio/travaux';
 import './FilmVisitePanel.css';
+// LOT X9 — image d'extension : jamais montrée sans vraie photo de la maison.
+import { extensionSansPhotoReelle } from './suiviRenduChat';
+import { photoRequiseDuResultat } from '@/lib/studio/photoReelle';
 
 const AMBIANCES: Ambiance[] = ['jour', 'fin_de_journee', 'nuit'];
 
@@ -138,6 +141,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
 
   const voirImage = async (t: TravailStudio) => {
     const r = t.resultat as ResultatImage | null;
+    if (extensionSansPhotoReelle(t)) { setMessage(photoRequiseDuResultat(t.resultat)?.texte ?? ''); return; }
     if (!r?.images?.length) return;
     setMessage('');
     try {

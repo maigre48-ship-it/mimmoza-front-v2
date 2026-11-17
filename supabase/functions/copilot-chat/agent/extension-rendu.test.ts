@@ -18,6 +18,10 @@ import { lireProjetExtension, type ProjetExtension } from '../../_shared/extensi
 import { avancerParcours, ETAT_INITIAL, type ContexteParcours, type EtatParcours, type SortieParcours } from '../../_shared/extension/parcours.ts';
 import { type BatimentBdTopo } from '../../_shared/extension/bdtopoParcelle.ts';
 import { verifierCouverture } from '../../../../src/lib/studio/couverturePhotoRue.ts';
+// LOT X9 — photo réelle obligatoire pour une image d'extension.
+import { briefDuMessage, MESSAGE_PHOTO_REQUISE } from './studio.ts';
+import { messagePhotoMaison } from '../../../../src/spaces/copilot/studio3d/choixFond.ts';
+import { lireDemandePhotoMaison, TEXTES_PHOTO_REQUISE } from '../../../../src/lib/studio/photoReelle.ts';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const CONV = 'conv-extension-rendu';
@@ -144,7 +148,7 @@ Deno.test('X4S-1 : rendu ouvert ; toit confirmé par le parcours ; devis et aver
   na.match(a[0]!, /maison existante est CONSERVÉE/);
   na.match(a[1]!, /forme du toit confirmée par vous ; pente du toit et orientation du faîtage ESTIMÉES/);
   na.match(a[2]!, /terrain supposé plat.*Aucun habillage de bâtiment neuf/);
-  na.match(a[3]!, /« à valider »/);
+  na.match(a[3]!, /aucune image n’est montrée : la raison est dite et une autre photo vous est demandée/);
   na.equal(avertissementsRenduExtension(FIN.projet!, 'film').length, 3, 'film : pas de phrase sur la photo');
 });
 
@@ -210,7 +214,9 @@ Deno.test('X4S-5 : IMAGE d’une extension — option existant: conserver, proje
   const r1 = await executerOutilStudio('studio_lancer_rendu', { type: 'image', brief: { a_toi_de_choisir: true } }, env(d, 'R2'));
   na.equal(r1?.status, 'confirmation_requise', r1?.message);
   na.equal((r1!.data!.options as Record<string, unknown>).existant, 'conserver');
-  na.ok(avert(r1).some((a) => /« à valider »/.test(a)));
+  // LOT X9 : aucune image sans placement vérifié dans une vraie photo ; photo de la rue retenue d'office (couverture établie).
+  na.ok(avert(r1).some((a) => /aucune image n’est montrée : la raison est dite et une autre photo vous est demandée/.test(a)));
+  na.equal((r1!.data!.options as Record<string, unknown>).fond, 'photo_rue');
   d.appels.push(structuredClone(r1!) as unknown as Record<string, unknown>);
   const r2 = await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, 'R3'));
   na.equal(r2?.status, 'ok', r2?.message);
@@ -289,4 +295,83 @@ Deno.test('X4S-10 : extension — aucune question d’habillage (carte du brief)
   na.equal(f?.status, 'confirmation_requise', f?.message);
   na.equal((f!.data!.options as Record<string, unknown>).ambiance, 'fin_de_journee');
   na.equal('habillage' in (f!.data!.devis as Record<string, unknown>), false);
+});
+
+// ═══ LOT X9 (17/11/2026) — photo réelle obligatoire : aucune image d'extension sans vraie photo de la maison ═════════
+
+const INTERNES_X9 = /\b(lot|moteur|serveur|worker|unreal|blender)\b/i;
+
+Deno.test('X9-1 : image d’extension avec photos de rue disponibles → fond « photo de la rue » retenu d’office, dit dans le devis', async () => {
+  const d = await depotPrepare();
+  d.sorties = [sortieTerminee()];
+  const r = await executerOutilStudio('studio_lancer_rendu', { type: 'image', brief: { a_toi_de_choisir: true }, options: { fond: 'etude' } }, env(d, 'R1'));
+  na.equal(r?.status, 'confirmation_requise', r?.message);
+  na.equal((r!.data!.options as Record<string, unknown>).fond, 'photo_rue');
+  na.ok(avert(r).some((a) => /seule une vraie photo est utilisée/.test(a)));
+  na.ok(!avert(r).some((a) => /image d’étude/i.test(a)), 'aucune image d’étude promise pour une extension');
+  na.match(r!.message!, /seule une vraie photo de la maison est utilisée/);
+});
+
+Deno.test('X9-2 : aucune photo de rue → RIEN N’EST LANCÉ, photo de la maison demandée (carte avec bouton et contour)', async () => {
+  const d = await depotPrepare();
+  d.sorties = [sortieTerminee()];
+  d.couverturePhotoRue = async () => ({ ok: true, couverture: { couverte: false, photos: [], verifieLe: '2026-11-17T12:00:00Z' } });
+  const r = await executerOutilStudio('studio_lancer_rendu', { type: 'image', brief: { a_toi_de_choisir: true } }, env(d, 'R1'));
+  na.equal(r?.status, 'partial');
+  na.match(r!.message!, /^RIEN N’A ÉTÉ LANCÉ\./);
+  na.ok(r!.message!.includes(MESSAGE_PHOTO_REQUISE));
+  na.equal(d.travaux.length, 0);
+  const lu = lireDemandePhotoMaison({ name: 'studio_lancer_rendu', status: 'partial', output: r });
+  na.ok(lu, 'la carte « Envoyer une photo de ma maison » s’affiche');
+  na.equal(lu!.code, 'aucune_photo');
+  na.equal(lu!.texte, TEXTES_PHOTO_REQUISE.aucune_photo);
+  na.ok((lu!.contour ?? []).length >= 3, 'contour transmis pour le plan du point de vue');
+  for (const t of [lu!.texte, MESSAGE_PHOTO_REQUISE]) na.doesNotMatch(t, INTERNES_X9);
+});
+
+Deno.test('X9-3 : photo de la maison envoyée (bloc SANS brief) → lu par le serveur, devis de l’image sur la photo de l’utilisateur', async () => {
+  const d = await depotPrepare();
+  d.sorties = [sortieTerminee()];
+  d.couverturePhotoRue = async () => ({ ok: true, couverture: { couverte: false, photos: [], verifieLe: '2026-11-17T12:00:00Z' } });
+  const chemin = `${USER}/22222222-2222-4222-8222-222222222222.jpg`;
+  const carte = briefDuMessage(messagePhotoMaison({ chemin, octets: 2_400_000 }));
+  na.ok(carte?.ok, JSON.stringify(carte));
+  na.equal(carte!.ok && carte!.valeur.brief, null);
+  na.deepEqual(carte!.ok && carte!.valeur.fond, { fond: 'photo_client', photo_client: { chemin, octets: 2_400_000 } });
+  const r = await executerOutilStudio('studio_lancer_rendu', {}, { ...env(d, 'R1'), briefCarte: carte });
+  na.equal(r?.status, 'confirmation_requise', r?.message);
+  const o = r!.data!.options as Record<string, unknown>;
+  na.equal(o.fond, 'photo_client');
+  na.deepEqual(o.photo_client, { chemin, octets: 2_400_000 });
+  na.equal(o.existant, 'conserver');
+  // Un bloc sans brief n'est accepté que pour une image avec un fond.
+  const refus = briefDuMessage('```mimmoza-brief\n{"v":1,"type":"film"}\n```');
+  na.ok(refus && !refus.ok);
+});
+
+Deno.test('X9-4 : suivi d’une image d’extension terminée sans vraie photo → aucun lien d’image, photo demandée ; insérée dans une vraie photo → liens', async () => {
+  const d = await depotPrepare();
+  const base = { id: crypto.randomUUID(), user_id: USER, conversation_id: CONV, type: 'image', statut: 'termine', progression: 100, etape: 'Terminé', elements_omis: [], erreur: null,
+    cree_le: '2026-11-17T12:39:32Z', demarre_le: '2026-11-17T12:40:00Z', termine_le: '2026-11-17T12:44:52Z', fiche: {}, options: {} };
+  // Ancienne machine de rendu : image d'étude livrée (photo de rue au placement non vérifié) — jamais montrée.
+  d.travaux.push({ ...base, resultat: {
+    image_path: 'u/j/image-trois_quarts_gauche.jpg', images: [{ vue: 'trois_quarts_gauche', libelle: '3/4 gauche', jpeg_path: 'u/j/image-trois_quarts_gauche.jpg' }],
+    extension: { ok: true, livrable: false, statut_x7: 'a_valider' },
+    photomontage: { tente: true, statut: 'a_valider', raison: 'Calage automatique insuffisant (précision ± 3,8 m).', source_photo: { type: 'panoramax' }, atelier: { photo_path: 'u/j/atelier/photo.jpg', plan_path: 'u/j/atelier/plan.json' } },
+  } });
+  const r = await executerOutilStudio('studio_etat_rendu', {}, env(d, 'E1'));
+  na.equal(r?.status, 'ok');
+  na.deepEqual((r!.data!.liens as Record<string, unknown>).images, []);
+  na.deepEqual(r!.data!.photo_requise, { code: 'calage_insuffisant', texte: TEXTES_PHOTO_REQUISE.calage_insuffisant, ajuster_le_placement: true });
+  na.match(r!.message!, /^AUCUNE IMAGE n’est montrée/);
+  // Machine de rendu à jour : aucune image et `photo_requise`.
+  d.travaux.push({ ...base, id: crypto.randomUUID(), resultat: { image_path: null, images: [], extension: { ok: true, livrable: false }, photo_requise: { code: 'aucune_photo', texte: 'x', atelier: false } } });
+  const r2 = await executerOutilStudio('studio_etat_rendu', {}, env(d, 'E2'));
+  na.equal((r2!.data!.photo_requise as Record<string, unknown>).code, 'aucune_photo');
+  // Extension insérée dans une vraie photo : liens signés comme d'habitude.
+  d.travaux.push({ ...base, id: crypto.randomUUID(), resultat: { image_path: 'u/j/photo-rue.jpg', images: [{ vue: 'photo_rue', libelle: 'Photo de rue', jpeg_path: 'u/j/photo-rue.jpg' }], extension: { ok: true, livrable: true },
+    photomontage: { tente: true, statut: 'livre', source_photo: { type: 'panoramax' } } } });
+  const r3 = await executerOutilStudio('studio_etat_rendu', {}, env(d, 'E3'));
+  na.equal(((r3!.data!.liens as Record<string, unknown>).images as unknown[]).length, 1);
+  na.equal('photo_requise' in r3!.data!, false);
 });

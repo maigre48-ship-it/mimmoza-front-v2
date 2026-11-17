@@ -29,6 +29,8 @@ import {
 import { avertissementsSansMention } from '../../../lib/studio/masqueExistant.ts';
 // LOT X3 (14/11/2026) — projet d'extension : bloc « maison existante conservée » (la mention du worker n'est pas répétée).
 import { avertissementsSansConservation, existantDuTravail, type ExistantTravail } from './extensionMaison.ts';
+// LOT X9 (17/11/2026) — image d'extension : jamais d'image sans vraie photo de la maison ; une photo est demandée.
+import { estTravailExtension, imageSurPhotoReelle, photoRequiseDuResultat, TITRE_PHOTO_NECESSAIRE, type PhotoRequise } from '../../../lib/studio/photoReelle.ts';
 
 export const OUTIL_LANCER_RENDU = 'studio_lancer_rendu';
 export const OUTIL_ETAT_RENDU = 'studio_etat_rendu';
@@ -159,7 +161,17 @@ export interface VueCarteSuivi {
   image: LibelleImage | null;
   /** LOT X3 — projet d'extension : maison existante conservée, extension demandée, refus éventuels ; null sinon. */
   existant: ExistantTravail | null;
+  /** LOT X9 — image d'extension terminée SANS vraie photo : aucune image montrée, photo de la maison demandée ; null sinon. */
+  photoRequise: PhotoRequise | null;
 }
+
+/** LOT X9 — image d'extension sans vraie photo de fond (aucune image ne doit être montrée). Pur. */
+export function extensionSansPhotoReelle(travail: TravailStudio | null): boolean {
+  return !!travail && travail.type === 'image' && estTravailExtension(travail) && !imageSurPhotoReelle(travail.resultat);
+}
+
+/** Avertissements d'une image qui n'existe pas : rien sur une « image d'étude » livrée. */
+const RE_IMAGE_ETUDE = /image d[’']étude/i;
 
 const QUOI: Record<TypeTravail, string> = { film: 'Le film', visite360: 'La visite 360°', image: 'L’image' };
 
@@ -170,7 +182,7 @@ const QUOI: Record<TypeTravail, string> = { film: 'Le film', visite360: 'La visi
 export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi, maintenant: number, introuvable = false): VueCarteSuivi {
   const type = travail?.type ?? indice.type;
   const libelle = type ? LIBELLES_TYPE[type] : 'Rendu Studio';
-  const base = { progression: null, details: [] as string[], alerte: null, omis: null, avertissements: [] as string[], image: null, existant: existantDuTravail(travail) };
+  const base = { progression: null, details: [] as string[], alerte: null, omis: null, avertissements: [] as string[], image: null, existant: existantDuTravail(travail), photoRequise: null };
   if (!travail) {
     return introuvable
       ? { ...base, etat: 'introuvable', actif: false, titre: libelle, pastille: 'Introuvable', phrase: 'Ce rendu n’est plus accessible depuis votre compte.' }
@@ -207,6 +219,16 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
       };
     }
     case 'termine': {
+      // LOT X9 — image d'extension sans vraie photo : aucune image (même livrée par une ancienne machine), photo demandée.
+      if (extensionSansPhotoReelle(travail)) {
+        const requise = photoRequiseDuResultat(travail.resultat)!;
+        return {
+          ...base, etat: 'termine', actif: false, titre: TITRE_PHOTO_NECESSAIRE, pastille: 'Photo nécessaire', photoRequise: requise,
+          phrase: requise.texte,
+          omis: null,
+          avertissements: avertissementsSansConservation((travail.resultat?.avertissements ?? []).filter((a) => !RE_IMAGE_ETUDE.test(a) && a !== requise.texte), base.existant),
+        };
+      }
       // LOT P2 : une image n'est « insérée dans la photo de la rue » que si la machine de rendu l'a livrée ainsi ;
       // sinon c'est une image d'étude, et la raison est dite.
       const image = travail.type === 'image' && travail.resultat ? libelleResultatImage(travail.resultat as ResultatImage) : null;
@@ -241,6 +263,8 @@ export function fichiersResultat(travail: TravailStudio | null): FichierResultat
     return r.video_path ? [{ genre: 'video', chemin: r.video_path, affiche: r.poster_path ?? null }] : [];
   }
   if (travail.type === 'image') {
+    // LOT X9 — garde-fou : une image d'extension n'est montrée que sur une vraie photo de la maison.
+    if (extensionSansPhotoReelle(travail)) return [];
     const r = travail.resultat as ResultatImage;
     const vues = (r.images ?? []).filter((i) => i.jpeg_path).slice(0, IMAGES_MAX).map((i) => ({ genre: 'image' as const, chemin: i.jpeg_path, libelle: i.libelle }));
     return vues.length ? vues : r.image_path ? [{ genre: 'image', chemin: r.image_path, libelle: 'Image' }] : [];

@@ -81,7 +81,8 @@ export function avertissementsRenduExtension(projet: ProjetExtension, type: 'ima
     'Projet d’EXTENSION : la maison existante est CONSERVÉE (rien n’est effacé) ; la machine de rendu dessine l’extension placée par Mimmoza à partir des réponses du parcours. Si l’extension ne peut pas être placée, rien n’est rendu et la raison est dite.',
     `Maison conservée modélisée depuis la base des bâtiments de l’IGN (BD TOPO) : forme du toit confirmée par vous${penteEstimee ? ' ; pente du toit et orientation du faîtage ESTIMÉES' : ''} ; la maison réelle peut différer de ce modèle.`,
     'Le relief n’est pas transmis par Mimmo : la machine de rendu calcule sur un terrain supposé plat. Aucun habillage de bâtiment neuf (façade, balcons, toiture) ne s’applique à une extension.',
-    ...(type === 'image' ? ['Image dans la photo de la rue : là où la maison réelle est devant l’extension, la photo repasse devant ; si l’extension est presque entièrement cachée depuis cette photo, l’image revient « à valider » avec la raison.'] : []),
+    // LOT X9 — photo réelle obligatoire : sans placement vérifié dans une vraie photo, aucune image (photo demandée).
+    ...(type === 'image' ? ['Image dans une vraie photo de votre maison (photo de la rue, ou la vôtre) : là où la maison réelle est devant l’extension, la photo repasse devant. Si l’extension ne peut pas être placée avec précision dans la photo, ou si elle est presque entièrement cachée, aucune image n’est montrée : la raison est dite et une autre photo vous est demandée.'] : []),
   ];
 }
 

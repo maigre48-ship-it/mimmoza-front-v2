@@ -76,3 +76,14 @@ export function messageFond(demande: Pick<DemandeBrief, 'actuel'> | null, fond: 
     : `Fond de l’image : ${LIBELLES_FOND[f]}.`;
   return `${tete}\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
 }
+
+/**
+ * LOT X9 (17/11/2026) — « Envoyer une photo de ma maison » (projet d'extension, aucune image sans vraie photo) :
+ * message du chat portant le bloc relu par le serveur, SANS brief (une extension n'a pas d'habillage de bâtiment
+ * neuf) et avec la photo de l'utilisateur comme fond. Mimmo établit alors le devis de l'image ; rien n'est lancé
+ * sans l'accord donné ensuite.
+ */
+export function messagePhotoMaison(photo: NonNullable<OptionsFond['photo_client']>): string {
+  const bloc = { v: BRIEF_BLOC_VERSION, type: 'image', fond: { fond: 'photo_client', photo_client: photo } };
+  return `Voici une photo de ma maison prise depuis la rue (envoyée avec mon accord) : utilisez-la pour l’image de l’extension.\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
+}

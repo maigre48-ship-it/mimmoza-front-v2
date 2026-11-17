@@ -62,7 +62,11 @@ function PlanPointDeVue({ contour, exif, saisie, onSaisie }: { contour: LonLat[]
   );
 }
 
-export function PhotoClientRue({ contour, onPret, onFermer }: { contour: LonLat[] | null; onPret: (photo: PhotoClientOption) => void; onFermer: () => void }) {
+export function PhotoClientRue({ contour, onPret, onFermer, titre = 'Votre photo du trottoir', consignes = CONSIGNES_PHOTO, libelleEnvoi = 'Envoyer la photo et demander le devis', introduction = 'Votre photo sert de fond à l’image du projet. Pour qu’elle soit utilisable :' }: {
+  contour: LonLat[] | null; onPret: (photo: PhotoClientOption) => void; onFermer: () => void;
+  /** LOT X9 — textes de la demande « photo de ma maison » (projet d'extension). */
+  titre?: string; consignes?: readonly string[]; libelleEnvoi?: string; introduction?: string;
+}) {
   const [photo, setPhoto] = useState<PhotoLue | null>(null);
   const [saisie, setSaisie] = useState<SaisiePlan>({ position: null, visee: null });
   const [consentement, setConsentement] = useState(false);
@@ -113,16 +117,16 @@ export function PhotoClientRue({ contour, onPret, onFermer }: { contour: LonLat[
 
   return createPortal(
     <div className="mz-photo-client__fond" onMouseDown={(e) => { if (e.target === e.currentTarget && !envoi.enCours) onFermer(); }}>
-      <section className="mz-photo-client" role="dialog" aria-modal="true" aria-label="Votre photo du trottoir">
-        <header><h2>Votre photo du trottoir</h2><button type="button" aria-label="Fermer" onClick={onFermer} disabled={envoi.enCours}><X size={18} /></button></header>
-        <p>Votre photo sert de fond à l’image du projet. Pour qu’elle soit utilisable :</p>
-        <ul className="mz-photo-client__consignes">{CONSIGNES_PHOTO.map((c) => <li key={c}>{c}</li>)}</ul>
+      <section className="mz-photo-client" role="dialog" aria-modal="true" aria-label={titre}>
+        <header><h2>{titre}</h2><button type="button" aria-label="Fermer" onClick={onFermer} disabled={envoi.enCours}><X size={18} /></button></header>
+        <p>{introduction}</p>
+        <ul className="mz-photo-client__consignes">{consignes.map((c) => <li key={c}>{c}</li>)}</ul>
         <input ref={entree} type="file" accept="image/jpeg,image/png" capture="environment" hidden onChange={(e) => { void choisir(e.target.files?.[0]); e.target.value = ''; }} />
         <button type="button" className="mz-photo-client__bouton" onClick={() => entree.current?.click()} disabled={envoi.enCours}>
           <Camera size={15} aria-hidden="true" /> {photo ? 'Changer de photo' : 'Prendre ou choisir la photo'}
         </button>
         {photo && <>
-          <img className="mz-photo-client__apercu" src={photo.url} alt="Votre photo de la rue (aperçu local, pas encore envoyée)" />
+          <img className="mz-photo-client__apercu" src={photo.url} alt="Votre photo (aperçu local, pas encore envoyée)" />
           <ul className="mz-photo-client__diagnostic">
             {diagnostic.map((l) => <li key={l.texte} className={`is-${l.niveau}`}>{l.texte}</li>)}
           </ul>
@@ -141,7 +145,7 @@ export function PhotoClientRue({ contour, onPret, onFermer }: { contour: LonLat[
           </label>
           <button type="button" className="mz-photo-client__bouton is-principal" onClick={() => void envoyer()}
             disabled={!consentement || bloque || !pdv?.pret || envoi.enCours}>
-            <Upload size={15} aria-hidden="true" /> {envoi.enCours ? `Envoi… ${envoi.progres} %` : 'Envoyer la photo et demander le devis'}
+            <Upload size={15} aria-hidden="true" /> {envoi.enCours ? `Envoi… ${envoi.progres} %` : libelleEnvoi}
           </button>
           {!consentement && !bloque && <p className="mz-photo-client__note">Rien n’est envoyé tant que la case n’est pas cochée.</p>}
           {envoi.erreur && <p className="mz-photo-client__manque" role="alert">{envoi.erreur}</p>}

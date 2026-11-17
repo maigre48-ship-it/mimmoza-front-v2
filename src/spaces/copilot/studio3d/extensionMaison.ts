@@ -238,6 +238,8 @@ export const TEXTES_A_VALIDER: Readonly<Record<string, string>> = {
   toit: 'La pente ou le sens du toit de votre maison sont estimés et cachent une partie de l’extension : précisez-les dans la conversation.',
   gabarit: 'L’extension sort de la parcelle ou du cadre de la photo : vérifiez ses dimensions ou choisissez une autre photo.',
   cloture: 'La hauteur de la clôture sur rue n’a pas pu être mesurée sur la photo : indiquez-la dans la conversation (« Clôture sur rue »).',
+  // LOT X9 — aucune vraie photo exploitable : aucune image n'est montrée, une photo de la maison est demandée.
+  photo: 'Aucune image n’est montrée sans vraie photo de votre maison : envoyez une photo prise depuis la rue.',
   autre: 'Un contrôle automatique demande une vérification avant de livrer l’image.',
 };
 

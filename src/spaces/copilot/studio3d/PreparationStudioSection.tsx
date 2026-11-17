@@ -29,6 +29,8 @@ import './VolumeParcelle.css';
 // LOT X3 (14/11/2026) — Dossier 3D : maison existante ESTIMÉE (statuts) et extension du parcours de Mimmo.
 import { CarteExtensionMaison } from './CarteExtensionMaison';
 import { derniereVueExtension } from './extensionMaison';
+// LOT X9 — image d'extension : aucun lien sans vraie photo de la maison.
+import { extensionSansPhotoReelle } from './suiviRenduChat';
 
 type OuvrirStudio = (draft: JarvisDraft, conversationId: string, terrain?: ConfirmedTerrain & { adresse?: string | null }) => Promise<IssueOuvertureStudio>;
 
@@ -105,7 +107,7 @@ function SuiviRendus({ conversationId }: { conversationId: string }) {
     for (const t of travaux ?? []) {
       if (t.statut !== 'termine' || !t.resultat || liens[t.id]) continue;
       const r = t.resultat as unknown as Record<string, unknown>;
-      const chemins = t.type === 'film' ? [r.video_path] : t.type === 'image' ? (Array.isArray(r.images) ? r.images.map(i => (i as Record<string, unknown>).jpeg_path) : [r.image_path]) : [];
+      const chemins = t.type === 'film' ? [r.video_path] : t.type === 'image' ? extensionSansPhotoReelle(t) ? [] : (Array.isArray(r.images) ? r.images.map(i => (i as Record<string, unknown>).jpeg_path) : [r.image_path]) : [];
       if (t.type === 'visite360' && typeof r.visite_id === 'string') { setLiens(l => ({ ...l, [t.id]: [lienVisite(r.visite_id as string, window.location.origin)] })); continue; }
       void Promise.all(chemins.filter((c): c is string => typeof c === 'string').map(c => urlSigneeRendu(c).catch(() => null)))
         .then(urls => setLiens(l => ({ ...l, [t.id]: urls.filter((u): u is string => !!u) })));

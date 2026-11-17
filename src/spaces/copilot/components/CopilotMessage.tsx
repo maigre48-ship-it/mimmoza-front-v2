@@ -38,6 +38,9 @@ import { lireVueExtension, OUTIL_EXTENSION_MAISON } from '../studio3d/extensionM
 import { LigneHabillage } from '../studio3d/LigneHabillage';
 // LOT P2 (11/11/2026) — image dans sa rue : carte « Fond de l'image » sous le devis d'une image.
 import { ChoixFondImage } from '../studio3d/ChoixFondImage';
+// LOT X9 (17/11/2026) — rendu d'extension non lancé faute de vraie photo : « Envoyer une photo de ma maison ».
+import { DemandePhotoMaison } from '../studio3d/DemandePhotoMaison';
+import { lireDemandePhotoMaison } from '@/lib/studio/photoReelle';
 import type { DemandeBrief } from '../studio3d/briefCreatif';
 import { lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
 import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
@@ -180,8 +183,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
         <div style={{ marginBottom: 8 }}>
           {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
             if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} /> : null; }
-            { const suivi = suivisRendu.get(tc.id); if (suivi) return <CarteSuiviRendu indice={suivi} />; }
+            { const suivi = suivisRendu.get(tc.id); if (suivi) return <CarteSuiviRendu indice={suivi} onSend={onSend} />; }
             if (suivisRemplaces.has(tc.id)) return <p style={{ margin: '4px 0', color: T.textMuted, fontSize: 12 }}>Suivi de ce rendu : voir la carte à jour plus bas dans la conversation.</p>;
+            { const photo = lireDemandePhotoMaison(tc); if (photo) return <DemandePhotoMaison requise={photo} contour={photo.contour} onSend={onSend} afficherTexte />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
             { const demande = lireDemandeBrief(tc); if (demande) {

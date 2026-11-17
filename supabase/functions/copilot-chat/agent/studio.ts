@@ -62,6 +62,8 @@ import {
   contourDepuisGeometrie, phraseCouverture, verifierCouverture, type CouverturePhotoRue, type LonLat, type ResultatCouverture,
 } from '../../../../src/lib/studio/couverturePhotoRue.ts';
 import { facadesVoieDeLaParcelle, type FacadeVoieFiche } from './voisines-parcelle.ts';
+// LOT X9 (17/11/2026) — image d'extension : photo réelle obligatoire, sinon une photo de la maison est demandée.
+import { CONSIGNES_PHOTO_MAISON, estTravailExtension, imageSurPhotoReelle, photoRequiseDuResultat, TEXTES_PHOTO_REQUISE } from '../../../../src/lib/studio/photoReelle.ts';
 // LOT P9 : volume d'étude posé au recul sur voie, règles PLU de la conception dans `charge.regles`.
 import { ligneHauteurFiche, poserVolumeSurVoie } from '../../../../src/spaces/copilot/studio3d/implantationVoieVolume.ts';
 import { reglesFicheDepuisReglesLues } from '../../../../src/spaces/copilot/studio3d/reglesFiche.ts';
@@ -829,13 +831,15 @@ export async function briefDuFil(depot: DepotStudio, userId: string, conversatio
   for (const l of lignes) {
     const v = briefDuMessage(l.texte);
     const ms = Date.parse(l.cree_le);
-    if (v?.ok && Number.isFinite(ms)) return { brief: v.valeur.brief, ms };
+    // LOT X9 : un bloc « photo de ma maison » n'a pas de brief : il ne compte pas comme habillage choisi.
+    if (v?.ok && v.valeur.brief && Number.isFinite(ms)) return { brief: v.valeur.brief, ms };
   }
   return null;
 }
 
 export interface BriefCarte {
-  brief: BriefRendu;
+  /** LOT X9 : null pour le bloc « photo de ma maison » (image d'extension : fond seul, aucun habillage). */
+  brief: BriefRendu | null;
   type: TypeRendu | null;
   /**
    * LOT P2 — fond choisi dans la carte « Fond de l'image » sous le devis d'une image (bloc `fond`, relu ici dans le
@@ -859,8 +863,10 @@ export function briefDuMessage(texte: unknown): Validation<BriefCarte> | null {
   const inconnue = Object.keys(brut).find((k) => !['v', 'type', 'brief', 'fond'].includes(k));
   if (inconnue) return { ok: false, erreur: `Bloc de brief : champ inconnu ${inconnue}.` };
   if (brut.type !== undefined && !(TYPES_RENDU as readonly unknown[]).includes(brut.type)) return { ok: false, erreur: 'Bloc de brief : type de rendu inconnu.' };
-  const v = validerBrief(brut.brief);
-  if (!v.ok) return { ok: false, erreur: v.erreur };
+  // LOT X9 — bloc SANS brief : seulement « image » + fond (photo de la maison pour une extension).
+  const sansBrief = brut.brief === undefined && brut.type === 'image' && brut.fond !== undefined;
+  const v: Validation<BriefRendu> | null = sansBrief ? null : validerBrief(brut.brief);
+  if (v && !v.ok) return { ok: false, erreur: v.erreur };
   // LOT P2 : fond de l'image (carte sous le devis). Seulement pour une image ; mêmes règles que la base.
   let fond: OptionsFond | undefined;
   if (brut.fond !== undefined) {
@@ -870,7 +876,7 @@ export function briefDuMessage(texte: unknown): Validation<BriefCarte> | null {
     if (!f.ok) return { ok: false, erreur: f.erreur };
     fond = f.valeur;
   }
-  return { ok: true, valeur: { brief: v.valeur, type: (brut.type as TypeRendu | undefined) ?? null, ...(fond ? { fond } : {}) } };
+  return { ok: true, valeur: { brief: v ? v.valeur : null, type: (brut.type as TypeRendu | undefined) ?? null, ...(fond ? { fond } : {}) } };
 }
 
 /** Consigne ajoutée au système quand le message de l'utilisateur porte un bloc de brief (index.ts). */
@@ -881,17 +887,24 @@ export function consigneBriefCarte(c: Validation<BriefCarte> | null): string {
       'Dis-le simplement et propose de refaire les choix dans l’Espace 3D (section habillage) ; ne devine aucune valeur.';
   }
   // Lot fiche-3d : brief choisi dans la fiche « Espace 3D » (bloc SANS type de rendu) — aucun rendu demandé.
-  if (!c.valeur.type) {
+  if (!c.valeur.type && c.valeur.brief) {
     return 'HABILLAGE CHOISI dans la fiche du projet (Espace 3D ; dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
       'Il est enregistré dans la conversation : le serveur le reprendra lui-même au prochain rendu (inutile de le recopier). ' +
       'N’appelle PAS studio_lancer_rendu et ne propose aucun devis, sauf si ce même message demande un rendu ; ' +
       'réponds en une phrase courte qui confirme l’habillage, sans reposer de question d’habillage.';
+  }
+  // LOT X9 — photo de la maison envoyée (image d'extension) : nouveau devis avec cette photo.
+  if (c.valeur.fond && !c.valeur.brief) {
+    return 'PHOTO DE LA MAISON ENVOYÉE par l’utilisateur (dernier message, avec son accord) pour l’image de l’extension. ' +
+      'Rappelle IMMÉDIATEMENT studio_lancer_rendu (type « image ») pour établir le devis : la photo est lue dans le message (ne recopie ni chemin ni options) ; ' +
+      'présente le devis en une ou deux phrases et attends l’accord. Ne promets aucune image : elle n’est montrée que si l’extension est placée avec précision dans la photo.';
   }
   if (c.valeur.fond) {
     return `FOND DE L’IMAGE CHOISI sous le devis (dernier message de l’utilisateur) : ${LIBELLES_FOND[fondDe(c.valeur.fond)]}. ` +
       'Rappelle IMMÉDIATEMENT studio_lancer_rendu (type « image ») pour établir le NOUVEAU devis : le serveur lit lui-même le fond et l’habillage ' +
       'dans le message (ne recopie ni chemin de photo ni options) ; présente le devis et attends l’accord.';
   }
+  if (!c.valeur.brief) return '';
   return 'BRIEF CRÉATIF VALIDÉ dans l’Espace 3D (section habillage ; dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
     `Rappelle IMMÉDIATEMENT studio_lancer_rendu${c.valeur.type ? ` (type « ${c.valeur.type} »)` : ''} pour établir le devis : ` +
     'le serveur lit ce brief lui-même dans le message (inutile de le recopier dans `brief`, ne le reformule pas) ; ' +
@@ -1522,7 +1535,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (carte && !carte.ok) return erreur(`Le brief de la carte n’a pas été accepté (${carte.erreur}). RIEN N’A ÉTÉ LANCÉ. Propose à l’utilisateur de refaire ses choix dans la carte d’habillage de l’Espace 3D.`);
   const type = (input.type ?? (carte?.ok ? carte.valeur.type : undefined)) as TypeRendu;
   // LOT P2 : le fond choisi dans la carte (lu dans le message reçu) l'emporte sur celui du modèle.
-  const optionsDemandees: unknown = type === 'image' && carte?.ok && carte.valeur.fond
+  let optionsDemandees: unknown = type === 'image' && carte?.ok && carte.valeur.fond
     ? { ...Object.fromEntries(Object.entries(estObj(input.options) ? input.options : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), ...carte.valeur.fond }
     : input.options;
   const opts0 = validerOptionsRendu(type, optionsDemandees, uid);
@@ -1543,12 +1556,23 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (type === 'image' && fondPhoto(opts0.valeur) && src.source.genre !== 'preparation') {
     return erreur('L’image sur une photo de rue ne se fait pour l’instant qu’à partir de la 3D préparée par Mimmo (la fiche d’une version enregistrée ne transmet pas la façade sur voie). RIEN N’A ÉTÉ LANCÉ. Propose l’image d’étude, ou la 3D préparée (source « preparation »).');
   }
+  // LOT X9 — image d'EXTENSION : jamais d'image de synthèse. Photo de la rue si elle existe, photo de l'utilisateur
+  // sinon ; sans l'une ni l'autre, rien n'est lancé et une photo de la maison est demandée.
+  let noteFondExtension: string | null = null;
+  if (extension && type === 'image' && src.source.genre === 'preparation') {
+    const garde = await gardePhotoExtension(env, uid, src.source.preparation, opts0.valeur);
+    if ('refus' in garde) return garde.refus;
+    if (garde.fond === 'photo_rue' && fondDe(opts0.valeur) !== 'photo_rue') {
+      optionsDemandees = { ...Object.fromEntries(Object.entries(estObj(optionsDemandees) ? optionsDemandees : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), fond: 'photo_rue' };
+      noteFondExtension = 'Image de l’extension : seule une vraie photo est utilisée — la photo de la rue (Panoramax / IGN, Licence Ouverte) servira de fond.';
+    }
+  }
 
   // ── Brief d'habillage (E1-brief) : fourni, déjà connu dans la conversation, ou question groupée ──
   let brief: BriefRendu | null = null;
   let origineBrief: 'fourni' | 'connu' | 'defaut_impose' | null = null;
-  const briefCarteLu = !!carte?.ok;
-  if (carte?.ok) {
+  const briefCarteLu = !!(carte?.ok && carte.valeur.brief);
+  if (carte?.ok && carte.valeur.brief) {
     brief = carte.valeur.brief; origineBrief = 'fourni';
   } else if (input.brief !== undefined && input.brief !== null) {
     const v = validerBrief(input.brief);
@@ -1620,7 +1644,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   const actifs = await env.depot.travauxActifs(uid);
   if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
   // LOT P2 — fond de l'image : couverture Panoramax et façade sur voie, dites dans le devis (rien n'est promis).
-  const fondImage = type === 'image' && src.source.genre === 'preparation' ? await fondDuDevis(env, uid, src.source.preparation, opts.valeur) : null;
+  const fondImage = type === 'image' && src.source.genre === 'preparation' ? await fondDuDevis(env, uid, src.source.preparation, opts.valeur, !!extension) : null;
   const stats = await env.depot.statsFile();
   const machine = etatMachine(stats, maintenant);
   const sourceJeton: ChargeJeton['s'] = src.source.genre === 'version' ? src.source : { genre: 'preparation', preparation_id: src.source.preparation.id };
@@ -1646,10 +1670,11 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     ...(type === 'image' ? { fond: LIBELLES_FOND[fondDe(opts.valeur)] } : {}),
-    avertissements: [...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments) : []), ...(fondImage?.avertissements ?? [])],
+    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments) : []), ...(fondImage?.avertissements ?? [])],
     valable_jusqu_a: `${heureParis(charge.exp)} (heure de Paris)`,
   };
   const noteFond = type !== 'image' ? ''
+    : extension ? ' FOND DE L’IMAGE (extension) : seule une vraie photo de la maison est utilisée ; dis-le en une phrase. Ne promets aucune image : elle n’est montrée que si l’extension est placée avec précision dans la photo ; sinon Mimmoza demandera une autre photo.'
     : ' FOND DE L’IMAGE : dans le devis, écris le fond retenu et, s’il est « étude seule », propose en une phrase l’image dans la photo de la rue ' +
       '(si `fond_image.couverture.couverte` est vrai : photo Panoramax / IGN sous Licence Ouverte) ou, sinon, avec la photo de l’utilisateur prise du trottoir d’en face ' +
       '(il la dépose dans la carte « Fond de l’image » sous le devis : jamais de chemin de photo inventé). Pour la photo de la rue, rappelle l’outil avec options.fond = "photo_rue". ' +
@@ -1704,6 +1729,58 @@ function refusFondPhoto(): ResultatOutil {
   return erreur('L’image sur une photo de rue n’est pas encore activée dans la base (migration 20261111120000_studio_image_photo_rue non appliquée). RIEN N’A ÉTÉ LANCÉ. L’image d’étude reste disponible.', 'not_configured');
 }
 
+/**
+ * LOT X9 — consigne au modèle quand aucune image d'extension n'est montrée faute de vraie photo (aucun nom interne,
+ * aucune image annoncée).
+ */
+export const MESSAGE_PHOTO_REQUISE =
+  'AUCUNE IMAGE n’est montrée : une image d’extension n’est faite que sur une vraie photo de la maison, et aucune n’est exploitable. ' +
+  'Dis-le en une phrase, puis demande à l’utilisateur une photo de sa maison prise depuis la rue (de face ou de trois quarts, toute la maison avec le pied des murs et le toit, ' +
+  'le côté de l’extension visible, en plein jour, sans zoom). N’annonce ni ne décris aucune image, ne propose pas d’« image d’étude », ' +
+  'et n’écris aucun nom d’outil, de logiciel ou de machine.';
+
+type GardePhoto = { fond: 'photo_rue' | 'photo_client' } | { refus: ResultatOutil };
+
+/** LOT X9 — réponse « rien n'est lancé, envoyez une photo de votre maison » (carte avec bouton côté site). */
+export function refusPhotoMaison(raison: string | null, contour: readonly LonLat[] | null): ResultatOutil {
+  const r7 = (v: number) => Math.round(v * 1e7) / 1e7;
+  const pas = contour ? Math.max(1, Math.ceil(contour.length / CONTOUR_FOND_MAX)) : 1;
+  return {
+    status: 'partial', source: SOURCE_STUDIO,
+    data: {
+      rien_lance: true,
+      photo_maison: {
+        code: 'aucune_photo', texte: TEXTES_PHOTO_REQUISE.aucune_photo, consignes: CONSIGNES_PHOTO_MAISON,
+        ...(raison ? { raison } : {}),
+        ...(contour ? { contour: contour.filter((_, i) => i % pas === 0).map(([lon, lat]) => [r7(lon), r7(lat)]) } : {}),
+      },
+    },
+    message: 'RIEN N’A ÉTÉ LANCÉ. ' + MESSAGE_PHOTO_REQUISE +
+      ' Le bouton « Envoyer une photo de ma maison » et les consignes s’affichent sous ta réponse : ne les recopie pas en entier.',
+  };
+}
+
+/**
+ * LOT X9 — fond d'une image d'EXTENSION : photo de l'utilisateur gardée ; sinon photo de la rue si la couverture
+ * Panoramax (Licence Ouverte) est établie ou n'a pas pu être vérifiée (la machine de rendu cherchera, et demandera une
+ * photo si elle n'en trouve pas) ; sinon (aucune photo publique) : refus, photo de la maison demandée. Sans façade sur
+ * voie, aucune photo ne peut être calée : refus dit tel quel.
+ */
+export async function gardePhotoExtension(env: EnvStudio, uid: string, p: PreparationLue, options: Obj): Promise<GardePhoto> {
+  const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
+  const contour = contourDepuisGeometrie(estObj(entree.parcelle) ? entree.parcelle.geometrie : null);
+  const voie = await facadesVoiePreparation(env, uid, p);
+  if (!voie.facades.length) {
+    return { refus: erreur('Le côté rue de la parcelle n’a pas été identifié : aucune photo ne peut servir de fond à l’image de l’extension pour l’instant, et aucune image de synthèse n’est faite. RIEN N’A ÉTÉ LANCÉ. Dis-le simplement, sans proposer d’autre image.', 'partial') };
+  }
+  const fond = fondDe(options);
+  if (fond === 'photo_client') return { fond: 'photo_client' };
+  if (!contour || !env.depot.couverturePhotoRue) return { fond: 'photo_rue' };
+  const couv = await env.depot.couverturePhotoRue(contour).catch((): ResultatCouverture => ({ ok: false, raison: 'Couverture Panoramax non vérifiée.' }));
+  if (couv.ok && !couv.couverture.couverte) return { refus: refusPhotoMaison(phraseCouverture(couv.couverture), contour) };
+  return { fond: 'photo_rue' };
+}
+
 /** Points du contour transmis au plus dans le devis (plan de la carte « Fond de l'image »). */
 export const CONTOUR_FOND_MAX = 48;
 
@@ -1720,7 +1797,7 @@ export async function facadesVoiePreparation(env: EnvStudio, uid: string, p: Pre
 }
 
 /** Ce que le devis d'une image dit du fond : données pour la carte et le modèle, avertissements. */
-export async function fondDuDevis(env: EnvStudio, uid: string, p: PreparationLue, options: Obj): Promise<{ donnees: Obj; avertissements: string[] }> {
+export async function fondDuDevis(env: EnvStudio, uid: string, p: PreparationLue, options: Obj, extension = false): Promise<{ donnees: Obj; avertissements: string[] }> {
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
   const contour = contourDepuisGeometrie(estObj(entree.parcelle) ? entree.parcelle.geometrie : null);
   const fond = fondDe(options);
@@ -1731,7 +1808,11 @@ export async function fondDuDevis(env: EnvStudio, uid: string, p: PreparationLue
   const couverture: CouverturePhotoRue | null = couv?.ok ? couv.couverture : null;
   const longueur = Math.round(voie.facades.reduce((s, f) => s + f.longueurM, 0) * 100) / 100;
   const avertissements: string[] = [];
-  if (fond !== 'etude') {
+  if (fond !== 'etude' && extension) {
+    // LOT X9 — extension : aucune image de synthèse ; sans placement vérifié, aucune image et une photo est demandée.
+    avertissements.push('L’extension est insérée dans la photo seulement si son placement est vérifié (ou validé par vous dans « Ajuster le placement ») ; sinon aucune image n’est montrée et une photo de votre maison vous est demandée.');
+    if (fond === 'photo_client') avertissements.push('Votre photo est conservée dans votre espace privé et n’est utilisée que pour ce rendu ; visages et plaques ne sont pas floutés.');
+  } else if (fond !== 'etude') {
     avertissements.push('Insertion dans la photo : la machine de rendu propose un placement ; l’image n’est livrée « insérée dans la rue » que si ce placement est vérifié (ou validé par vous dans l’atelier). Sinon : image d’étude, avec la raison, et « Ajuster le placement ».');
     if (!voie.facades.length) avertissements.push(`Façade sur voie non identifiée (${(voie.raison ?? 'raison inconnue').replace(/[.\s]+$/u, '')}) : la machine de rendu ne pourra pas chercher la photo de la rue ; l’image d’étude sera livrée.`);
     if (fond === 'photo_rue' && couverture && !couverture.couverte) avertissements.push(`${phraseCouverture(couverture)} L’image d’étude sera livrée ; votre photo du trottoir reste possible.`);
@@ -1829,6 +1910,11 @@ async function etatRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     if (t.type === 'film' && typeof r.video_path === 'string') {
       liens.video = await env.depot.urlSigneeRendu(r.video_path, 3600);
       if (typeof r.poster_path === 'string') liens.affiche = await env.depot.urlSigneeRendu(r.poster_path, 3600);
+    } else if (t.type === 'image' && estTravailExtension({ resultat: r }) && !imageSurPhotoReelle(r)) {
+      // LOT X9 — image d'extension sans vraie photo : aucune image (même livrée par une ancienne machine), photo demandée.
+      const requise = photoRequiseDuResultat(r)!;
+      liens.images = [];
+      data.photo_requise = { code: requise.code, texte: requise.texte, ajuster_le_placement: requise.atelier };
     } else if (t.type === 'image') {
       const images = Array.isArray(r.images) ? r.images.filter(estObj) : [];
       const chemins = images.length ? images.map((i) => i.jpeg_path).filter((x): x is string => typeof x === 'string') : typeof r.image_path === 'string' ? [r.image_path] : [];
@@ -1839,6 +1925,13 @@ async function etatRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     data.liens = liens;
     data.liens_valables = 'URL signées valables 1 h (rappelle l’outil pour en obtenir de nouvelles) ; la visite 360° a un lien public permanent.';
     if (Array.isArray(r.avertissements)) data.avertissements = r.avertissements.filter((a) => typeof a === 'string').slice(0, 6);
+  }
+  if (data.photo_requise) {
+    return {
+      status: 'ok', source: SOURCE_STUDIO, data,
+      message: MESSAGE_PHOTO_REQUISE + ' La carte du chat affiche la raison, les consignes et le bouton « Envoyer une photo de ma maison »' +
+        ((data.photo_requise as Obj).ajuster_le_placement ? ' ainsi que « Ajuster le placement »' : '') + ' : ne les recopie pas.',
+    };
   }
   return {
     status: 'ok', source: SOURCE_STUDIO, data,

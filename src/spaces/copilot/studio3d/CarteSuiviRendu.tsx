@@ -19,6 +19,8 @@ import { fichiersResultat, SONDAGE_SUIVI_CHAT_MS, vueCarteSuivi, type IndiceSuiv
 import { AtelierPlacement } from './AtelierPlacement';
 // LOT X3 (14/11/2026) — projet d'extension : « maison existante conservée » et extension demandée.
 import { BlocExistantConserve } from './CarteExtensionMaison';
+// LOT X9 (17/11/2026) — image d'extension sans vraie photo : aucune image, « Envoyer une photo de ma maison ».
+import { DemandePhotoMaison } from './DemandePhotoMaison';
 import './CarteSuiviRendu.css';
 
 type Liens =
@@ -29,7 +31,7 @@ type Liens =
 /** Rafraîchissement de l'horloge (durées d'attente, signal « machine éteinte »). */
 const HORLOGE_MS = 30_000;
 
-export function CarteSuiviRendu({ indice }: { indice: IndiceSuivi }) {
+export function CarteSuiviRendu({ indice, onSend }: { indice: IndiceSuivi; onSend?: (texte: string) => void }) {
   const [travail, setTravail] = useState<TravailStudio | null>(null);
   const [introuvable, setIntrouvable] = useState(false);
   const [maintenant, setMaintenant] = useState(() => Date.now());
@@ -121,6 +123,7 @@ export function CarteSuiviRendu({ indice }: { indice: IndiceSuivi }) {
         </figure>)}
       </div>}
       {vue.etat === 'termine' && vue.image?.mention && <p className="mz-suivi-rendu__mention">{vue.image.mention}</p>}
+      {vue.etat === 'termine' && vue.photoRequise && <DemandePhotoMaison requise={vue.photoRequise} travail={travail} onSend={onSend} />}
       {vue.existant && <BlocExistantConserve existant={vue.existant} />}
       {vue.etat === 'termine' && vue.image?.effacement && <div className="mz-suivi-rendu__effacement" role="note">
         <p className="mz-suivi-rendu__mention"><strong>{vue.image.effacement.mention}</strong></p>
