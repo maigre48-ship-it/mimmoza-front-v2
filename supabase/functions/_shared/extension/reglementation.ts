@@ -59,7 +59,14 @@ export interface EntreeRegime {
    * (seuil de 20 m², F36777) ; null = possible ou non vérifié (les deux verdicts sont évalués) ; faux = non trouvé dans
    * des bases non exhaustives (le verdict en secteur protégé est dit s'il diffère). Absent : comportement du lot X3.
    */
-  readonly secteurProtege?: { readonly valeur: boolean | null; readonly source: string };
+  readonly secteurProtege?: {
+    readonly valeur: boolean | null; readonly source: string;
+    /**
+     * LOT X10 — état affiché dans la conclusion (même source de vérité) : « oui » = protection trouvée dont l'effet sur le
+     * seuil de 20 m² n'est pas certain (valeur null) ; jamais présenté comme « non établi ».
+     */
+    readonly etat?: 'oui' | 'non_trouve' | 'non_verifie' | null;
+  };
 }
 
 export interface RegimeIndicatif {
@@ -98,8 +105,11 @@ export function regimeIndicatif(e: EntreeRegime): RegimeIndicatif {
       lignes: ['Surface créée inconnue (dimensions de l’extension non données) : régime non évalué.'] };
   }
   const creee = Math.max(emp ?? 0, sdp ?? 0);
-  const sdpMin = num(e.creee.sdpMinM2) ? e.creee.sdpMinM2 : sdp ?? 0;
-  const sdpMax = num(e.creee.sdpMaxM2) ? e.creee.sdpMaxM2 : sdp ?? 0;
+  // LOT X10 — surface de plancher créée non calculée (extension non placée) : la surface créée RETENUE s'ajoute à
+  // l'existant pour les seuils et l'affichage (jamais 0 m² créé en silence : « 200 m² après travaux » pour 32 m² créés).
+  const sdpAjoutee = sdp ?? creee;
+  const sdpMin = num(e.creee.sdpMinM2) ? e.creee.sdpMinM2 : sdpAjoutee;
+  const sdpMax = num(e.creee.sdpMaxM2) ? e.creee.sdpMaxM2 : sdpAjoutee;
   const creeeMin = Math.max(emp ?? 0, sdpMin);
   const creeeMax = Math.max(emp ?? 0, sdpMax);
   lignes.push(`Surface créée retenue : ${fr(creee, 1)} m² (le plus grand de l’emprise au sol${emp !== null ? ` ${fr(emp, 1)} m²` : ''} et de la surface de plancher${sdp !== null ? ` estimée ${fr(sdp, 1)} m²` : ''}).`);
@@ -109,7 +119,8 @@ export function regimeIndicatif(e: EntreeRegime): RegimeIndicatif {
   const confirmee = e.existant.statut === 'confirmee' && ex !== null;
   const exMin = confirmee ? ex : num(e.existant.minM2) ? e.existant.minM2 : ex;
   const exMax = confirmee ? ex : num(e.existant.maxM2) ? e.existant.maxM2 : ex;
-  const total = ex !== null ? ex + (sdp ?? 0) : null;
+  const total = ex !== null ? ex + sdpAjoutee : null;
+  const noteAjout = sdp === null ? ` (${fr(creee, 1)} m² de surface créée retenue ajoutés : la surface de plancher créée n’est pas calculée)` : '';
   const totalMin = exMin !== null ? exMin + sdpMin : null;
   const totalMax = exMax !== null ? exMax + sdpMax : null;
   const empTotale = num(e.existant.empriseM2) && emp !== null ? e.existant.empriseM2 + emp : null;
@@ -143,6 +154,13 @@ export function regimeIndicatif(e: EntreeRegime): RegimeIndicatif {
     if (sp.valeur === true) {
       regime = enSecteur.size === 1 ? [...enSecteur][0]! : 'DP ou PC';
       lignes.push(`Secteur protégé (${sp.source}) : déclaration préalable jusqu’à 20 m² créés seulement, même en zone U d’un PLU ; permis au-delà (F36777) — ici ${dire(enSecteur)}.`);
+    } else if (sp.valeur === null && sp.etat === 'oui') {
+      // LOT X10 — protection TROUVÉE (abords, site) dont l'effet sur le seuil n'est pas certain : même vocabulaire que la
+      // conclusion (« Secteur protégé : oui »), jamais « non établi ».
+      const hors = regime === 'DP ou PC' ? new Set<'DP' | 'PC'>(['DP', 'PC']) : new Set<'DP' | 'PC'>([regime as 'DP' | 'PC']);
+      const tous = new Set([...hors, ...enSecteur]);
+      regime = tous.size === 1 ? [...tous][0]! : 'DP ou PC';
+      lignes.push(`Secteur protégé : oui (${sp.source}), mais son effet sur le seuil de 20 m² n’est pas certain (périmètre ou covisibilité appréciés par l’Architecte des Bâtiments de France) : si le seuil de 20 m² s’applique, ${dire(enSecteur)} ; sinon, ${dire(hors)}.`);
     } else if (sp.valeur === null) {
       const hors = regime === 'DP ou PC' ? new Set<'DP' | 'PC'>(['DP', 'PC']) : new Set<'DP' | 'PC'>([regime as 'DP' | 'PC']);
       const tous = new Set([...hors, ...enSecteur]);
@@ -174,14 +192,14 @@ export function regimeIndicatif(e: EntreeRegime): RegimeIndicatif {
     if (avant > SEUILS.architecteM2 || apresMin > SEUILS.architecteM2) {
       architecte = 'obligatoire';
       ferme = true;
-      lignes.push(`Surface de plancher existante SAISIE : ${fr(avant)} m² ; après travaux ≈ ${fr(avant + (sdp ?? 0))} m² (> 150 m²) : en permis de construire, architecte OBLIGATOIRE pour un particulier (F20568).`);
+      lignes.push(`Surface de plancher existante SAISIE : ${fr(avant)} m² ; après travaux ≈ ${fr(avant + sdpAjoutee)} m²${noteAjout} (> 150 m²) : en permis de construire, architecte OBLIGATOIRE pour un particulier (F20568).`);
     } else if (apresMax > SEUILS.architecteM2) {
       architecte = 'a-confirmer';
       lignes.push(`Surface de plancher existante SAISIE : ${fr(avant)} m² ; après travaux entre ${fr(apresMin)} et ${fr(apresMax)} m² selon l’estimation de la surface créée : le seuil de 150 m² est proche, à confirmer sur les plans.`);
     } else {
       architecte = 'non-obligatoire';
       ferme = true;
-      lignes.push(`Surface de plancher existante SAISIE : ${fr(avant)} m² ; après travaux ≈ ${fr(avant + (sdp ?? 0))} m² (≤ 150 m²) : un particulier peut déposer le dossier sans architecte (F20568).`);
+      lignes.push(`Surface de plancher existante SAISIE : ${fr(avant)} m² ; après travaux ≈ ${fr(avant + sdpAjoutee)} m²${noteAjout} (≤ 150 m²) : un particulier peut déposer le dossier sans architecte (F20568).`);
     }
   } else {
     architecte = 'a-confirmer';

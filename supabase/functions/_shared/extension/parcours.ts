@@ -35,6 +35,8 @@ import { LIBELLE_ARCHITECTE, LIBELLE_REGIME, regimeIndicatif, type RegimeIndicat
 import { ligneCourteSecteur, sourceCourteSecteur, type SecteurProtege } from './secteurProtege.ts';
 // LOT D9 — aperçu déterministe des pièces du dossier DP / PC (bouton « Préparer mon dossier » de la carte).
 import { dossierPrevisionnel, type VueDossier } from './dossier.ts';
+// LOT X10 — côté rue proposé en puces quand le cadastre ne permet pas de le situer.
+import { candidatChoisi, candidatsCoteRue } from './coteRue.ts';
 
 export const OUTIL_EXTENSION_MAISON = 'extension_maison';
 export const VERSION_PARCOURS = 1;
@@ -64,6 +66,8 @@ export const Q = {
   baie: { id: 'x3_baie', libelle: 'Baie vitrée' },
   // LOT X8 — une source n'a pas répondu : une puce pour reprendre le parcours au même point (réponses gardées).
   reprendre: { id: 'x3_reprendre', libelle: 'Parcours d’extension', option: 'Réessayer' },
+  // LOT X10 — côté de la rue choisi par l'utilisateur quand le cadastre ne permet pas de le situer.
+  coteRue: { id: 'x3_cote_rue', libelle: 'Côté de la rue' },
 } as const;
 
 export const OPTIONS_TOIT: Readonly<Record<FormeToit, string>> = { 'deux-pans': '2 pans', 'quatre-pans': '4 pans', plat: 'Toit plat', monopente: 'Monopente' };
@@ -114,12 +118,15 @@ export interface EtatParcours {
   readonly baies?: 'auto' | 'aucune' | 'inconnue' | null;
   /** LOT X8b — « Même hauteur que la maison » choisi (latérale / arrière). */
   readonly memeHauteur?: boolean;
+  /** LOT X10 — côté de la rue choisi (libellé de la puce, relu contre les côtés du contour cadastral à chaque tour). */
+  readonly rueChoix?: string | null;
 }
 
 export const ETAT_INITIAL: EtatParcours = {
   v: 1, idu: null, conserver: null, toit: null, niveaux: null, hauteurEgoutM: null, type: null, facade: null,
   largeurM: null, profondeurM: null, niveauxExtension: null, sdpExistanteM2: null, sdpInconnue: false, demandeur: null,
   penteToit: null, faitage: null, egoutInconnu: false, cloture: null, menuiserie: null, baies: null, memeHauteur: false,
+  rueChoix: null,
 };
 
 type Obj = Record<string, unknown>;
@@ -154,6 +161,7 @@ export function lireEtat(v: unknown): EtatParcours {
     menuiserie: dans(v.menuiserie, ['av-aluminium-noir', 'av-aluminium-blanc', 'av-chene-porte', 'inconnue'] as const) ? v.menuiserie : null,
     baies: dans(v.baies, ['auto', 'aucune', 'inconnue'] as const) ? v.baies : null,
     memeHauteur: v.memeHauteur === true,
+    rueChoix: typeof v.rueChoix === 'string' && v.rueChoix.length > 0 && v.rueChoix.length <= 80 ? v.rueChoix : null,
   };
 }
 
@@ -280,6 +288,9 @@ export function lireReponses(etat: EtatParcours, texte: string, attendues: reado
   if (type) e.type = type;
   const facade = optionParmi(valeurDe(segs, Q.facade.libelle), Object.entries(OPTIONS_FACADE) as [CoteFacade, string][]);
   if (facade) e.facade = facade;
+  // LOT X10 — côté de la rue (libellé de la puce ; vérifié contre le contour au tour suivant, jamais deviné ici).
+  const rue = valeurDe(segs, Q.coteRue.libelle);
+  if (rue && rue.trim().length <= 80) e.rueChoix = rue.trim();
 
   // Dimensions : « Dimensions (largeur × profondeur) : 4 × 5 m », ou « 4 x 5 m » en texte libre.
   const dimTexte = valeurDe(segs, Q.dimensions.libelle) ?? texte;
@@ -366,6 +377,8 @@ export interface ContexteParcours {
   /** Façades sur voie (lot P9, déduites du cadastre et des parcelles voisines), WGS 84. */
   readonly facadesVoie: readonly { readonly debut: readonly [number, number]; readonly fin: readonly [number, number] }[];
   readonly raisonFacades: string | null;
+  /** LOT X10 — d'où vient la limite sur rue quand elle est connue (phrase lisible, datée), pour la liste des sources. */
+  readonly sourceFacades?: string | null;
   /** LOT X3b — secteur protégé (servitudes GPU AC1 / AC2 / AC4 et base Mérimée), évalué par le serveur ; absent = non évalué. */
   readonly secteur?: SecteurProtege | null;
   /**
@@ -563,6 +576,13 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   const origine = origineParcelle(contourL93);
   const surParcelle = batimentsSurParcelle(ctx.batiments, contourL93);
   sources.push(`${MENTION_BDTOPO}${ctx.dateBdTopo ? `, lue le ${ctx.dateBdTopo}` : ''}`);
+  // LOT X10 — limite sur rue : déduite (cadastre et parcelles voisines), sinon CHOISIE par l'utilisateur parmi les côtés
+  // du contour cadastral (puces) ; jamais devinée. Sans l'une ni l'autre, la question est posée avec le type.
+  const candidatsRue = ctx.facadesVoie.length ? [] : candidatsCoteRue(ctx.contourWgs84);
+  const rueChoisie = ctx.facadesVoie.length ? null : candidatChoisi(candidatsRue, etat.rueChoix);
+  const facadesRetenues: ContexteParcours['facadesVoie'] = ctx.facadesVoie.length ? ctx.facadesVoie : rueChoisie ? rueChoisie.segments : [];
+  if (ctx.facadesVoie.length && ctx.sourceFacades) sources.push(ctx.sourceFacades);
+  if (rueChoisie) sources.push(`Limite sur rue : côté « ${rueChoisie.libelle} » du contour cadastral, désigné par vous`);
   if (ctx.bdtopoReutilisee) avert.push(`La base des bâtiments de l’IGN (BD TOPO) n’a pas répondu à ce tour (${ctx.bdtopoReutilisee}) : la lecture du ${ctx.dateBdTopo ?? 'tour précédent'} est réutilisée pour la même parcelle.`);
   if (ctx.bdnb) sources.push('BDNB (CSTB) — base de données nationale des bâtiments');
   if (ctx.noteBdnb) avert.push(ctx.noteBdnb);
@@ -617,6 +637,10 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   if (etat.type === 'veranda') avert.push('Véranda : le volume vitré n’est pas encore produit (lot à venir). Choisissez une extension latérale, arrière, un garage ou une surélévation.');
   if (!typeValide) q.push({ id: Q.type.id, libelle: Q.type.libelle, options: (['laterale', 'arriere', 'surelevation', 'garage'] as TypeExtension[]).map((k) => OPTIONS_TYPE[k]), multiple: false });
   if (typeValide !== 'surelevation' && !etat.facade) q.push({ id: Q.facade.id, libelle: Q.facade.libelle, options: Object.values(OPTIONS_FACADE), multiple: false });
+  // LOT X10 — côté de la rue inconnu (ni fiche de parcelle, ni parcelles voisines exploitables) : question fermée sur les
+  // côtés réels du contour, au lieu d'un refus « classez la limite sur rue » impossible à suivre dans le chat.
+  const questionRue = typeValide !== 'surelevation' && !facadesRetenues.length && candidatsRue.length > 0;
+  if (questionRue) q.push({ id: Q.coteRue.id, libelle: Q.coteRue.libelle, options: candidatsRue.map((c) => c.libelle), multiple: false });
   if (q.length) {
     // LOT X4 site — décision d'Albé : le toit de la maison conservée est CONFIRMÉ par l'utilisateur avant tout rendu
     // d'extension (la machine de rendu dessine la maison avec ce toit). La question est posée explicitement ; la
@@ -624,9 +648,14 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     const questionToit = !etat.toit
       ? `\n\n**Le toit de votre maison est-il bien ${TOIT_DANS_QUESTION[estimation.toit.forme.valeur]} ?** C’est une estimation (${statutCourt(estimation.toit.forme.statut)}) : choisissez la forme réelle dans « ${Q.toit.libelle} ». Elle sert aussi à dessiner votre maison sur les images de l’extension.`
       : '';
+    const texteRue = questionRue
+      ? `\n\n**De quel côté de la parcelle se trouve la rue ?** Je n’ai pas pu la situer automatiquement${ctx.raisonFacades ? ` (${ctx.raisonFacades.replace(/[.\s]+$/, '')})` : ''}. Elle sert à savoir où sont la gauche, la droite et l’arrière de la maison : choisissez le côté dans « ${Q.coteRue.libelle} ».`
+      : '';
     const intro = !etat.toit || !etat.niveaux
-      ? `${presentation} Voici ce que j’en estime ; **confirmez ou corrigez** (les valeurs SUPPOSÉES ne sont pas des mesures) :\n\n${tableauMarkdown(lignes)}${questionToit}\n\nLa surface de plancher ci-dessus est une **estimation** ; je vous demanderai la surface réelle plus loin.`
-      : 'Merci. **Quel agrandissement envisagez-vous**, et de quel côté de la maison, vu depuis la rue ?';
+      ? `${presentation} Voici ce que j’en estime ; **confirmez ou corrigez** (les valeurs SUPPOSÉES ne sont pas des mesures) :\n\n${tableauMarkdown(lignes)}${questionToit}\n\nLa surface de plancher ci-dessus est une **estimation** ; je vous demanderai la surface réelle plus loin.${texteRue}`
+      : !typeValide || (typeValide !== 'surelevation' && !etat.facade)
+        ? `Merci. **Quel agrandissement envisagez-vous**, et de quel côté de la maison, vu depuis la rue ?${texteRue}`
+        : `Merci.${texteRue}`;
     return sortie(q.some((x) => x.id === Q.toit.id || x.id === Q.niveaux.id) ? 'confirmer' : 'type', intro, q);
   }
 
@@ -677,7 +706,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
 
   // Étape 5 : synthèse — moteur, régime, projet.
   const rm = reglesMoteur(ctx.regles);
-  const pm = parcelleMoteur(contourL93, origine, ctx.facadesVoie, ctx.surfaceParcelleM2);
+  const pm = parcelleMoteur(contourL93, origine, facadesRetenues, ctx.surfaceParcelleM2);
   if (!pm.categories?.some((c) => c === 'voie')) avert.push(`Limite sur rue non identifiée${ctx.raisonFacades ? ` (${ctx.raisonFacades})` : ''} : sans elle, Mimmoza ne sait pas où sont la gauche, la droite et l’arrière, et ne peut pas placer l’extension.`);
   // LOT X8b — « même hauteur » : choisie, ou autant de niveaux que la maison (latérale / arrière). Égout et niveaux de
   // l'existant, avec leur statut et leur source ; jamais pour un garage ni une surélévation.
@@ -719,7 +748,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     existant: { sdpM2: m.surfacePlancher.valeur, statut: m.surfacePlancher.statut, minM2: m.surfacePlancher.minM2, maxM2: m.surfacePlancher.maxM2, empriseM2: m.empriseM2 },
     zoneU: ctx.zoneU,
     demandeur: etat.demandeur,
-    ...(ctx.secteur ? { secteurProtege: { valeur: ctx.secteur.seuil20, source: sourceCourteSecteur(ctx.secteur) } } : {}),
+    ...(ctx.secteur ? { secteurProtege: { valeur: ctx.secteur.seuil20, source: sourceCourteSecteur(ctx.secteur), etat: ctx.secteur.etat } } : {}),
   });
 
   // Projet (contrat X0) : la maison conservée avec ses valeurs ET leurs statuts, corrections de l'utilisateur comprises.

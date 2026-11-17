@@ -594,7 +594,7 @@ export function calculerExtension(e: EntreeMoteurExtension): ResultatExtension {
   if (!rue) {
     const a = dem.facade.arete;
     if (typeof a !== 'number' || !Number.isInteger(a) || a < 0 || a >= m.anneau.length) {
-      return vide(['Côté rue inconnu (aucune limite classée voie sur la parcelle) : impossible de dire où sont la gauche, la droite et l’arrière. Classez la limite sur rue, ou désignez l’arête de la façade.']);
+      return vide(['Côté rue inconnu (aucune limite sur rue connue sur la parcelle) : impossible de dire où sont la gauche, la droite et l’arrière de la maison. Indiquez de quel côté de la parcelle se trouve la rue.']);
     }
     // Sans rue, seule l'arête désignée vaut : on reconstruit une « rue » telle que cette arête regarde le côté demandé.
     const ns = normaleSortante(m.anneau, a);

@@ -154,7 +154,8 @@ Deno.test('X8-5 : libellé égout jamais « estimée … mesurée » ; consignes
     na.doesNotMatch(phraseDeRelance({ etape: e, projet: null, resultatMoteur: null }), JARGON, e);
     na.doesNotMatch(phraseDeRelance({ etape: e, projet: null, resultatMoteur: null }), /\d/, e);
   }
-  na.match(phraseDeRelance({ etape: 'termine', projet: null, resultatMoteur: null }), /Modifiez les dimensions/);
+  // LOT X10 — refus : la vraie cause (raisons affichées) et la vraie action.
+  na.match(phraseDeRelance({ etape: 'termine', projet: null, resultatMoteur: null }), /changez ses dimensions ou son côté/);
   na.doesNotMatch(CONSIGNE_EXTENSION, /PAR LE SERVEUR|Le serveur AFFICHE/);
   na.match(CONSIGNE_EXTENSION, /Ne parle jamais du « serveur »/);
   na.doesNotMatch(OUTIL_EXTENSION_MAISON_DEF.description, /SERVEUR/);

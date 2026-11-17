@@ -1320,8 +1320,28 @@ async function resoudreConception(input: Obj, env: EnvStudio): Promise<Conceptio
   return await env.depot.conception(env.userId!, { id, idu: idu && RE_IDU.test(idu) ? idu : null });
 }
 
+/**
+ * LOT X10 — l'extension du parcours n'a pas été PLACÉE (refus affiché) : aucune 3D ni aucun rendu (essai du 17/11 :
+ * « Je lance la préparation de la maquette 3D » alors que le placement était refusé).
+ */
+export const MESSAGE_EXTENSION_NON_PLACEE =
+  'RIEN N’A ÉTÉ LANCÉ. Cette conversation porte un projet d’EXTENSION dont le placement a été REFUSÉ (raisons affichées dans le parcours) : ' +
+  'il n’y a encore rien à préparer ni à rendre. N’annonce aucune préparation, maquette ni image ; dis en une phrase que l’extension doit d’abord ' +
+  'être placée (en changeant ses dimensions ou son côté, ou en indiquant le côté de la rue si c’est demandé).';
+
+/** LOT X10 — extension placée, mais la parcelle n'a pas de dossier dans Mimmoza (aucune conception) : rien n'est préparé. */
+export const MESSAGE_EXTENSION_SANS_DOSSIER =
+  'RIEN N’A ÉTÉ LANCÉ. L’image d’une extension a besoin du dossier de la parcelle dans Mimmoza (contour, parcelles voisines, règles), ' +
+  'qui n’existe pas encore pour cette parcelle. Dis-le en une phrase, sans parler de maquette ni de 3D, et propose de lancer l’étude de la parcelle ' +
+  '(mission de conception) ; n’annonce aucune image.';
+
 async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
+  // LOT X10 — conversation d'EXTENSION : la 3D préparée n'est que le SUPPORT DE PARCELLE de l'image (la machine de rendu
+  // dessine la maison conservée et l'extension du parcours) ; jamais un immeuble ni des logements présentés au client.
+  const ext = !env.mission && env.userId ? await projetExtensionConversation(env, env.userId) : null;
+  if (ext && !ext.placee) return erreur(MESSAGE_EXTENSION_NON_PLACEE, 'partial');
   const c = await resoudreConception(input, env);
+  if (!c && ext) return erreur(MESSAGE_EXTENSION_SANS_DOSSIER, 'partial');
   if (!c) {
     return erreur('Aucune conception trouvée pour cet utilisateur' + (input.idu ? ` sur ${String(input.idu)}` : '') +
       ". Une conception (parcelle, règles PLU, programme) se prépare par une mission de conception (proposer_mission, type « conception »).", 'not_found');
@@ -1336,6 +1356,20 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     conception_id: c.id, conversation_id: env.conversationId, idu: c.idu, empreinte: p.empreinte,
     entree: p.entree, volume: p.volume, resume: p.resume, origine: env.mission ? 'mission' : 'chat', version_calcul: VERSION_CALCUL,
   });
+  if (ext) {
+    // LOT X10 — ni volume, ni forme, ni logements : seulement ce qui sert à l'image de l'extension.
+    return {
+      status: 'ok', source: SOURCE_STUDIO,
+      data: {
+        preparation_id: id, conception_id: c.id, idu: c.idu, commune: c.commune, support_extension: true,
+        role: 'support de parcelle de l’image de l’extension (maison existante conservée + extension placée dans le parcours) ; aucun bâtiment neuf',
+      },
+      message:
+        'Support de parcelle prêt pour l’image de l’EXTENSION : la machine de rendu dessinera la maison existante (conservée) et l’extension placée dans le parcours, ' +
+        'rien d’autre. N’écris AUCUN volume, aucune forme, aucun logement, aucune surface et aucun bloc ```mimmoza-3d``` ; ne parle pas d’immeuble ni de maquette. ' +
+        'Si l’utilisateur a demandé l’image, appelle MAINTENANT studio_lancer_rendu avec type « image », SANS brief ; sinon propose l’image de l’extension en une phrase.',
+    };
+  }
   return {
     status: 'ok', source: SOURCE_STUDIO,
     data: {
@@ -1483,6 +1517,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     if (j.o.existant !== undefined && !ext) return erreur('Le projet d’extension de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ.');
     if (ext) {
       if (!RENDU_EXTENSION_OUVERT) return erreur(MESSAGE_RENDU_EXTENSION_FERME, 'partial');
+      if (!ext.placee) return erreur(MESSAGE_EXTENSION_NON_PLACEE, 'partial');
       if (j.s.genre === 'version') return erreur(MESSAGE_EXTENSION_VERSION, 'partial');
       if (!toitConfirme(ext.projet)) return erreur(MESSAGE_TOIT_A_CONFIRMER, 'partial');
       // Devis d'image établi AVANT le projet d'extension (sans l'option `existant`) : il ne décrivait pas ce rendu.
@@ -1549,6 +1584,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // de conception ne contient pas la maison conservée) : la source automatique prend donc la 3D préparée.
   const extension = await projetExtensionConversation(env, uid);
   if (extension && !RENDU_EXTENSION_OUVERT) return erreur(MESSAGE_RENDU_EXTENSION_FERME, 'partial');
+  if (extension && !extension.placee) return erreur(MESSAGE_EXTENSION_NON_PLACEE, 'partial');
   if (extension && input.source === 'version') return erreur(MESSAGE_EXTENSION_VERSION, 'partial');
   if (extension && !toitConfirme(extension.projet)) return erreur(MESSAGE_TOIT_A_CONFIRMER, 'partial');
   const src = await resoudreSource(extension ? { ...input, source: 'preparation' } : input, env);

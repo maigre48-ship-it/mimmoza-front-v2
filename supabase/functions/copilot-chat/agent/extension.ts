@@ -27,7 +27,7 @@ import {
   type ContexteParcours, type RegleSite, type SortieParcours,
 } from '../../_shared/extension/parcours.ts';
 import { evaluerSecteurProtege, lireSecteurEnregistre, type ReponseService, type SecteurProtege } from '../../_shared/extension/secteurProtege.ts';
-import { facadesVoieDeLaParcelle } from './voisines-parcelle.ts';
+import { chercherVoisinesParcelle, facadesVoieDeLaParcelle, type FacadeVoieFiche } from './voisines-parcelle.ts';
 import type { OutilDef, ResultatOutil } from './types.ts';
 
 export { detecterIntentionExtension, OUTIL_EXTENSION_MAISON, reponseAuParcours, suiteDuParcours };
@@ -287,7 +287,7 @@ export function etatPrecedent(sorties: readonly Obj[]): { etat: ReturnType<typeo
 }
 
 /** Dernier `projet_extension` VALIDE de la conversation (contrat X0), avec l'option de travail. */
-export function projetDesSorties(sorties: readonly Obj[]): { projet: ProjetExtension; existant: 'conserver' | 'effacer' } | null {
+export function projetDesSorties(sorties: readonly Obj[]): { projet: ProjetExtension; existant: 'conserver' | 'effacer'; placee: boolean } | null {
   for (const d of sorties) {
     // LOT X4 site : la maison a été déclarée « à démolir » APRÈS le dernier projet (parcours arrêté, projet neuf) :
     // l'ancien projet d'extension ne vaut plus (le rendu étant ouvert, il dessinerait une extension non voulue).
@@ -296,7 +296,10 @@ export function projetDesSorties(sorties: readonly Obj[]): { projet: ProjetExten
     const lu = lireProjetExtension(d.projet_extension);
     if (!lu.ok || lu.projet.nature !== 'extension') return null;
     const opt = estObj(d.option_travail) && (d.option_travail.existant === 'conserver' || d.option_travail.existant === 'effacer') ? d.option_travail.existant : 'conserver';
-    return { projet: lu.projet, existant: opt };
+    // LOT X10 — l'extension de ce projet a-t-elle été PLACÉE (verdict du moteur affiché) ? Un refus affiché la rend
+    // impossible à rendre (aucune 3D, aucun rendu) ; une sortie sans verdict (antérieure au lot) est lue comme placée.
+    const verdict = estObj(d.vue) && estObj(d.vue.extension) ? d.vue.extension.verdict : undefined;
+    return { projet: lu.projet, existant: opt, placee: verdict !== 'refus' };
   }
   return null;
 }
@@ -338,9 +341,14 @@ export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 're
       // LOT X8b — extension plus haute que la maison : les choix de hauteur sont proposés en puces.
       if (s.attendues?.includes(Q.hauteur.id)) return 'Choisissez la hauteur de l’extension ci-dessous, et je la replace.';
       if (s.attendues?.includes(Q.facade.id)) return 'Choisissez un autre côté ci-dessous, et je replace l’extension.';
-      return s.projet && s.resultatMoteur?.ok
-        ? 'Si vous le souhaitez, je peux maintenant préparer une image de l’extension dans la photo de la rue.'
-        : 'Modifiez les dimensions ou le côté de l’extension pour que je puisse la placer.';
+      if (s.projet && s.resultatMoteur?.ok) return 'Si vous le souhaitez, je peux maintenant préparer une image de l’extension dans la photo de la rue.';
+      // LOT X10 — la VRAIE cause et la VRAIE action (essai du 17/11 : « modifiez les dimensions » alors que le blocage
+      // était le côté rue).
+      if (s.resultatMoteur && !s.resultatMoteur.ok && s.resultatMoteur.refus.some((r) => /^Côté rue inconnu/.test(r))) {
+        return 'Je ne sais pas encore de quel côté de la parcelle se trouve la rue : sans elle, je ne peux pas placer l’extension.';
+      }
+      if (s.resultatMoteur?.suggestion) return 'L’extension ne se place pas ainsi : réduisez sa profondeur comme indiqué ci-dessus, ou choisissez un autre côté, et je la replace.';
+      return 'L’extension ne se place pas ainsi, pour les raisons ci-dessus : changez ses dimensions ou son côté, et je la replace.';
   }
 }
 
@@ -365,9 +373,58 @@ export function resultatParcours(s: SortieParcours, lectureBdTopo: LectureBdTopo
       'N’ajoute aucun chiffre, aucune question, aucun bloc mimmoza-choix ; ne parle ni de « serveur », ni de « fiche », ni de « moteur » ; ' +
       'n’annonce aucun résultat (gabarit, régime, image) qui ne figure pas dans cette sortie.' +
       (s.etape === 'termine' && RENDU_EXTENSION_OUVERT && s.projet && s.resultatMoteur?.ok
-        ? ' Si l’utilisateur accepte l’image, ne promets ni délai ni image « insérée dans la rue » : la machine de rendu le vérifie elle-même.'
+        ? ' Si l’utilisateur accepte l’image (à un message SUIVANT) : appelle studio_lancer_rendu avec type « image », SANS brief (s’il répond « aucune 3D préparée », appelle d’abord studio_preparer_3d sans argument, puis studio_lancer_rendu) ; ' +
+          'l’image part de CETTE extension (maison existante conservée + extension placée), jamais d’un immeuble ni de logements. Ne promets ni délai ni image « insérée dans la rue » : la machine de rendu le vérifie elle-même.'
+        : '') +
+      // LOT X10 — extension NON placée : aucun lancement ne doit être annoncé (essai du 17/11 : « Parfait ! Je lance la
+      // préparation de la maquette 3D… » alors que le placement était refusé).
+      (s.etape === 'termine' && !s.resultatMoteur?.ok
+        ? ' L’extension N’EST PAS PLACÉE : n’appelle aucun outil de 3D ni de rendu (studio_preparer_3d, studio_lancer_rendu), et n’annonce aucune préparation, maquette, image ni lancement.'
         : ''),
   };
+}
+
+// ── LOT X10 : limite sur rue lue au cadastre (parcelles voisines) quand la fiche de la parcelle ne l'a pas ─────────
+/** Façades sur voie lues au cadastre à un tour précédent (même parcelle), réutilisées sans nouvel appel. */
+export interface FacadesVoieLues { readonly idu: string; readonly date: string; readonly facades: readonly FacadeVoieFiche[] }
+
+/** Attente avant la seconde demande des parcelles voisines (même tolérance que la BD TOPO, lot X8). */
+export const ATTENTE_VOISINES_MS = 800;
+
+/**
+ * Parcelles voisines au cadastre (API Carto IGN) puis côté voie déduit (même calcul que la fiche de parcelle, lot C7b).
+ * Une seconde demande si le cadastre n'a pas répondu ou a refusé. Ne lève jamais.
+ */
+export async function facadesParVoisines(idu: string, geometrie: unknown, f: typeof fetch, attenteMs = ATTENTE_VOISINES_MS): Promise<{ facades: FacadeVoieFiche[]; raison: string | null }> {
+  let v = await chercherVoisinesParcelle(idu, geometrie, f);
+  if (v.statut !== 'disponibles' && /n’a pas répondu|a refusé/.test(v.raison ?? '')) {
+    await new Promise((r) => setTimeout(r, attenteMs));
+    v = await chercherVoisinesParcelle(idu, geometrie, f);
+  }
+  return facadesVoieDeLaParcelle({ geometrie, voisines: v });
+}
+
+/** Relit une limite sur rue mémorisée (sortie d'un tour précédent) ; tout objet mal formé est écarté. */
+export function lireFacadesLues(v: unknown): FacadesVoieLues | null {
+  if (!estObj(v) || typeof v.idu !== 'string' || !RE_IDU.test(v.idu) || typeof v.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.date)) return null;
+  if (!Array.isArray(v.facades) || !v.facades.length || v.facades.length > 50) return null;
+  const point = (p: unknown): p is [number, number] => Array.isArray(p) && p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0] as number) <= 180 && Math.abs(p[1] as number) <= 90;
+  const out: FacadeVoieFiche[] = [];
+  for (const x of v.facades) {
+    if (!estObj(x) || !point(x.debut) || !point(x.fin) || typeof x.longueurM !== 'number' || !Number.isFinite(x.longueurM) || x.source !== 'cadastre-voisines') return null;
+    out.push({ debut: [x.debut[0], x.debut[1]], fin: [x.fin[0], x.fin[1]], longueurM: x.longueurM, source: 'cadastre-voisines' });
+  }
+  return { idu: v.idu, date: v.date, facades: out };
+}
+
+/** LOT X10 — dernière limite sur rue mémorisée pour CETTE parcelle dans la conversation (la plus récente). */
+export function facadesLuesDesSorties(sorties: readonly Obj[], idu: string): FacadesVoieLues | null {
+  for (const d of sorties) {
+    if (!estObj(d) || d.facades_voie_lues === undefined) continue;
+    const l = lireFacadesLues(d.facades_voie_lues);
+    if (l && l.idu === idu) return l;
+  }
+  return null;
 }
 
 /** LOT X8 — dernière lecture BD TOPO mémorisée pour CETTE parcelle dans la conversation (la plus récente). */
@@ -455,15 +512,32 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
     if ('data' in bn) { const l = lireBdnb(bn.data); bdnb = l.bdnb; noteBdnb = l.note; } else noteBdnb = `BDNB injoignable (${bn.raison}) : seule la BD TOPO sert à l’estimation.`;
     zoneU = 'data' in zo ? lireZonage(zo.data) : { valeur: null, source: `Géoportail de l’urbanisme injoignable (${zo.raison})` };
   }
-  const facades = c ? facadesVoieDeLaParcelle(c.parcelle) : { facades: [], raison: 'aucune fiche de parcelle avec ses voisines : côté rue non identifié' };
+  // Limite sur rue : fiche de la parcelle (voisines enregistrées) ; LOT X10 — sinon lue ici au cadastre (parcelles
+  // voisines, API Carto IGN, 2 tentatives), mémorisée d'un tour à l'autre ; sinon le parcours demande le côté de la rue.
+  let facades: { facades: FacadeVoieFiche[]; raison: string | null } = c ? facadesVoieDeLaParcelle(c.parcelle) : { facades: [], raison: null };
+  let sourceFacades: string | null = facades.facades.length ? 'Limite sur rue : déduite du cadastre et des parcelles voisines (fiche de la parcelle)' : null;
+  let facadesLues: FacadesVoieLues | null = null;
+  if (!facades.facades.length && anneau) {
+    const memo = facadesLuesDesSorties(sorties, iduRetenu);
+    if (memo) {
+      facadesLues = memo;
+      facades = { facades: [...memo.facades], raison: null };
+    } else {
+      const lu = await facadesParVoisines(iduRetenu, geometrie, env.fetch);
+      if (lu.facades.length) { facadesLues = { idu: iduRetenu, date: dateJour, facades: lu.facades }; facades = lu; }
+      else facades = { facades: [], raison: lu.raison ?? facades.raison };
+    }
+    if (facadesLues) sourceFacades = `Limite sur rue : déduite du cadastre et des parcelles voisines (API Carto IGN, lue le ${facadesLues.date})`;
+  }
   const ctx: ContexteParcours = {
     idu: iduRetenu, commune: c?.commune ?? null, contourWgs84: anneau, surfaceParcelleM2: surface,
     batiments, raisonBdTopo, dateBdTopo, secteur, bdtopoReutilisee,
     bdnb, noteBdnb, zoneU, regles: reglesDeLaConception(c?.regles_plu),
-    facadesVoie: facades.facades.map((f) => ({ debut: f.debut, fin: f.fin })), raisonFacades: facades.raison,
+    facadesVoie: facades.facades.map((f) => ({ debut: f.debut, fin: f.fin })), raisonFacades: facades.raison, sourceFacades,
   };
   const s = avancerParcours(prec.etat, env.texteUtilisateur ?? '', prec.attendues, ctx);
-  return resultatParcours(s, lecture);
+  const r = resultatParcours(s, lecture);
+  return facadesLues && r.data ? { ...r, data: { ...(r.data as Obj), facades_voie_lues: facadesLues } } : r;
 }
 
 // ── Supabase ────────────────────────────────────────────────────────────────────────────────────────────────
