@@ -203,8 +203,10 @@ Deno.test('X3-8 : parcours P0646 — arrière 5 × 4 m, plain-pied : moteur OK (
   assertMatch(t[1]!.blocChoix!, /"id":"x3_toit".*"defaut":"2 pans"/);
   assertMatch(t[1]!.blocChoix!, /"id":"x3_niveaux".*"defaut":"R\+1"/);
   const fin = t[4]!;
-  // LOT G7 — extension placée : seules les suggestions de variante (« Retoucher l’extension ») sont proposées en puces.
-  assertEquals(fin.attendues, ['x3_retouche']);
+  // LOT G7 — extension placée : suggestions de variante (« Retoucher l’extension ») en puces ; FINITIONS 18/11 : plus
+  // « Recevoir les plans de mon projet » (plans sans image).
+  assertEquals(fin.attendues, ['x3_retouche', 'x3_plans']);
+  assertMatch(fin.blocChoix!, /"id":"x3_plans".*"Recevoir les plans de mon projet"/);
   assertMatch(fin.blocChoix!, /"id":"x3_retouche"/);
   assertEquals(fin.vue.extension!.verdict, 'ok');
   assertEquals(fin.vue.extension!.sdpCreee!.valeur, 16.8);
@@ -436,4 +438,67 @@ Deno.test('X3-17 : rendu demandé dans une conversation qui porte un projet d’
   // Parcours arrêté (« démolir ») ou projet absent : le devis habituel est rendu.
   const neuf = await executerOutilStudio('studio_lancer_rendu', { type: 'film', brief: { a_toi_de_choisir: true } }, envS([{ etape: 'neuf' }]));
   assertEquals(neuf?.status, 'confirmation_requise', neuf?.message);
+});
+
+// FINITIONS 18/11 — « Recevoir les plans » : devis des plans SEULS (aucune image), accord en deux temps, fiche marquée.
+Deno.test('FIN-P1 : plans sans image — devis (0 jeton, fond étude, maison conservée), puis travail inséré avec `plans_seuls` ; rien sans projet placé', async () => {
+  const { executerOutilStudio, demandePlansSeuls, DEMANDE_PLANS_SEULS } = await import('./studio.ts');
+  const { OPTION_PLANS_SEULS } = await import('../../_shared/extension/parcours.ts');
+  assertEquals(OPTION_PLANS_SEULS, DEMANDE_PLANS_SEULS);
+  assertEquals(demandePlansSeuls('Plans sans image : Recevoir les plans de mon projet'), true);
+  assertEquals(demandePlansSeuls('je veux juste les plans, sans image'), true);
+  assertEquals(demandePlansSeuls('lance l’image de mon extension'), false);
+  assertEquals(demandePlansSeuls('quel est le plan local d’urbanisme ?'), false);
+  const prep = JSON.parse(await Deno.readTextFile(new URL('../../../../src/spaces/copilot/studio3d/__fixtures__/preparation-AE0414.json', import.meta.url))).ligne;
+  const p = jouer(contexte('930470000P0646'), ['agrandir ma maison', 'Maison existante : Conserver la maison',
+    'Toit de la maison : 2 pans · Niveaux de la maison : R+1 · Type d’extension : Arrière · Façade (vue de la rue) : À l’arrière',
+    'Dimensions (largeur × profondeur) : 5 × 4 m · Hauteur de l’extension : Plain-pied', 'Surface de plancher existante : 118 m² · Demandeur : Particulier'])[4]!;
+  const inseres: Record<string, unknown>[] = [];
+  const jetons: { jeton: string; charge: unknown }[] = [];
+  const depot = (sorties: Record<string, unknown>[]) => ({
+    conception: async () => ({ id: '5a1c0e00-0000-4000-8000-0000000000c1', idu: '930470000P0646', commune: null, parcelle: null, regles_plu: [], programme: null }),
+    derniereVersion: async () => null, enregistrerPreparation: async () => 'p', preparation: async () => prep, typeRenduAutorise: async () => true,
+    statsFile: async () => null, travauxActifs: async () => 0, travailParDevis: async () => null,
+    jetonsDevis: async () => jetons.map((j) => j.jeton), questionBriefPosee: async () => true,
+    insererTravail: async (_u: string, t: Record<string, unknown>) => { inseres.push(t); return { id: '99999999-9999-4999-8999-999999999999', statut: 'en_attente', type: 'image', cree_le: '2026-11-18T08:00:00Z', progression: 0, etape: null }; },
+    travail: async () => null, positionFile: async () => 0, urlSigneeRendu: async () => null, sortiesExtension: async () => sorties,
+  });
+  const envS = (sorties: Record<string, unknown>[], requete: string) => ({ userId: '11111111-1111-4111-8111-111111111111', depot: depot(sorties) as never, secret: 's', requete, conversationId: '44444444-4444-4444-8444-444444444444', origine: 'https://mimmoza.vercel.app' });
+  const sortie = { etape: 'termine', projet_extension: p.projet, option_travail: p.optionTravail, vue: p.vue };
+  const devis = await executerOutilStudio('studio_lancer_rendu', { type: 'image', plans_seuls: true }, envS([sortie], 'r-1'));
+  assertEquals(devis?.status, 'confirmation_requise', devis?.message);
+  assertEquals(devis!.data!.plans_seuls, true);
+  assertEquals((devis!.data!.options as Record<string, unknown>).fond ?? 'etude', 'etude'); // fond par défaut : étude (aucune photo)
+  assertEquals((devis!.data!.options as Record<string, unknown>).existant, 'conserver');
+  assertMatch(String((devis!.data!.devis as Record<string, unknown>).rendu), /Plans de l’extension, SANS image/);
+  assertEquals((devis!.data!.devis as Record<string, unknown>).jetons, 0);
+  assertMatch(devis!.message!, /Ne promets aucune image/);
+  assertEquals(inseres.length, 0);
+  // Accord au tour suivant : le travail part avec la fiche marquée « plans seuls » et le projet d'extension.
+  const ok = await executerOutilStudio('studio_lancer_rendu', { type: 'image', confirmer: true, jeton_devis: devis!.data!.jeton_devis }, envS([sortie], 'r-2'));
+  assertEquals(ok?.status, 'ok', ok?.message);
+  assertEquals(inseres.length, 1);
+  assertEquals((inseres[0]!.fiche as Record<string, unknown>).plans_seuls, true);
+  assertEquals(typeof (inseres[0]!.fiche as Record<string, unknown>).projet_extension, 'object');
+  assertMatch(ok!.message!, /Plans \(SANS image\) ENREGISTRÉS/);
+  // Sans projet placé : rien.
+  const rien = await executerOutilStudio('studio_lancer_rendu', { type: 'image', plans_seuls: true }, envS([{ etape: 'neuf' }], 'r-3'));
+  assertEquals(rien?.status, 'partial');
+  assertMatch(rien!.message!, /RIEN N’A ÉTÉ LANCÉ/);
+});
+
+// FINITIONS 18/11 — refus sur TOUS les côtés : les plus grandes dimensions qui passent sont proposées en puces (vérifiées).
+Deno.test('FIN-D2 : P0646 arrière 14 × 14 m — aucun côté ne passe → dimensions plus petites proposées, et la puce choisie se place', () => {
+  const base = ['agrandir ma maison', 'Maison existante : Conserver la maison',
+    'Toit de la maison : 2 pans · Niveaux de la maison : R+1 · Type d’extension : Arrière · Façade (vue de la rue) : À l’arrière'];
+  const t = jouer(contexte('930470000P0646'), [...base, 'Dimensions (largeur × profondeur) : 14 × 14 m · Hauteur de l’extension : Plain-pied', 'Surface de plancher existante : 118 m² · Demandeur : Particulier']);
+  const fin = t[t.length - 1]!;
+  assertEquals(fin.vue.extension!.verdict, 'refus');
+  assertMatch(fin.texte, /ne se place sur aucun côté de la maison/);
+  assertEquals(fin.attendues, ['x3_dimensions']);
+  const options = JSON.parse(fin.blocChoix!.replace(/^```mimmoza-choix\n|\n```$/g, '')).questions[0].options as string[];
+  assertEquals(options.length >= 1 && options.length <= 3, true);
+  // La première proposition, choisie, donne une extension placée.
+  const t2 = jouer(contexte('930470000P0646'), [...base, 'Dimensions (largeur × profondeur) : 14 × 14 m · Hauteur de l’extension : Plain-pied', 'Surface de plancher existante : 118 m² · Demandeur : Particulier', `Dimensions (largeur × profondeur) : ${options[0]}`]);
+  assertEquals(t2[t2.length - 1]!.vue.extension!.verdict, 'ok', t2[t2.length - 1]!.texte);
 });

@@ -38,6 +38,32 @@ export interface PlanLuSite {
   surfacePiecesM2: number | null;
   statutSurfacePieces: StatutPlan | null;
   pointsDouteux: string[];
+  /** FINITIONS 18/11 — pièces posées sur l'emprise (relatives à son centre), transmises telles quelles pour les plans. */
+  interieur?: InterieurPlan | null;
+}
+
+export interface InterieurPlan {
+  reference: 'centre-emprise-v1';
+  batimentId: string;
+  pieces: { nom: string | null; niveau: string; surfaceM2: number; statut: StatutPlan; anneau: [number, number][] }[];
+}
+
+/** Intérieur posé, relu tel quel (bornes, pièces mal formées écartées, jamais corrigées). Pur. */
+export function lireInterieurPlan(v: unknown): InterieurPlan | null {
+  if (!estObj(v) || v.reference !== 'centre-emprise-v1') return null;
+  const batimentId = txt(v.batimentId, 80) ?? txt(v.batiment_id, 80);
+  if (!batimentId || !Array.isArray(v.pieces)) return null;
+  const pieces: InterieurPlan['pieces'] = [];
+  for (const p of v.pieces.slice(0, 60)) {
+    if (!estObj(p) || !Array.isArray(p.anneau) || p.anneau.length < 3 || p.anneau.length > 40) continue;
+    const surf = borne(p.surfaceM2 ?? p.surface_m2, 0.5, 2_000);
+    const sp = st(p.statut);
+    const niveau = typeof p.niveau === 'string' && /^L\d{1,2}$/.test(p.niveau) ? p.niveau : null;
+    const anneau = p.anneau.map((q) => (Array.isArray(q) && q.length === 2 && borne(q[0], -150, 150) !== null && borne(q[1], -150, 150) !== null ? [r2(q[0] as number), r2(q[1] as number)] as [number, number] : null));
+    if (surf === null || !sp || !niveau || anneau.some((q) => q === null)) continue;
+    pieces.push({ nom: txt(p.nom, 60), niveau, surfaceM2: r2(surf), statut: sp, anneau: anneau as [number, number][] });
+  }
+  return pieces.length ? { reference: 'centre-emprise-v1', batimentId, pieces } : null;
 }
 
 type Obj = Record<string, unknown>;
@@ -95,6 +121,7 @@ export function lirePlanLuStudio(v: unknown, origineReleve: string, recuLeMs: nu
     source: 'import-plan', origine: txt(v.origine, 200) ?? origineReleve, recuLeMs,
     echelle, dimensions, emprise, position, cotesExterieures, niveaux, pieces, surfacePiecesM2, statutSurfacePieces,
     pointsDouteux: (Array.isArray(v.pointsDouteux) ? v.pointsDouteux : []).map((x) => txt(x, 300)).filter((x): x is string => !!x).slice(0, 12),
+    interieur: lireInterieurPlan(v.interieur),
   };
 }
 
@@ -201,6 +228,9 @@ export function contextePlanLu(p: PlanLuSite): Record<string, string | number | 
     plan_lu_surface_pieces_m2: p.surfacePiecesM2, plan_lu_surface_pieces_statut: p.statutSurfacePieces, plan_lu_nb_pieces: p.pieces.length || null,
     plan_lu_echelle: p.echelle?.texte ?? null,
     plan_lu_douteux: p.pointsDouteux.length ? p.pointsDouteux.slice(0, 6).join(' | ') : null,
+    // FINITIONS 18/11 — pièces posées sur l'emprise (JSON compact), reprises dans l'existant des plans ; jamais montrées
+    // au modèle de langage (clé écartée du bloc « données de la page »).
+    plan_lu_interieur: p.interieur ? JSON.stringify({ reference: p.interieur.reference, batiment_id: p.interieur.batimentId, pieces: p.interieur.pieces.map((x) => ({ nom: x.nom, niveau: x.niveau, surface_m2: x.surfaceM2, statut: x.statut, anneau: x.anneau })) }) : null,
   };
 }
 

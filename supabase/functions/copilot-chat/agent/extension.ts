@@ -33,7 +33,7 @@ import { chercherVoisinesParcelle, facadesVoieDeLaParcelle, type FacadeVoieFiche
 import type { OutilDef, ResultatOutil } from './types.ts';
 // LOT G3 — photo de la maison jointe au message (avec les instructions) : parcelle par sa position, fond de l'image.
 import {
-  lignesPhotoProjet, parcelleDepuisPhoto, photoProjetDesSorties, pointDansContour, recevoirPhoto,
+  appliquerAccordPhoto, demandeAccordPhoto, lignesPhotoProjet, parcelleDepuisPhoto, photoProjetDesSorties, pointDansContour, recevoirPhoto,
   type DepotPhotoProjet, type ParcelleDeLaPhoto, type PhotoDuTour, type PhotoProjet,
 } from './photo-projet.ts';
 // LOT G3 — dossier de parcelle minimal (contour + parcelles voisines du cadastre) pour qu'une extension placée ait son image.
@@ -539,6 +539,12 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   const recue = env.photoDuTour ? await recevoirPhoto(env.photoDuTour, env.userId, env.depotPhoto, dateJour, prec.etat.idu) : null;
   let photo: PhotoProjet | null = recue?.photo ?? photoPrecedente;
   const lignesPhoto: string[] = recue?.raison ? [`Votre photo n’a pas pu être gardée pour l’image : ${recue.raison}.`] : [];
+  // FINITIONS 18/11 — réponse à la carte « Utiliser cette photo pour l'image ? » (mode d'accord 'bouton' seulement) :
+  // l'accord ou le refus est mémorisé avec la photo ; le message n'est pas relu comme une réponse au parcours.
+  const accordPhoto = appliquerAccordPhoto(photo, env.texteUtilisateur ?? '', new Date((env.maintenant ?? Date.now)()).toISOString());
+  photo = accordPhoto.photo;
+  if (accordPhoto.ligne) lignesPhoto.push(accordPhoto.ligne);
+  const texteDuParcours = accordPhoto.reponse ? '' : (env.texteUtilisateur ?? '');
 
   // Parcelle : conception donnée, sinon identifiant donné, sinon celle du parcours en cours, sinon la 3D de la conversation.
   const iduDonne = typeof input.idu === 'string' ? input.idu.replace(/\s/g, '').toUpperCase() : null;
@@ -649,7 +655,7 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
     facadesVoie: facades.facades.map((f) => ({ debut: f.debut, fin: f.fin })), raisonFacades: facades.raison, sourceFacades,
     ...(env.planLu ? { planLu: env.planLu } : {}),
   };
-  const s = avancerParcours(prec.etat, env.texteUtilisateur ?? '', prec.attendues, ctx);
+  const s = avancerParcours(prec.etat, texteDuParcours, prec.attendues, ctx);
   const r0 = resultatParcours(s, lecture, photo !== null);
   // LOT G6 — plan joint au message : lu dans le Studio, jamais par le modèle (aucune cote citée ni estimée).
   const r = planJointAuMessage(env.texteUtilisateur ?? '') ? { ...r0, message: `${r0.message}${CONSIGNE_PLAN_JOINT}` } : r0;
@@ -686,7 +692,8 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   if (photo) {
     const lignes = [...lignesPhoto, ...lignesPhotoProjet(photo, !!recue?.photo, parcellePhoto)];
     const vue = estObj(data.vue) ? data.vue : null;
-    data = { ...data, photo_projet: photo, ...(vue && lignes.length ? { vue: { ...vue, avertissements: [...(Array.isArray(vue.avertissements) ? vue.avertissements : []), ...lignes] } } : {}) };
+    const accordRequis = demandeAccordPhoto(photo);
+    data = { ...data, photo_projet: photo, ...(accordRequis ? { accord_photo_requis: accordRequis } : {}), ...(vue && lignes.length ? { vue: { ...vue, avertissements: [...(Array.isArray(vue.avertissements) ? vue.avertissements : []), ...lignes] } } : {}) };
   } else if (lignesPhoto.length && estObj(data.vue)) {
     const vue = data.vue;
     data = { ...data, vue: { ...vue, avertissements: [...(Array.isArray(vue.avertissements) ? vue.avertissements : []), ...lignesPhoto] } };

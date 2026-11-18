@@ -65,7 +65,7 @@ import { TOOL_RECHERCHER_PARCELLES, executerRechercherParcelles } from './agent/
 import { briefingPourMissionVeille } from './agent/briefing.ts';
 import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUTILS_STUDIO } from './agent/outils.ts';
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
-import { briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
+import { briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, demandePlansSeuls, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
@@ -73,7 +73,7 @@ import {
   OUTIL_EXTENSION_MAISON_DEF, reponseAuParcours, suiteDuParcours, type EnvExtension, depotPhotoProjetSupabase, demandeRetouche,
 } from './agent/extension.ts';
 // LOT G3 — photo de la maison jointe au message avec les instructions (parcours d'extension).
-import { intentionPhotoExtension, photoDuTourGardee, type PhotoDuTour } from './agent/photo-projet.ts';
+import { intentionPhotoExtension, photoDuTourGardee, type PhotoDuTour, accordPhotoDuTexte } from './agent/photo-projet.ts';
 // LOT G6 — plan de la maison lu (contexte de la page).
 import { lirePlanLu, messagePlanPourLeParcours } from '../_shared/extension/planLu.ts';
 // LOT G10b — maison neuve sur un terrain : parcours guidé par le serveur (gabarit, reculs, permis indicatif), image et plans.
@@ -4695,10 +4695,15 @@ async function executeTool(
         ?? { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` }) as ToolResult;
     case 'studio_preparer_3d':
     case 'studio_lancer_rendu':
-    case 'studio_etat_rendu':
+    case 'studio_etat_rendu': {
+      // FINITIONS 18/11 — « Recevoir les plans » : lu dans le message REÇU (jamais déduit des paramètres du modèle) ;
+      // le premier temps devient le devis des plans seuls.
+      const texteRecu = typeof (ctx as unknown as Record<string, unknown>).message_utilisateur === 'string' ? (ctx as unknown as Record<string, unknown>).message_utilisateur as string : '';
+      const entree = name === 'studio_lancer_rendu' && input.confirmer !== true && demandePlansSeuls(texteRecu) ? { ...input, type: 'image', plans_seuls: true } : input;
       // Lot E1 : identité = JWT vérifié ; écritures avec le client UTILISATEUR (RLS).
-      return ((await executerOutilStudio(name, input, envStudio(ctx, auth)))
+      return ((await executerOutilStudio(name, entree, envStudio(ctx, auth)))
         ?? { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` }) as ToolResult;
+    }
     case OUTIL_EXTENSION_MAISON:
       // LOT X3 : identité = JWT vérifié ; réponses lues dans le message REÇU (jamais dans les paramètres du modèle).
       return (await executerOutilExtension(input, envExtension(ctx, auth))) as ToolResult;
@@ -9449,7 +9454,8 @@ function buildPageSnapshotBlock(
   psnap: Record<string, string | number | null>,
   pageContext?: MimmozaContext['pageContext'],
 ): string {
-  const entries = Object.entries(psnap).filter(([, v]) => v !== null && v !== '');
+  // FINITIONS 18/11 : la géométrie des pièces d'un plan lu n'est jamais montrée au modèle (elle part aux plans).
+  const entries = Object.entries(psnap).filter(([k, v]) => v !== null && v !== '' && k !== 'plan_lu_interieur');
   if (entries.length === 0) return '';
 
   const header = pageContext?.space
@@ -10889,22 +10895,30 @@ async function runOrchestrator(params: {
   // « 1 m plus large », « toit plat », « sans baie ») : le tour est imposé sur l'outil du parcours, qui recalcule.
   const parcoursDansConversation = agentDisponible(ctx.vertical) && params.messages.some((message) => message.role === 'assistant' && suiteDuParcours(extractText(message.content)));
   const retoucheAuTour = parcoursDansConversation && demandeRetouche(userText);
-  const extensionAuTour = agentDisponible(ctx.vertical)
+  // FINITIONS 18/11 : « Recevoir les plans » (puce de fin de parcours, ou demande explicite) dans une conversation qui
+  // porte un parcours d'extension ou de maison neuve : tour imposé sur studio_lancer_rendu (devis des plans seuls).
+  const parcoursMaisonDansConversation = agentDisponible(ctx.vertical) && params.messages.some((message) => message.role === 'assistant' && suiteDuParcoursMaison(extractText(message.content)));
+  const plansAuTour = (parcoursDansConversation || parcoursMaisonDansConversation) && demandePlansSeuls(userText);
+  const extensionAuTour = !plansAuTour && agentDisponible(ctx.vertical)
     && (detecterIntentionExtension(userText).extension || (parcoursEnCours && reponseAuParcours(userText)) || retoucheAuTour
       // LOT G3 : photo de la maison jointe avec une demande d'agrandissement (« extension de 4 × 5 m à gauche »).
       || intentionPhotoExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object))
       // LOT G6 : plan de la maison joint, ou valeurs vérifiées dans la carte « Plan lu » : le parcours reprend.
-      || messagePlanPourLeParcours(userText));
+      || messagePlanPourLeParcours(userText)
+      // FINITIONS 18/11 : réponse à la carte « Utiliser cette photo pour l'image ? » (mode d'accord « bouton »).
+      || (parcoursDansConversation && accordPhotoDuTexte(userText) !== null));
   // LOT G10b : parcours « maison neuve » — demandé dans ce message (et pas une extension), ou poursuivi (dernière
   // question de Mimmo issue du parcours) ; premier tour IMPOSÉ sur l'outil, comme l'extension.
   const parcoursMaisonEnCours = agentDisponible(ctx.vertical) && !extensionAuTour && suiteDuParcoursMaison(texteAssistantPrecedent);
-  const maisonAuTour = agentDisponible(ctx.vertical) && !extensionAuTour && !parcoursEnCours
-    && (detecterIntentionMaisonNeuve(userText) || (parcoursMaisonEnCours && userText.trim().length > 0));
+  const maisonAuTour = !plansAuTour && agentDisponible(ctx.vertical) && !extensionAuTour && !parcoursEnCours
+    && (detecterIntentionMaisonNeuve(userText) || (parcoursMaisonEnCours && userText.trim().length > 0)
+      // FINITIONS 18/11 : réponse à la carte d'accord sur la photo du terrain, plus tard dans la conversation.
+      || (accordPhotoDuTexte(userText) !== null && parcoursMaisonDansConversation));
   const selectedNames = new Set([
     ...selection.toolNames,
     ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
     // LOT G7 : une retouche d'extension peut relancer l'image de la variante (même photo, même placement).
-    ...(studioAuTour || retoucheAuTour ? NOMS_OUTILS_STUDIO : []),
+    ...(studioAuTour || retoucheAuTour || plansAuTour ? NOMS_OUTILS_STUDIO : []),
     ...(extensionAuTour || parcoursEnCours ? [OUTIL_EXTENSION_MAISON] : []),
     ...(maisonAuTour || parcoursMaisonEnCours ? [OUTIL_MAISON_NEUVE] : []),
     // Lot INT-10 : l'architecte d'intérieur reste proposé tant que le tour (ou la question précédente) parle d'aménagement.
@@ -10936,6 +10950,7 @@ async function runOrchestrator(params: {
   let renduForce = false;      // lot choix-cliquables : un seul tour imposé sur studio_lancer_rendu
   let extensionForcee = false; // LOT X3 : un seul tour imposé sur le parcours d'extension
   let maisonForcee = false;    // LOT G10b : un seul tour imposé sur le parcours de maison neuve
+  let plansForces = false;     // FINITIONS 18/11 : un seul tour imposé sur le devis des plans seuls
   let blocChoixExtension: string | null = null; // LOT X3 : questions du parcours, placées à la toute fin de la réponse
   let dernierTexte = '';
 
@@ -11022,7 +11037,10 @@ async function runOrchestrator(params: {
     const forcerMaison = !forcerMission && !forcerExtension && !intentionMission.mission && maisonAuTour && !maisonForcee && iter === 0
       && toolsDuTour.some((tool) => tool.name === OUTIL_MAISON_NEUVE);
     if (forcerMaison) maisonForcee = true;
-    const forcerRendu = !forcerMission && !forcerExtension && !forcerMaison && doitForcerLancerRendu({
+    const forcerPlans = !forcerMission && !forcerExtension && !forcerMaison && plansAuTour && !plansForces && iter === 0
+      && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu');
+    if (forcerPlans) plansForces = true;
+    const forcerRendu = !forcerMission && !forcerExtension && !forcerMaison && !forcerPlans && doitForcerLancerRendu({
       texteUtilisateur: userText, appels: toolCallsLog, dejaForce: renduForce, briefCarte: Boolean(briefCarte),
       outilDisponible: !(mode === 'quick' && rapportParcellaireAffiche) && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu'),
     });
@@ -11033,7 +11051,7 @@ async function runOrchestrator(params: {
       toolChoice: forcerMission ? { type: 'tool', name: 'proposer_mission' }
         : forcerExtension ? { type: 'tool', name: OUTIL_EXTENSION_MAISON }
         : forcerMaison ? { type: 'tool', name: OUTIL_MAISON_NEUVE }
-        : forcerRendu ? { type: 'tool', name: 'studio_lancer_rendu' } : undefined,
+        : forcerRendu || forcerPlans ? { type: 'tool', name: 'studio_lancer_rendu' } : undefined,
       webBudget: webUnavailable || intentionMission.mission ? { search: 0, fetch: 0 }
         : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
           fetch: Math.max(0, WEB_LIMITS[mode].fetch - webFetches) },

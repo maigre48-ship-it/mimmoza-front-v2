@@ -25,3 +25,12 @@ test('INT-P1 photo en portrait : acceptée avec un conseil, jamais bloquante', (
   assert.equal(p.niveau, 'avertissement');
   assert.ok(!l.some((x) => x.niveau === 'bloquant'));
 });
+
+// FINITIONS 18/11 — le seuil vient de la machine de rendu (iou_min), plus d'un chiffre écrit en dur côté site.
+test('FIN-R1 seuil cité tel que transmis ; absent : pas de minimum inventé', () => {
+  const avec = lignesRetoucheRealisme({ harmonisation: { statut: 'harmonise', mention: 'm', iou_min: 0.92, controles: { iou: 0.95 } } });
+  assert.match(avec[1]!, /minimum exigé : 92 %/);
+  const sans = lignesRetoucheRealisme({ harmonisation: { statut: 'harmonise', mention: 'm', controles: { iou: 0.95 } } });
+  assert.doesNotMatch(sans[1]!, /minimum/);
+  assert.match(sans[1]!, /95 %/);
+});

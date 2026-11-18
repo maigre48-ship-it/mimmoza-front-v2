@@ -247,11 +247,15 @@ export function avancerParcoursMaison(etatPrecedent: EtatMaison | null, texteUti
     etape: 'termine',
     attendues: [],
     texte: lignes.join('\n'),
-    blocChoix: null,
+    // FINITIONS 18/11 — maison placée : les plans peuvent être demandés SANS image (même puce que l'extension).
+    blocChoix: blocChoixMaison([{ id: 'mn_plans', libelle: 'Plans sans image', options: [OPTION_PLANS_SEULS_MAISON], multiple: false }]),
     gabarit: g,
     autorisation: aut,
     relance: 'Recopie seulement : « Votre maison est placée sur le terrain, avec les reculs indiqués. » N’annonce ni 3D, ni image, ni plan : rien de cela n’est lancé à ce tour.',
   };
 }
+
+/** Puce « Recevoir les plans » : MÊME texte que DEMANDE_PLANS_SEULS (copilot-chat/agent/studio.ts). */
+export const OPTION_PLANS_SEULS_MAISON = 'Recevoir les plans de mon projet';
 
 export type { MenuiseriesMaison, NiveauxMaison, StyleMaison };

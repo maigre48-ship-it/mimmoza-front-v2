@@ -158,3 +158,26 @@ test('G6-F9 : chaîne complète — résumé RÉEL produit par le Studio (plans 
   assert.equal(c.plan_lu_emprise_m2, 92.4);
   assert.equal(c.plan_lu_niveaux_statut, 'confirme');
 });
+
+// FINITIONS 18/11 — pièces posées sur l'emprise : relues du résumé du Studio, transmises au serveur (clé à part).
+import { contextePlanLu as ctxPlan, lirePlanLuStudio as lireStudio } from './planLuChat.ts';
+test('FIN-I2 intérieur posé relu tel quel puis transmis en JSON ; pièce mal formée écartée ; absent : null', () => {
+  const resume = {
+    format: 'mimmoza-plan-lu', version: 1, origine: 'plan.pdf', echelle: null, dimensions: null, emprise: null, position: null, cotesExterieures: [],
+    niveaux: { nombre: 1, statut: 'lu', libelles: ['RDC'] }, pieces: [], pointsDouteux: [],
+    interieur: { reference: 'centre-emprise-v1', batimentId: 'BATIMENT0000000312987650', pieces: [
+      { nom: 'Séjour', niveau: 'L0', surfaceM2: 28.4, statut: 'lu', anneau: [[-5, -3], [1, -3], [1, 2], [-5, 2]] },
+      { nom: 'x', niveau: 'L0', surfaceM2: 3, statut: 'lu', anneau: [[0, 0], [1, 0]] },
+    ] },
+  };
+  const p = lireStudio(resume, 'plan.pdf', Date.UTC(2026, 10, 18))!;
+  assert.equal(p.interieur!.pieces.length, 1);
+  const c = ctxPlan(p);
+  const j = JSON.parse(String(c.plan_lu_interieur));
+  assert.equal(j.reference, 'centre-emprise-v1');
+  assert.equal(j.batiment_id, 'BATIMENT0000000312987650');
+  assert.deepEqual(j.pieces[0].anneau[0], [-5, -3]);
+  const sans = lireStudio({ ...resume, interieur: undefined }, 'plan.pdf', 0)!;
+  assert.equal(sans.interieur, null);
+  assert.equal(ctxPlan(sans).plan_lu_interieur, null);
+});

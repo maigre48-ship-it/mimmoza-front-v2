@@ -55,6 +55,8 @@ export interface PhotoProjet {
   readonly idu: string | null;
   /** LOT G9 : date de l'accord explicite (mode 'bouton' seulement, voir ACCORD_PHOTO_JOINTE) ; absent sinon. */
   readonly accord_le?: string | null;
+  /** FINITIONS 18/11 : date du refus explicite (« Non, ne pas utiliser ma photo ») en mode 'bouton' ; absent sinon. */
+  readonly accord_refuse_le?: string | null;
 }
 
 /** Photo jointe au message de CE tour (posée par le serveur à partir des pièces jointes ; jamais par le modèle). */
@@ -88,8 +90,8 @@ export function photoDuTourGardee(
  *   · 'implicite' (ACTUEL) : joindre la photo avec une demande d'agrandissement vaut accord ; la mention « visages et
  *     plaques ne sont pas floutés » est affichée sous la carte du parcours (lignesPhotoProjet) et dans le devis ;
  *   · 'bouton' : la photo est gardée, mais ne sert de fond qu'une fois `accord_le` renseigné (clic « J'accepte… »,
- *     texte TEXTE_CONSENTEMENT de photoClientLogique.ts). ATTENTION : ce bouton n'existe PAS encore dans le chat ;
- *     passer à 'bouton' sans le lot qui l'ajoute empêcherait toute image sur la photo jointe (photo de la rue à la place).
+ *     carte « Utiliser cette photo pour l'image ? » du chat, lot FINITIONS du 18/11). Passer à 'bouton' = changer la
+ *     constante ci-dessous : la carte s'affiche alors sous le parcours tant que la personne n'a pas répondu.
  */
 export type ModeAccordPhotoJointe = 'implicite' | 'bouton';
 export const ACCORD_PHOTO_JOINTE: ModeAccordPhotoJointe = 'implicite';
@@ -97,6 +99,43 @@ export const ACCORD_PHOTO_JOINTE: ModeAccordPhotoJointe = 'implicite';
 /** La photo du projet peut-elle servir de fond, selon le mode d'accord ? Pur. */
 export function photoProjetUtilisableCommeFond(p: PhotoProjet, mode: ModeAccordPhotoJointe = ACCORD_PHOTO_JOINTE): boolean {
   return mode === 'implicite' || (typeof p.accord_le === 'string' && p.accord_le.length > 0);
+}
+
+// ── FINITIONS 18/11 — carte d'accord (mode 'bouton') ─────────────────────────────────────────────────────────
+/** Textes EXACTS envoyés par les deux boutons de la carte (le serveur les reconnaît ; le site les affiche). */
+export const CHOIX_ACCORD_PHOTO = {
+  oui: 'Oui, utiliser ma photo pour l’image',
+  non: 'Non, ne pas utiliser ma photo',
+} as const;
+export const TITRE_ACCORD_PHOTO = 'Utiliser cette photo pour l’image ?';
+export const TEXTE_ACCORD_PHOTO = 'Votre photo servirait de fond à l’image du projet. Elle reste dans votre espace privé et ne sert qu’à vos rendus. Les visages et les plaques d’immatriculation ne sont pas floutés.';
+
+const normAccord = (t: string) => (t ?? '').normalize('NFC').replace(/[’']/g, '\'').replace(/\s+/g, ' ').trim().replace(/[.!]+$/, '').toLowerCase();
+
+/** Le message est-il la réponse d'un bouton de la carte d'accord ? Pur (comparaison exacte, aux apostrophes près). */
+export function accordPhotoDuTexte(texte: string): 'oui' | 'non' | null {
+  const t = normAccord(texte);
+  if (t === normAccord(CHOIX_ACCORD_PHOTO.oui)) return 'oui';
+  if (t === normAccord(CHOIX_ACCORD_PHOTO.non)) return 'non';
+  return null;
+}
+
+/** Carte d'accord à afficher (mode 'bouton', photo sans réponse), ou null. Pur. */
+export function demandeAccordPhoto(p: PhotoProjet | null, mode: ModeAccordPhotoJointe = ACCORD_PHOTO_JOINTE): { titre: string; texte: string; choix: readonly [string, string] } | null {
+  if (!p || mode !== 'bouton' || p.accord_le || p.accord_refuse_le) return null;
+  return { titre: TITRE_ACCORD_PHOTO, texte: TEXTE_ACCORD_PHOTO, choix: [CHOIX_ACCORD_PHOTO.oui, CHOIX_ACCORD_PHOTO.non] };
+}
+
+/** Applique la réponse d'un bouton à la photo du projet (horodatage ISO). Sans réponse reconnue : inchangée. Pur. */
+export function appliquerAccordPhoto(p: PhotoProjet | null, texte: string, horodatageIso: string): { photo: PhotoProjet | null; reponse: 'oui' | 'non' | null; ligne: string | null } {
+  const reponse = accordPhotoDuTexte(texte);
+  if (!p || !reponse) return { photo: p, reponse: null, ligne: null };
+  if (reponse === 'oui') {
+    const { accord_refuse_le: _r, ...reste } = p;
+    return { photo: { ...reste, accord_le: horodatageIso }, reponse, ligne: 'C’est noté : votre photo servira de fond à l’image du projet (visages et plaques non floutés).' };
+  }
+  const { accord_le: _a, ...reste } = p;
+  return { photo: { ...reste, accord_refuse_le: horodatageIso }, reponse, ligne: 'C’est noté : votre photo ne sera pas utilisée. L’image se fera sur une autre vraie photo (photo de la rue, ou une photo que vous enverrez).' };
 }
 
 /** Dépôt de la photo d'origine dans l'espace privé de l'utilisateur ; renvoie le chemin, ou null en cas d'échec. */
@@ -136,6 +175,7 @@ export function lirePhotoProjet(v: unknown): PhotoProjet | null {
     depuis_terrain: typeof v.depuis_terrain === 'boolean' ? v.depuis_terrain : null,
     idu: typeof v.idu === 'string' && RE_IDU.test(v.idu) ? v.idu : null,
     ...(typeof v.accord_le === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v.accord_le) ? { accord_le: v.accord_le.slice(0, 32) } : {}),
+    ...(typeof v.accord_refuse_le === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v.accord_refuse_le) ? { accord_refuse_le: v.accord_refuse_le.slice(0, 32) } : {}),
   };
 }
 
@@ -327,9 +367,13 @@ export async function recevoirPhoto(photo: PhotoDuTour, userId: string, depot: D
 }
 
 /** Lignes affichées sous la carte du parcours à propos de la photo du projet (sans nom interne). */
-export function lignesPhotoProjet(p: PhotoProjet, nouvelle: boolean, parcelle: ParcelleDeLaPhoto | null): string[] {
+export function lignesPhotoProjet(p: PhotoProjet, nouvelle: boolean, parcelle: ParcelleDeLaPhoto | null, mode: ModeAccordPhotoJointe = ACCORD_PHOTO_JOINTE): string[] {
   const l: string[] = [];
-  if (nouvelle) l.push(`Votre photo${p.nom ? ` « ${p.nom} »` : ''} servira de fond à l’image de l’extension (conservée dans votre espace privé, utilisée seulement pour vos rendus ; visages et plaques ne sont pas floutés).`);
+  if (nouvelle) {
+    l.push(mode === 'bouton'
+      ? `Votre photo${p.nom ? ` « ${p.nom} »` : ''} est gardée dans votre espace privé ; elle ne servira de fond à l’image qu’avec votre accord (carte ci-dessous).`
+      : `Votre photo${p.nom ? ` « ${p.nom} »` : ''} servira de fond à l’image de l’extension (conservée dans votre espace privé, utilisée seulement pour vos rendus ; visages et plaques ne sont pas floutés).`);
+  }
   if (parcelle) l.push(`Parcelle ${parcelle.idu} retrouvée d’après la ${parcelle.methode}. Si ce n’est pas votre maison, donnez-moi son adresse.`);
   if (p.depuis_terrain === true) l.push('Votre photo semble prise depuis votre terrain : « à gauche » et « à droite » s’entendent toujours vus depuis la rue. Si vous parliez de la gauche de la photo, corrigez le côté.');
   if (nouvelle && !p.position) l.push('La photo ne contient pas sa position : si l’extension ne peut pas être placée précisément dessus, je vous demanderai d’indiquer quelques points de la maison sur la photo.');

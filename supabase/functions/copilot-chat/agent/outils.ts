@@ -333,6 +333,7 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
         additionalProperties: false,
       },
       ouvrir_brief: { type: 'boolean', description: "true pour rouvrir l'habillage dans l'Espace 3D (modifier l'habillage) ; rien n'est chiffré ni lancé." },
+      plans_seuls: { type: 'boolean', description: "true quand l'utilisateur demande les PLANS de son extension ou de sa maison SANS image (« Recevoir les plans ») : type « image », devis des plans seuls, même accord en deux temps." },
       confirmer: { type: 'boolean', description: "true UNIQUEMENT après accord explicite de l'utilisateur sur le devis, dans un tour suivant." },
       jeton_devis: { type: 'string', description: 'Jeton renvoyé par le premier appel (devis). Facultatif : sans lui, le serveur reprend le dernier devis présenté dans la conversation.' },
     },

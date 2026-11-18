@@ -236,7 +236,7 @@ Deno.test('G7-3 : 4 retouches en parlant sur P0646 → variantes V2…V5 recalcu
   na.equal(v1.etape, 'termine');
   na.equal(v1.vue.extension.verdict, 'ok');
   na.equal(v1.etat.variante, 1);
-  na.deepEqual(v1.attendues, [QR.retouche.id], 'suggestions de variante en puces');
+  na.deepEqual(v1.attendues, [QR.retouche.id, 'x3_plans'], 'suggestions de variante en puces (+ plans sans image, FINITIONS 18/11)');
   na.match(String(v1.bloc_choix), /"Façade en bardage bois clair".*"Toit plat".*"1 m plus large".*"Sans baie vitrée"/);
   na.match(v1.texte_affiche, /\*\*Pour une variante\*\*, écrivez simplement ce que vous voulez changer/);
   na.deepEqual(v1.variantes.map((v) => [v.n, v.verdict]), [[1, 'placee']]);

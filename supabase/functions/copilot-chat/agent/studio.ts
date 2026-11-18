@@ -82,7 +82,7 @@ import {
 // LOT G3 — photo de la maison envoyée dans la conversation : fond de l'image de l'extension.
 import { optionPhotoClient, photoProjetDesSorties, photoProjetUtilisableCommeFond, type PhotoProjet } from './photo-projet.ts';
 // LOT G10b — maison neuve : image et plans de la maison du parcours (aucune 3D préparée, aucun immeuble).
-import { confirmerRenduMaison, devisRenduMaison, maisonDeLaConversation, MESSAGE_MAISON_SANS_3D, MESSAGE_PHOTO_REQUISE_MAISON, type OutilsStudio } from './studio-maison.ts';
+import { confirmerRenduMaison, devisRenduMaison, empreinteProjetMaison, maisonDeLaConversation, MESSAGE_MAISON_SANS_3D, MESSAGE_PHOTO_REQUISE_MAISON, type OutilsStudio } from './studio-maison.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -1031,6 +1031,8 @@ export interface ChargeJeton {
   rq: string;
   /** Brief d'habillage validé, forme compacte (encoderBrief) ; absent des devis antérieurs à E1-brief. */
   b?: string;
+  /** FINITIONS 18/11 — devis des PLANS SEULS (aucune image) : la fiche du travail portera `plans_seuls: true`. */
+  ps?: true;
 }
 
 const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -1609,6 +1611,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     // LOT G6 — avec le plan de la maison lu (`existant_lu`) : repris au cartouche des plans de l'extension.
     if (ext) fiche = ficheAvecProjetExtension(fiche, ext.projet, ext.existantLu ?? null);
     fiche.devis_id = j.id;
+    // FINITIONS 18/11 — plans seuls : la machine de rendu saute l'image et ne produit que les plans.
+    if (j.ps) fiche.plans_seuls = true;
     let t: TravailLu;
     try {
       t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: j.t, fiche, options: j.o });
@@ -1623,7 +1627,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     return {
       status: 'ok', source: SOURCE_STUDIO,
       data: { lance: true, ...vueTravail(t), machine: machine.phrase, suivi: 'studio_etat_rendu (sans argument : le plus récent de la conversation)' },
-      message: 'Rendu ENREGISTRÉ dans la file (statut « en attente » tant que la machine de rendu ne l’a pas pris). ' +
+      message: (j.ps ? 'Plans (SANS image) ENREGISTRÉS dans la file : n’annonce aucune image. ' : '') + 'Rendu ENREGISTRÉ dans la file (statut « en attente » tant que la machine de rendu ne l’a pas pris). ' +
         'Dis qu’il est enregistré ; n’annonce aucun démarrage ni délai qui ne soit pas renvoyé. Le suivi s’affiche aussi dans le Dossier 3D.' +
         ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' +
         MESSAGE_ETAT_EN_DIRECT,
@@ -1631,6 +1635,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   }
 
   // ── Temps 1 : devis, AUCUNE écriture ─────────────────────────
+  // FINITIONS 18/11 — « Recevoir les plans » : devis des plans seuls (extension ou maison neuve placée), sans image.
+  if (input.plans_seuls === true) return await devisPlansSeuls(env, uid, maintenant);
   // Brief créatif : bloc du message de l'utilisateur, relu par le serveur (prioritaire sur le modèle).
   const carte = env.briefCarte ?? null;
   if (carte && !carte.ok) return erreur(`Le brief de la carte n’a pas été accepté (${carte.erreur}). RIEN N’A ÉTÉ LANCÉ. Propose à l’utilisateur de refaire ses choix dans la carte d’habillage de l’Espace 3D.`);
@@ -1860,6 +1866,86 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       "heure limite en heure de Paris) et demande l'accord. Si l'utilisateur répond OUI dans son PROCHAIN message, rappelle studio_lancer_rendu avec " +
       "confirmer: true (le jeton_devis est facultatif : le serveur retrouve ce devis). Ne refais pas de devis avant de confirmer. " +
       "N'annonce jamais le rendu comme lancé avant un statut ok." + noteBrief + noteReserves + noteCarte + noteFond,
+  };
+}
+
+// ── FINITIONS 18/11 — plans seuls (sans image) ─────────────────────────────
+
+/** Texte EXACT de la puce « Recevoir les plans » (le serveur l'oriente vers le devis des plans seuls). */
+export const DEMANDE_PLANS_SEULS = 'Recevoir les plans de mon projet';
+
+/** Le message demande-t-il les plans SANS image ? (puce, ou formulation explicite). Pur. */
+export function demandePlansSeuls(texte: string): boolean {
+  const t = (texte ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (t.includes(DEMANDE_PLANS_SEULS.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase())) return true;
+  return /\b(?:recevoir|envoie[sz]?|donne[sz]?|je veux|j'aimerais|juste|seulement|uniquement)\b.{0,30}\bplans?\b/.test(t)
+    && !/\bplan (?:de financement|d'affaires|local d'urbanisme)\b/.test(t)
+    && /\b(?:sans (?:l')?image|plans? (?:seuls?|uniquement)|seulement les plans|juste les plans|uniquement les plans|recevoir les plans)\b/.test(t);
+}
+
+/**
+ * Devis des PLANS SEULS : projet placé de la conversation (maison neuve, sinon extension), aucune image. Options d'image
+ * inchangées côté base (fond « étude », maison conservée pour une extension) ; c'est la fiche qui dira `plans_seuls`.
+ */
+async function devisPlansSeuls(env: EnvStudio, uid: string, maintenant: number): Promise<ResultatOutil> {
+  const maison = await maisonDeLaConversation(env, uid);
+  const extension = maison ? null : await projetExtensionConversation(env, uid);
+  if (!maison && !extension) return erreur('RIEN N’A ÉTÉ LANCÉ. Aucun projet placé dans cette conversation : les plans se préparent une fois l’extension ou la maison placée dans le parcours.', 'partial');
+  if (extension && !RENDU_EXTENSION_OUVERT) return erreur(MESSAGE_RENDU_EXTENSION_FERME, 'partial');
+  if (extension && !extension.placee) return erreur(MESSAGE_EXTENSION_NON_PLACEE, 'partial');
+  if (extension && !toitConfirme(extension.projet)) return erreur(MESSAGE_TOIT_A_CONFIRMER, 'partial');
+  const brut: Obj = { fond: 'etude' };
+  const v0 = validerOptionsRendu('image', brut, uid);
+  if (!('valeur' in v0)) return erreur(`${'erreur' in v0 ? v0.erreur : 'Options refusées.'} RIEN N’A ÉTÉ LANCÉ.`);
+  const avecExistant = extension ? optionsAvecExistant(v0.valeur, extension.existant) : { ok: true as const, valeur: v0.valeur };
+  if ('erreur' in avecExistant) return erreur(`${avecExistant.erreur} RIEN N’A ÉTÉ LANCÉ.`);
+  const options = avecExistant.valeur;
+  if ((await env.depot.typeRenduAutorise('image', options)) === false) return refusImage();
+  let source: ChargeJeton['s'];
+  let libelle: string;
+  if (maison) {
+    source = { genre: 'maison', idu: maison.projet.idu, empreinte: await empreinteProjetMaison(maison.projet, { jsonCanonique, sha256Hex }) };
+    libelle = `maison neuve placée dans le parcours (${maison.projet.idu})`;
+  } else {
+    // Même 3D préparée que pour l'image de l'extension (parcelle DU PARCOURS).
+    const iduExt = await iduExtensionConversation(env, uid);
+    const cExt = iduExt ? await env.depot.conception(uid, { idu: iduExt }) : null;
+    const src = await resoudreSource({ source: 'preparation', ...(cExt ? { conception_id: cExt.id } : {}) }, env);
+    if (!('source' in src)) return 'res' in src ? src.res : erreur('Rien à rendre. RIEN N’A ÉTÉ LANCÉ.', 'not_found');
+    if (src.source.genre !== 'preparation') return erreur(MESSAGE_EXTENSION_VERSION, 'partial');
+    source = { genre: 'preparation', preparation_id: src.source.preparation.id };
+    libelle = libelleSource(src.source);
+  }
+  const actifs = await env.depot.travauxActifs(uid);
+  if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
+  const memeDevis = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete && c.t === 'image' && c.ps === true
+    && jsonCanonique(c.o) === jsonCanonique(options) && jsonCanonique(c.s) === jsonCanonique(source);
+  const existant = await devisDeLaConversation(env, uid, memeDevis, true);
+  const charge: ChargeJeton = existant?.charge ?? {
+    v: 1, id: crypto.randomUUID(), u: uid, t: 'image', o: options, s: source, ps: true,
+    c: env.conversationId!, iat: maintenant, exp: maintenant + DEVIS_VALIDITE_MS, rq: env.requete,
+  };
+  const stats = await env.depot.statsFile();
+  const devis = {
+    rendu: `Plans ${maison ? 'de la maison' : 'de l’extension'}, SANS image — PDF A3 (plan de masse coté, niveaux, façades, coupe) et fichiers DXF pour l’architecte`,
+    source: libelle,
+    jetons: 0,
+    cout_jetons: 'Aucun jeton débité : les plans ne sont pas facturés aujourd’hui (seul ce message du chat est compté, comme d’habitude).',
+    calcul_gpu: 'Calcul sur la machine de rendu Mimmoza, sans image ni rendu 3D ; aucun service payant externe.',
+    duree: 'quelques minutes une fois le travail démarré — estimation, non mesurée pour ce projet',
+    file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
+    machine_de_rendu: etatMachine(stats, maintenant).phrase,
+    avertissements: ['Plans indicatifs, tirés du même projet que l’image : à faire valider par un professionnel avant tout dépôt.', 'Vous pourrez demander l’image ensuite : elle partira du même projet.'],
+    valable_jusqu_a: `${heureParis(charge.exp)} (heure de Paris)`,
+  };
+  const jeton = existant?.jeton ?? await signerJeton(charge, env.secret!);
+  return {
+    status: 'confirmation_requise', source: SOURCE_STUDIO,
+    data: { jeton_devis: jeton, confirmation_requise: true, ...(existant ? { deja_presente: true } : {}), type: 'image', plans_seuls: true, options, devis },
+    message: existant
+      ? "RIEN N'A ÉTÉ LANCÉ. Ce devis des PLANS a DÉJÀ été présenté et reste valable. Si le DERNIER message de l'utilisateur donne son accord, rappelle IMMÉDIATEMENT studio_lancer_rendu avec confirmer: true ; sinon rappelle brièvement le devis et attends sa réponse."
+      : "RIEN N'A ÉTÉ LANCÉ. Ceci est un DEVIS pour les PLANS SEULS (aucune image). Présente-le en quelques lignes (ce qui sera livré, jetons, temps, file, état de la machine de rendu, avertissements, heure limite) et demande l'accord. " +
+        "Si l'utilisateur répond OUI dans son PROCHAIN message, rappelle studio_lancer_rendu avec confirmer: true. Ne promets aucune image.",
   };
 }
 

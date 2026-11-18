@@ -15,7 +15,7 @@ import { batimentV2Maison, clausesMaison, menuiseriesStudio, type ProjetMaison }
 import { CLES_FOND, fondDe, LIBELLES_FOND } from '../../../../src/lib/studio/fondImage.ts';
 import { construireProjetChat } from '../../../../src/spaces/copilot/studio3d/projetChat.ts';
 import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
-import { optionPhotoClient, photoProjetDesSorties, type PhotoProjet } from './photo-projet.ts';
+import { optionPhotoClient, photoProjetDesSorties, photoProjetUtilisableCommeFond, type PhotoProjet } from './photo-projet.ts';
 import { projetMaisonDesSorties } from './maison-neuve.ts';
 import type { ResultatOutil } from './types.ts';
 import type { BriefCarte, ChargeJeton, EnvStudio, TravailLu, Validation } from './studio.ts';
@@ -144,6 +144,10 @@ export function avertissementsMaison(p: ProjetMaison, photo: PhotoProjet | null)
   return l;
 }
 
+/** FINITIONS 18/11 — rendu « image sur photo » refusé par la configuration : phrase SANS terme technique (le modèle la
+ *  recopie souvent telle quelle). Le diagnostic précis (type de rendu non autorisé côté données) est dans le journal. */
+const MESSAGE_IMAGE_PAS_OUVERTE = 'L’image de la maison sur une photo n’est pas encore ouverte sur Mimmoza. RIEN N’A ÉTÉ LANCÉ. Dis-le simplement à l’utilisateur, sans détail technique, et propose les plans de la maison, qui ne dépendent pas de l’image.';
+
 function erreur(message: string, status = 'error'): ResultatOutil {
   return { status, source: SOURCE_STUDIO_MAISON, message };
 }
@@ -165,13 +169,14 @@ export async function devisRenduMaison(type: unknown, input: Obj, env: EnvStudio
   let demande: Obj;
   let noteFond: string;
   if (fondCarte && fondDe(fondCarte) !== 'etude') { demande = { ...sansFond, ...fondCarte }; noteFond = 'Fond de l’image : celui que vous venez de choisir.'; }
-  else if (m.photo) { demande = { ...sansFond, fond: 'photo_client', photo_client: optionPhotoClient(m.photo) }; noteFond = 'Fond de l’image : la photo du terrain envoyée dans la conversation.'; }
+  // FINITIONS 18/11 — la photo jointe ne sert de fond qu'avec l'accord prévu (ACCORD_PHOTO_JOINTE).
+  else if (m.photo && photoProjetUtilisableCommeFond(m.photo)) { demande = { ...sansFond, fond: 'photo_client', photo_client: optionPhotoClient(m.photo) }; noteFond = 'Fond de l’image : la photo du terrain envoyée dans la conversation.'; }
   else { demande = { ...sansFond, fond: 'photo_rue' }; noteFond = 'Fond de l’image : la photo de la rue (Panoramax / IGN, Licence Ouverte), seule vraie photo disponible.'; }
   const opts = o.validerOptionsRendu('image', demande, uid);
   if (!('valeur' in opts)) return erreur(`${'erreur' in opts ? opts.erreur : 'Options refusées.'} RIEN N’A ÉTÉ LANCÉ.`);
   if (fondDe(opts.valeur) === 'etude') return erreur('RIEN N’A ÉTÉ LANCÉ. Une image de maison neuve ne se fait que sur une vraie photo du terrain : demande à l’utilisateur une photo prise depuis la rue.', 'partial');
   if ((await env.depot.typeRenduAutorise('image', opts.valeur)) === false) {
-    return erreur('L’image sur une photo n’est pas encore activée dans la base. RIEN N’A ÉTÉ LANCÉ.', 'not_configured');
+    return erreur(MESSAGE_IMAGE_PAS_OUVERTE, 'not_configured');
   }
   const actifs = await env.depot.travauxActifs(uid);
   if (actifs >= o.nombreMaxTravauxActifs) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${o.nombreMaxTravauxActifs} au plus) : attendez qu’un se termine.`);
@@ -220,11 +225,12 @@ export async function confirmerRenduMaison(j: ChargeJeton, env: EnvStudio, o: Ou
   if (!m || m.projet.idu !== s.idu || await empreinteProjetMaison(m.projet, o) !== s.empreinte) {
     return erreur('RIEN N’A ÉTÉ LANCÉ. Le projet de maison a changé depuis ce devis (ou n’est plus lisible) : rappelle l’outil SANS confirmer pour établir le devis de la maison actuelle, présente-le et attends l’accord.');
   }
-  if ((await env.depot.typeRenduAutorise('image', j.o)) === false) return erreur('L’image sur une photo n’est pas encore activée dans la base. RIEN N’A ÉTÉ LANCÉ.', 'not_configured');
+  if ((await env.depot.typeRenduAutorise('image', j.o)) === false) return erreur(MESSAGE_IMAGE_PAS_OUVERTE, 'not_configured');
   const maintenant = (env.maintenant ?? Date.now)();
   const f = ficheMaison(m.projet, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine);
   if (!('valeur' in f)) return erreur(`${'erreur' in f ? f.erreur : 'Fiche refusée.'} RIEN N’A ÉTÉ LANCÉ.`);
-  const fiche: Obj = { ...f.valeur, devis_id: j.id };
+  // FINITIONS 18/11 — devis des plans seuls : la machine de rendu ne produit que les plans (aucune image).
+  const fiche: Obj = { ...f.valeur, devis_id: j.id, ...(j.ps ? { plans_seuls: true } : {}) };
   let t: TravailLu;
   try {
     t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: 'image', fiche, options: j.o });
@@ -237,7 +243,7 @@ export async function confirmerRenduMaison(j: ChargeJeton, env: EnvStudio, o: Ou
   return {
     status: 'ok', source: SOURCE_STUDIO_MAISON,
     data: { lance: true, ...o.vueTravail(t), machine: machine.phrase, suivi: 'studio_etat_rendu (sans argument : le plus récent de la conversation)' },
-    message: 'Rendu de la maison ENREGISTRÉ dans la file. Dis qu’il est enregistré ; n’annonce aucun démarrage, délai ni image qui ne soit pas renvoyé. ' +
+    message: (j.ps ? 'Plans de la maison (SANS image) ENREGISTRÉS dans la file : n’annonce aucune image. ' : '') + 'Rendu de la maison ENREGISTRÉ dans la file. Dis qu’il est enregistré ; n’annonce aucun démarrage, délai ni image qui ne soit pas renvoyé. ' +
       'Le suivi, puis l’image (si la maison est placée avec précision dans la photo) et les plans, s’affichent dans une carte du chat sous ce message.' + o.messageEtatEnDirect,
   };
 }

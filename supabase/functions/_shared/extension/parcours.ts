@@ -839,6 +839,16 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     ? (['gauche', 'droite', 'arriere', 'rue'] as CoteFacade[]).filter((c) => c !== etat.facade
       && calculerExtension({ maison: m, demande: { ...demande, facade: { cote: c } }, parcelle: pm, regles: rm.regles, options: optionsMoteur }).ok)
     : [];
+  // FINITIONS 18/11 — refus sur TOUS les côtés avec ces dimensions : les plus grandes dimensions qui passent du côté
+  // demandé (calculées par le moteur, chacune vérifiée), proposées en puces ; rien n'est deviné ni arrondi vers le haut.
+  const dimsQuiPassent: { largeurM: number; profondeurM: number }[] = !res.ok && !refusHauteur && !autresCotes.length
+    && (type === 'laterale' || type === 'arriere') && etat.facade && etat.largeurM && etat.profondeurM
+    ? dimensionsQuiPassent(etat.largeurM, etat.profondeurM, (l, p) => calculerExtension({
+      maison: m, demande: { ...demande, dimensions: { ...demande.dimensions, largeurM: D(l, 'confirmee', SOURCE_SAISIE), profondeurM: D(p, 'confirmee', SOURCE_SAISIE) } },
+      parcelle: pm, regles: rm.regles, options: optionsMoteur,
+    }).ok)
+    : [];
+  const sansIssue = !res.ok && !refusHauteur && !autresCotes.length && (type === 'laterale' || type === 'arriere') && !!etat.largeurM && !!etat.profondeurM;
   const sdpC = res.surfaces?.surfacePlancherCreeeM2 ?? null;
   const empC = res.surfaces ? res.surfaces.empriseCreeeM2.valeur : type === 'surelevation' ? 0 : (etat.largeurM! * etat.profondeurM!);
   const regime = regimeIndicatif({
@@ -910,7 +920,9 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     '',
     res.ok
       ? `L’extension se place sans refus${sdpC ? ` : surface de plancher créée ESTIMÉE ≈ ${fr(sdpC.valeur, 1)} m² (entre ${fr(sdpC.minM2, 0)} et ${fr(sdpC.maxM2, 0)} m²)` : ''}${res.surfaces ? `, emprise au sol créée ${fr(res.surfaces.empriseCreeeM2.valeur, 1)} m²` : ''}.`
-      : `L’extension **ne peut pas être placée** ainsi :\n${refus.map((r) => `- ${r}`).join('\n')}${vueExt.suggestion ? `\n\n${vueExt.suggestion}` : ''}${autresCotes.length ? `\n\nAvec les mêmes dimensions et la même hauteur, l’extension se place sur ${autresCotes.length > 1 ? 'ces côtés' : 'ce côté'} de la maison (vu de la rue) : ${autresCotes.map((c) => OPTIONS_FACADE[c].toLowerCase()).join(', ')}. Choisissez-en un ci-dessous.` : ''}`,
+      : `L’extension **ne peut pas être placée** ainsi :\n${refus.map((r) => `- ${r}`).join('\n')}${vueExt.suggestion ? `\n\n${vueExt.suggestion}` : ''}${autresCotes.length ? `\n\nAvec les mêmes dimensions et la même hauteur, l’extension se place sur ${autresCotes.length > 1 ? 'ces côtés' : 'ce côté'} de la maison (vu de la rue) : ${autresCotes.map((c) => OPTIONS_FACADE[c].toLowerCase()).join(', ')}. Choisissez-en un ci-dessous.` : ''}${sansIssue ? (dimsQuiPassent.length
+        ? `\n\nAvec ces dimensions, l’extension ne se place sur aucun côté de la maison. Côté ${COTE_LISIBLE[etat.facade!]}, à la même hauteur, ces dimensions passent (vérifiées par le calcul) : ${dimsQuiPassent.map((d) => `${fr(d.largeurM, 2)} × ${fr(d.profondeurM, 2)} m`).join(', ')}. Choisissez-en une ci-dessous, ou écrivez d’autres dimensions.`
+        : `\n\nMême réduite jusqu’à ${fr(DIM_MIN_PROPOSEE_M, 0)} × ${fr(DIM_MIN_PROPOSEE_M, 0)} m, l’extension ne se place pas de ce côté : essayez un autre type d’extension (surélévation, par exemple) ou envoyez-moi les règles d’implantation de votre commune.`) : ''}`,
     ...(alertes.length ? ['', ...alertes.map((a) => `- ${a}`)] : []),
     '',
     ...(ctx.secteur ? [
@@ -936,16 +948,59 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   // LOT X8b — extension plus haute que la maison : les deux choix qui la rendent plaçable, en puces (jamais « cochez »).
   const qHauteur: QuestionBloc[] = refusHauteur
     ? [{ id: Q.hauteur.id, libelle: Q.hauteur.libelle, options: [HAUTEUR_MEME, OPTIONS_HAUTEUR[1]], multiple: false }]
-    : autresCotes.length ? [{ id: Q.facade.id, libelle: Q.facade.libelle, options: autresCotes.map((c) => OPTIONS_FACADE[c]), multiple: false }] : [];
+    : autresCotes.length ? [{ id: Q.facade.id, libelle: Q.facade.libelle, options: autresCotes.map((c) => OPTIONS_FACADE[c]), multiple: false }]
+    : dimsQuiPassent.length ? [{ id: Q.dimensions.id, libelle: Q.dimensions.libelle, options: dimsQuiPassent.map((d) => `${fr(d.largeurM, 2)} × ${fr(d.profondeurM, 2)} m`), multiple: false }] : [];
   // LOT G7 — questions d'une retouche ambiguë ; sinon, extension placée : suggestions de variantes (puces), le texte libre
   // restant possible (« en bardage bois clair », « 1 m plus large »…).
   const qRetouche: QuestionBloc[] = questionsRetouche.map((q) => ({ id: q.id, libelle: q.libelle, options: [...q.options], multiple: false }));
   const qSuggestions: QuestionBloc[] = !qRetouche.length && !qHauteur.length && res.ok && projet
     ? [{ id: QR.retouche.id, libelle: QR.retouche.libelle, options: suggestionsRetouche(etat), multiple: false }] : [];
   if (qSuggestions.length) lignesTexte.push('', '**Pour une variante**, écrivez simplement ce que vous voulez changer (par exemple « en bardage bois clair », « 1 m plus large », « toit plat », « sans baie ») : je recalcule l’extension avec les mêmes règles, et l’image garde la même photo et le même placement.');
-  return sortie('termine', lignesTexte.join('\n'), [...qRetouche, ...qHauteur, ...qSuggestions], {
+  // FINITIONS 18/11 — extension placée : les plans peuvent être demandés SANS image (puce « Recevoir les plans »).
+  const qPlans: QuestionBloc[] = res.ok && projet && !qRetouche.length && !qHauteur.length
+    ? [{ id: Q_PLANS_SEULS.id, libelle: Q_PLANS_SEULS.libelle, options: [OPTION_PLANS_SEULS], multiple: false }] : [];
+  return sortie('termine', lignesTexte.join('\n'), [...qRetouche, ...qHauteur, ...qSuggestions, ...qPlans], {
     projet, optionTravail: projet ? { existant: optionTravailExistant(projet) } : null, erreursProjet: 'erreurs' in lu ? lu.erreurs : [],
     regime, resultatMoteur: res, extension: vueExt, regles: rm.lignes, ...(dossier ? { dossier } : {}),
     variante: { n: numeroVariante, changements: changementsVariante, limites: limitesRetouche, vueJardin: retouches?.vueJardin === true, resume: `${vueExt.type}${vueExt.facade ? `, ${vueExt.facade.toLowerCase()}` : ''} — ${vueExt.dimensions} — ${resumeHabillage(etat)}` },
   });
+}
+
+// ── FINITIONS 18/11 — plans sans image ─────────────────────────────────────────────────────────────────────────
+/** Puce de fin de parcours : MÊME texte que DEMANDE_PLANS_SEULS (copilot-chat/agent/studio.ts), reconnu par le serveur. */
+export const OPTION_PLANS_SEULS = 'Recevoir les plans de mon projet';
+export const Q_PLANS_SEULS = { id: 'x3_plans', libelle: 'Plans sans image' } as const;
+
+// ── FINITIONS 18/11 — plus grandes dimensions qui passent ───────────────────────────────────────────────────────
+/** Plus petite largeur / profondeur proposée (une extension habitable plus étroite n'a pas de sens). */
+export const DIM_MIN_PROPOSEE_M = 2;
+const PAS_DIM_M = 0.5;
+const auPas = (x: number) => Math.floor(x / PAS_DIM_M + 1e-9) * PAS_DIM_M;
+
+/**
+ * Grille de candidats au pas de 0,5 m entre 2 m et les dimensions demandées (jamais au-dessus), essayés par surface
+ * décroissante ; chaque candidat est VÉRIFIÉ par `passe` (le moteur), au plus 150 essais. Rend au plus 3 dimensions
+ * qui passent, aucune plus petite dans les deux sens qu'une autre déjà retenue. Pur.
+ */
+export function dimensionsQuiPassent(largeurM: number, profondeurM: number, passe: (l: number, p: number) => boolean, max = 3): { largeurM: number; profondeurM: number }[] {
+  const candidats: { largeurM: number; profondeurM: number }[] = [];
+  for (let L = auPas(largeurM); L >= DIM_MIN_PROPOSEE_M - 1e-9; L -= PAS_DIM_M) {
+    for (let P = auPas(profondeurM); P >= DIM_MIN_PROPOSEE_M - 1e-9; P -= PAS_DIM_M) {
+      const l = Math.round(L * 10) / 10, q = Math.round(P * 10) / 10;
+      if (l === largeurM && q === profondeurM) continue;
+      candidats.push({ largeurM: l, profondeurM: q });
+    }
+  }
+  const ratio = largeurM / profondeurM;
+  candidats.sort((a, b) => b.largeurM * b.profondeurM - a.largeurM * a.profondeurM
+    || Math.abs(a.largeurM / a.profondeurM - ratio) - Math.abs(b.largeurM / b.profondeurM - ratio));
+  const ok: { largeurM: number; profondeurM: number }[] = [];
+  let essais = 0;
+  for (const c of candidats) {
+    if (ok.length >= max || essais >= 150) break;
+    if (ok.some((o) => c.largeurM <= o.largeurM && c.profondeurM <= o.profondeurM)) continue;
+    essais += 1;
+    if (passe(c.largeurM, c.profondeurM)) ok.push(c);
+  }
+  return ok;
 }

@@ -29,7 +29,7 @@ import { lignesHabillage, lireCouverture, projetMaisonDepuisGabarit } from '../.
 import { lireProjetMaison, type CouvertureMaison, type ProjetMaison } from '../../_shared/maisonNeuve/contratMaison.ts';
 import { chercherVoisinesParcelle, facadesVoieDeLaParcelle, type FacadeVoieFiche } from './voisines-parcelle.ts';
 import { consulterSecteurProtege, facadesParVoisines, lireFacadesLues, reglesDeLaConception, urlCadastre, type ConceptionExtension, type DepotExtension, type FacadesVoieLues, type ServicesPatrimoine } from './extension.ts';
-import { parcelleDepuisPhoto, photoProjetDesSorties, pointDansContour, recevoirPhoto, type DepotPhotoProjet, type PhotoDuTour, type PhotoProjet } from './photo-projet.ts';
+import { appliquerAccordPhoto, demandeAccordPhoto, lignesPhotoProjet, parcelleDepuisPhoto, photoProjetDesSorties, pointDansContour, recevoirPhoto, type DepotPhotoProjet, type PhotoDuTour, type PhotoProjet } from './photo-projet.ts';
 import { chercherContourParcelle } from './conception.ts';
 import type { OutilDef, ResultatOutil } from './types.ts';
 
@@ -259,7 +259,7 @@ export async function executerOutilMaisonNeuve(input: Obj, env: EnvMaison): Prom
   try { sorties = await env.depot.sortiesPrecedentes(env.userId, env.conversationId); } catch { sorties = []; }
   const prec = precedentMaison(sorties);
   const dateJour = new Date((env.maintenant ?? Date.now)()).toISOString().slice(0, 10);
-  const texte = env.texteUtilisateur ?? '';
+  let texte = env.texteUtilisateur ?? '';
 
   // Photo du terrain jointe à CE message (EXIF + dépôt privé), sinon celle d'un tour précédent.
   const photoPrecedente = photoProjetDesSorties(sorties);
@@ -267,7 +267,17 @@ export async function executerOutilMaisonNeuve(input: Obj, env: EnvMaison): Prom
   let photo: PhotoProjet | null = recue?.photo ?? photoPrecedente;
   const lignes: string[] = [];
   if (recue?.raison) lignes.push(`Votre photo n’a pas pu être gardée pour l’image : ${recue.raison}.`);
-  if (recue?.photo) lignes.push(`Votre photo${recue.photo.nom ? ` « ${recue.photo.nom} »` : ''} servira de fond à l’image de la maison (conservée dans votre espace privé, utilisée seulement pour vos rendus ; visages et plaques ne sont pas floutés).`);
+  if (recue?.photo) {
+    // FINITIONS 18/11 — même phrase que l'extension, selon le mode d'accord (implicite aujourd'hui ; « bouton » : carte d'accord).
+    const l0 = lignesPhotoProjet(recue.photo, true, null)[0];
+    if (l0) lignes.push(l0.replace('l’image de l’extension', 'l’image de la maison'));
+  }
+  // FINITIONS 18/11 — réponse à la carte « Utiliser cette photo pour l'image ? » (mode 'bouton') : mémorisée avec la
+  // photo ; le message n'est pas relu comme une réponse au parcours.
+  const accordPhoto = appliquerAccordPhoto(photo, texte, new Date((env.maintenant ?? Date.now)()).toISOString());
+  photo = accordPhoto.photo;
+  if (accordPhoto.ligne) lignes.push(accordPhoto.ligne);
+  if (accordPhoto.reponse) texte = '';
 
   // Couverture dite (tuiles, ardoise, zinc) : message reçu, sinon tour précédent.
   const couvDite = lireCouverture(texte);
@@ -412,6 +422,7 @@ export async function executerOutilMaisonNeuve(input: Obj, env: EnvMaison): Prom
       ...(facadesLues ? { facades_voie_lues: facadesLues } : {}),
       ...(facadesDesignees.length ? { cote_rue_designe: facadesDesignees } : {}),
       ...(photo ? { photo_projet: photo } : {}),
+      ...(demandeAccordPhoto(photo) ? { accord_photo_requis: demandeAccordPhoto(photo) } : {}),
       ...(dossierId ? { dossier_parcelle_id: dossierId } : {}),
     },
     message:

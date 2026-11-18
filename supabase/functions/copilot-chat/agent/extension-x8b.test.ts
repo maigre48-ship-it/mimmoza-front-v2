@@ -85,7 +85,7 @@ Deno.test('X8b-1 : l’essai d’Albé (R+1, égout 5,2 m confirmé, latérale g
   na.match(fin.texte, /L’extension se place sans refus/);
   na.doesNotMatch(fin.texte, JARGON);
   // LOT G7 — seules les suggestions de variante restent proposées (aucune question bloquante).
-  na.deepEqual(fin.attendues, ['x3_retouche']);
+  na.deepEqual(fin.attendues, ['x3_retouche', 'x3_plans']); // FINITIONS 18/11 : + « Recevoir les plans »
   na.ok(fin.projet, 'projet transmissible (image, plans)');
   na.match(phraseDeRelance(fin), /préparer une image de l’extension/);
 });
