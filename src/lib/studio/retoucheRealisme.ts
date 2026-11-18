@@ -26,11 +26,24 @@ export function retoucheDuResultat(resultat: unknown): ResumeRetoucheRealisme | 
 
 const pourcent = (x: number) => `${(Math.round(x * 1000) / 10).toLocaleString('fr-FR')} %`;
 
-/** Lignes de détail de la carte de suivi (rien quand la retouche n'est pas installée). */
+/**
+ * 18/11 — clôture remodélisée en 3D devant le projet (`resultat.extension.cloture.cloture_3d`) : la mention telle que
+ * la machine de rendu l'a écrite (remodélisée, ou grille de la photo gardée et pourquoi). Null si absente.
+ */
+export function clotureRemodelisee(resultat: unknown): { readonly statut: 'remodelisee' | 'repli'; readonly mention: string } | null {
+  if (!estObj(resultat) || !estObj(resultat.extension) || !estObj(resultat.extension.cloture)) return null;
+  const c = resultat.extension.cloture.cloture_3d;
+  if (!estObj(c) || (c.statut !== 'remodelisee' && c.statut !== 'repli') || typeof c.mention !== 'string' || !c.mention) return null;
+  return { statut: c.statut, mention: c.mention.slice(0, 300) };
+}
+
+/** Lignes de détail de la carte de suivi : clôture remodélisée, puis retouche (rien si ni l'une ni l'autre). */
 export function lignesRetoucheRealisme(resultat: unknown): string[] {
+  const c3 = clotureRemodelisee(resultat);
+  const lc = c3 ? [c3.mention] : [];
   const r = retoucheDuResultat(resultat);
-  if (!r || r.statut === 'desactive') return [];
-  const l: string[] = [];
+  if (!r || r.statut === 'desactive') return lc;
+  const l: string[] = [...lc];
   if (r.mention) l.push(r.mention);
   if (r.statut === 'harmonise' && r.iou !== null) {
     const minimum = r.iouMin !== null ? ` (minimum exigé : ${pourcent(r.iouMin)})` : '';

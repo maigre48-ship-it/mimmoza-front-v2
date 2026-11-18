@@ -34,3 +34,17 @@ test('FIN-R1 seuil cité tel que transmis ; absent : pas de minimum inventé', (
   assert.doesNotMatch(sans[1]!, /minimum/);
   assert.match(sans[1]!, /95 %/);
 });
+
+// 18/11 — clôture remodélisée en 3D : la carte le dit (et dit le repli), même sans retouche installée.
+import { clotureRemodelisee } from './retoucheRealisme.ts';
+test('C3D-S1 clôture remodélisée : mention citée avant la retouche ; repli dit ; absente : rien', () => {
+  const ext = (c: unknown) => ({ extension: { cloture: { statut: 'mesuree', cloture_3d: c } } });
+  const m = 'Clôture remodélisée en 3D d’après la photo (barreaux, lances et lisses mesurés), devant le projet seulement.';
+  assert.deepEqual(lignesRetoucheRealisme(ext({ statut: 'remodelisee', mention: m })), [m]);
+  const l = lignesRetoucheRealisme({ ...ext({ statut: 'remodelisee', mention: m }), harmonisation: { statut: 'non_harmonise', mention: 'Image livrée sans retouche.' } });
+  assert.deepEqual(l, [m, 'Image livrée sans retouche.']);
+  assert.match(lignesRetoucheRealisme(ext({ statut: 'repli', mention: 'Clôture non remodélisée (x) : la grille de la photo est gardée.' }))[0]!, /gardée/);
+  assert.equal(clotureRemodelisee(ext({ statut: 'autre', mention: 'x' })), null);
+  assert.equal(clotureRemodelisee({}), null);
+  for (const x of l) assert.doesNotMatch(x, /\blot\b|moteur|worker|serveur/i);
+});
