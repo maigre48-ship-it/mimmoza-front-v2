@@ -162,7 +162,9 @@ export function diagnostiquerPhoto(e: EntreeDiagnostic): LigneDiagnostic[] {
   }
   if (e.octets > OCTETS_PHOTO_MAX) l.push({ niveau: 'bloquant', texte: 'Photo de plus de 20 Mo : elle ne peut pas être envoyée.' });
   if (e.largeur !== null && e.hauteur !== null && e.hauteur > e.largeur) {
-    l.push({ niveau: 'bloquant', texte: 'Photo en portrait : reprenez-la en tenant le téléphone à l’horizontale (paysage), toute la façade sur rue dans le cadre.' });
+    // INTÉGRATION 18/11 — une photo en portrait est acceptée (le placement guidé fonctionne quel que soit le cadrage) ;
+    // seul le conseil demeure : en paysage, la maison entière tient plus souvent dans le cadre.
+    l.push({ niveau: 'avertissement', texte: 'Photo en portrait : elle est acceptée ; vérifiez que la maison entière est dans le cadre, pied des murs et toit compris (en paysage, c’est plus facile).' });
   }
   if (!e.exif.gps) l.push({ niveau: 'a_saisir', texte: 'Pas de position GPS dans la photo (localisation de l’appareil photo désactivée, ou photo transformée) : placez sur le plan l’endroit d’où elle a été prise.' });
   if (e.exif.capDeg === null) l.push({ niveau: 'a_saisir', texte: 'Pas de direction de prise de vue (boussole) dans la photo : indiquez sur le plan vers où vous visiez.' });
@@ -223,7 +225,7 @@ export const TEXTE_CONSENTEMENT = 'J’accepte que cette photo soit envoyée à 
 
 /** Consignes de prise de vue (affichées avant le choix du fichier). */
 export const CONSIGNES_PHOTO: readonly string[] = [
-  'Depuis le trottoir d’en face, téléphone à l’horizontale (paysage).',
+  'Depuis le trottoir d’en face, de préférence téléphone à l’horizontale (paysage).',
   'Objectif principal (×1), sans zoom.',
   'Toute la façade sur rue de la parcelle dans le cadre, avec un peu de trottoir et de ciel.',
   'Localisation de l’appareil photo activée (GPS), de jour.',

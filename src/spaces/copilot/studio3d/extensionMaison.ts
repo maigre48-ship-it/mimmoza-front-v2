@@ -227,8 +227,8 @@ export interface RaisonAValiderCarte { code: string; texte: string }
  * Studio). Le site affiche SES textes : un code inconnu devient « autre » (le texte reçu n'est jamais montré tel quel).
  */
 export const TEXTES_A_VALIDER: Readonly<Record<string, string>> = {
-  calage: 'Le placement de l’extension dans la photo n’est pas assez précis. Utilisez « Ajuster le placement » et cliquez quelques angles de votre maison.',
-  egout: 'La hauteur de la gouttière de votre maison n’est pas sûre (les sources ne concordent pas, ou une seule source non vérifiée). Indiquez-la si vous la connaissez, ou cliquez les angles de la maison à la gouttière dans « Ajuster le placement ».',
+  calage: 'Le placement de l’extension dans la photo n’est pas assez précis. Utilisez « Placer ma maison sur la photo » et touchez 4 à 6 angles de votre maison.',
+  egout: 'La hauteur de la gouttière de votre maison n’est pas sûre (les sources ne concordent pas, ou une seule source non vérifiée). Indiquez-la si vous la connaissez, ou touchez les angles de la maison à la gouttière dans « Placer ma maison sur la photo ».',
   arbre_a_abattre: 'Un arbre de votre terrain devrait être abattu pour construire l’extension à cet endroit. L’image ne le montre pas encore supprimé : elle n’est pas livrée en l’état.',
   arbuste_a_supprimer: 'Un arbuste de votre terrain devrait être supprimé pour construire l’extension à cet endroit. L’image ne le montre pas encore supprimé : elle n’est pas livrée en l’état.',
   invisible: 'Depuis cette photo, l’extension est presque entièrement cachée (par la maison, la clôture ou la végétation). Choisissez une autre photo ou un autre point de vue.',
@@ -239,7 +239,7 @@ export const TEXTES_A_VALIDER: Readonly<Record<string, string>> = {
   gabarit: 'L’extension sort de la parcelle ou du cadre de la photo : vérifiez ses dimensions ou choisissez une autre photo.',
   cloture: 'La hauteur de la clôture sur rue n’a pas pu être mesurée sur la photo : indiquez-la dans la conversation (« Clôture sur rue »).',
   // LOT X9 — aucune vraie photo exploitable : aucune image n'est montrée, une photo de la maison est demandée.
-  photo: 'Aucune image n’est montrée sans vraie photo de votre maison : envoyez une photo prise depuis la rue.',
+  photo: 'Aucune image n’est montrée sans vraie photo de votre maison : envoyez une photo prise depuis la rue ou depuis le jardin.',
   autre: 'Un contrôle automatique demande une vérification avant de livrer l’image.',
 };
 

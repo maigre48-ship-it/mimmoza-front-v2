@@ -237,7 +237,11 @@ export function bandePourMoteur(b: BandesConception): BandeVoie | null {
 // =============================================================
 
 /** Façade sur voie en WGS 84, telle que la lit la machine de rendu. */
-export interface FacadeVoieFiche { debut: [number, number]; fin: [number, number]; longueurM: number; source: 'cadastre-voisines' }
+/**
+ * Limite sur rue transmise à la machine de rendu. `cadastre-voisines` : déduite du cadastre ; `utilisateur` : côté du
+ * contour cadastral désigné par l'utilisateur (puces du parcours d'extension, lot X10 ; intégration du 18/11).
+ */
+export interface FacadeVoieFiche { debut: [number, number]; fin: [number, number]; longueurM: number; source: 'cadastre-voisines' | 'utilisateur' }
 
 const r7 = (v: number) => Math.round(v * 1e7) / 1e7;
 

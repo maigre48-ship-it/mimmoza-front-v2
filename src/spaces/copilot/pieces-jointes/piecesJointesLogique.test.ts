@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  cheminPieceJointe, cheminTexte, dossierConversation, estimerLecture, horodatage, modeEnvoi, nomFichierStockage, resumePiece,
+  acceptPourAppareil, champsOriginal, cheminPieceJointe, cheminTexte, dossierConversation, estimerLecture, horodatage, modeEnvoi, nomFichierStockage, nomOriginal, resumePiece,
   semblerScanne, TAILLE_MAX_PIECE_JOINTE, texteExtraitJson,
 } from './piecesJointesLogique.ts';
 
@@ -69,4 +69,21 @@ test('V1.8 — plafond unique 50 Mo et avertissement de coût', async () => {
   const r = mode({ name: 'plu.pdf', type: 'application/pdf', size: 50 * Mo + 1 });
   assert.match(!r.ok ? r.erreur : '', /dépasse 50 Mo/);
   assert.match(AVERTISSEMENT_TAILLE, /plus le document est lourd, plus sa lecture consomme de jetons/i);
+});
+
+test('G9 : sélecteur — HEIC proposé hors iPhone/iPad (converti dans le navigateur), jamais sur iPhone (iOS convertit)', () => {
+  assert.match(acceptPourAppareil(false), /image\/heic/);
+  assert.match(acceptPourAppareil(false), /\.heif/);
+  assert.doesNotMatch(acceptPourAppareil(true), /heic|heif/);
+  assert.match(acceptPourAppareil(true), /image\/jpeg/);
+});
+
+test('G9 : référence de l’original pour le placement — seulement JPEG/PNG avec chemin ; nom distinct', () => {
+  assert.deepEqual(champsOriginal({ originalPath: 'u/c/x.jpg', originalMediaType: 'image/jpeg' }), { originalPath: 'u/c/x.jpg', originalMediaType: 'image/jpeg' });
+  assert.deepEqual(champsOriginal({ originalPath: 'u/c/x.webp', originalMediaType: 'image/webp' }), {});
+  assert.deepEqual(champsOriginal({}), {});
+  assert.equal(nomOriginal('IMG_1234.jpg'), 'original-IMG_1234.jpg');
+  const a = cheminPieceJointe('U', 'conv', nomOriginal('IMG_1234.jpg'), 'image/jpeg', new Date('2026-11-18T08:00:00Z'));
+  const b = cheminPieceJointe('U', 'conv', 'IMG_1234.jpg', 'image/jpeg', new Date('2026-11-18T08:00:00Z'));
+  assert.notEqual(a, b, 'l’original ne remplace pas la pièce jointe dans le même dossier');
 });

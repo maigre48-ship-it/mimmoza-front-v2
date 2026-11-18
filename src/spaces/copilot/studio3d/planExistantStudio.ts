@@ -23,6 +23,9 @@
 //     relu ici (`lireRetourReleve`) : rien n'est complété ; une valeur illisible est écartée et dite.
 // =============================================================================
 
+// LOT G6 — résumé « plan lu » (échelle, dimensions, emprise / BD TOPO, pièces, points douteux) et contexte du parcours.
+import { contextePlanLu, lirePlanLuStudio, type PlanLuSite } from './planLuChat.ts';
+
 export const EVENEMENT_IMPORTER_PLAN_EXISTANT = 'mimmoza:importer-plan-existant';
 export const FORMAT_PLAN_EXISTANT = 'mimmoza-plan-existant';
 export const FORMAT_PHOTO_CALEE = 'mimmoza-photo-calee';
@@ -262,6 +265,8 @@ export interface SyntheseReleve {
   zonesNonVues: number;
   avertissements: string[];
   ecartes: string[];
+  /** LOT G6 — résumé de la lecture d'un plan fourni (absent pour une photo ou une saisie dans le Studio). */
+  planLu?: PlanLuSite | null;
 }
 
 /** Ordre de prudence : la somme prend le statut le moins sûr de ses termes. */
@@ -323,6 +328,8 @@ export function lireRetourReleve(data: unknown, sessionId: string, maintenantMs:
       baies, facadesVues: facades, zonesNonVues: Array.isArray(r['zonesNonVues']) ? r['zonesNonVues'].length : 0,
       avertissements: (Array.isArray(r['avertissements']) ? r['avertissements'] : []).map((a) => txt(a, 300)).filter((a): a is string => !!a).slice(0, 30),
       ecartes,
+      // LOT G6 — résumé « plan lu » (relu sans rien compléter ; absent pour un relevé sur photo ou une saisie).
+      planLu: lirePlanLuStudio(r['planLu'], txt(r['origine'], 200) ?? '', maintenantMs),
     },
   };
 }
@@ -350,6 +357,8 @@ export function contexteCopilotReleve(s: SyntheseReleve): Record<string, string 
     plan_room_count: s.pieces.length || null,
     plan_rooms: s.pieces.length ? s.pieces.map((p) => `${p.nom ?? 'pièce sans nom'} (${fr(p.surfaceM2, 2)} m², ${LIBELLE_STATUT[p.statutSurface]})`).join(', ') : null,
     plan_anomalies: s.avertissements.length ? s.avertissements.slice(0, 20).join(' | ') : null,
+    // LOT G6 — plan lu (valeurs et statuts) relu par le parcours d'extension.
+    ...(s.planLu ? contextePlanLu(s.planLu) : {}),
   };
 }
 

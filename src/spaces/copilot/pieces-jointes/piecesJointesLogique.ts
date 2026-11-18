@@ -16,8 +16,33 @@
 // =============================================================
 
 export const BUCKET_PIECES_JOINTES = 'copilot-pieces-jointes';
-export const ACCEPT_FILES = 'image/png,image/jpeg,image/gif,image/webp,application/pdf';
+const ACCEPT_BASE = 'image/png,image/jpeg,image/gif,image/webp,application/pdf';
+/**
+ * LOT G9 — formats proposés par le sélecteur. Hors iPhone / iPad, les photos HEIC sont acceptées : elles sont
+ * converties en JPEG dans le navigateur avant l'envoi (src/lib/studio/photoTelephone.ts). Sur iPhone / iPad, on garde
+ * JPEG et PNG seulement : iOS convertit alors lui-même la photo HEIC en JPEG (EXIF gardés) — même règle que la carte
+ * « Votre photo du trottoir » (lot G2).
+ */
+export function acceptPourAppareil(ios: boolean): string {
+  return ios ? ACCEPT_BASE : `${ACCEPT_BASE},image/heic,image/heif,.heic,.heif`;
+}
+const APPAREIL_IOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent ?? '');
+export const ACCEPT_FILES = acceptPourAppareil(APPAREIL_IOS);
 export const TYPES_IMAGE = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/**
+ * LOT G9 — référence de la copie « pour le placement » d'une photo (l'original droit, ou l'original redressé en
+ * pleine résolution), déposée à côté de la pièce jointe quand la copie envoyée au chat a été réduite ou redressée.
+ * Le serveur s'en sert comme photo du projet (fond et placement de l'extension) ; le modèle ne la lit jamais.
+ */
+export function champsOriginal(a: { originalPath?: string; originalMediaType?: string }): { originalPath?: string; originalMediaType?: string } {
+  return typeof a.originalPath === 'string' && (a.originalMediaType === 'image/jpeg' || a.originalMediaType === 'image/png')
+    ? { originalPath: a.originalPath, originalMediaType: a.originalMediaType }
+    : {};
+}
+
+/** Nom de fichier de la copie pour le placement (distinct de la pièce jointe dans le même dossier). */
+export const nomOriginal = (nom: string) => `original-${nom}`;
 
 /**
  * Plafond UNIQUE côté front (chat ET règlement de la mission conception) :

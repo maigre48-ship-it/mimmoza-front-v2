@@ -16,14 +16,19 @@
 // recommandation Supabase) ; l'extraction pdf.js tourne dans un Web Worker et
 // rend la main au navigateur entre deux pages (aucun blocage de l'interface),
 // avec un compteur « page N / total ».
+// LOT G9 (18/11/2026) : une PHOTO de téléphone est préparée avant l'envoi (src/lib/studio/photoTelephone.ts) : HEIC
+// converti en JPEG, photo enregistrée tournée redressée, photo de plus de 5 Mo réduite (côté long ≤ 4096 px, qualité
+// ≥ 0,9, EXIF utiles gardés). Si la copie du chat a été réduite ou redressée, l'ORIGINAL (droit, ≤ 20 Mo) est déposé à
+// côté et référencé (`originalPath`) : il sert à placer l'extension sur la photo ; le modèle ne lit que la copie.
 // =============================================================
 
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '@/lib/supabaseClient';
 import {
-  BUCKET_PIECES_JOINTES, cheminPieceJointe, cheminTexte, dossierConversation, estimerLecture, MAX_PAGES_TEXTE, MAX_PIECES, modeEnvoi,
-  resumePiece, semblerScanne, TAILLE_MAX_INLINE, texteExtraitJson, TOTAL_MAX_INLINE, type NiveauModele,
+  BUCKET_PIECES_JOINTES, champsOriginal, cheminPieceJointe, cheminTexte, dossierConversation, estimerLecture, MAX_PAGES_TEXTE, MAX_PIECES, modeEnvoi,
+  nomOriginal, resumePiece, semblerScanne, TAILLE_MAX_INLINE, texteExtraitJson, TOTAL_MAX_INLINE, type NiveauModele,
 } from './piecesJointesLogique';
 import { SEUIL_UPLOAD_REPRENABLE, televerserTus } from './televersementTus';
+import { preparerPhotoTelephone } from '@/lib/studio/photoTelephone';
 
 /** Pièce jointe transmise à copilot-chat (base64 V1.7 OU référence Storage V1.8). */
 export interface CopilotAttachment {
@@ -36,6 +41,12 @@ export interface CopilotAttachment {
   size?: number;
   /** V1.8 : texte extrait (`storagePath + .texte.json`), PDF seulement. */
   textePath?: string;
+  /**
+   * LOT G9 : copie de la photo POUR LE PLACEMENT (original droit, ou original redressé), dans le même bucket, quand la
+   * copie envoyée au chat a été réduite ou redressée. Jamais lue par le modèle.
+   */
+  originalPath?: string;
+  originalMediaType?: string;
 }
 
 /** Pièce jointe côté interface : de quoi afficher une pastille. */
@@ -156,29 +167,65 @@ export async function preparerPiecesJointes(
   // Un même dossier pour toutes les pièces d'un message.
   const dossier = dossierConversation(p.conversationId, () => crypto.randomUUID());
 
-  for (const file of fichiers) {
-    const id = `${file.name}-${file.lastModified}-${file.size}`;
+  const utilisateur = async (): Promise<string> => {
+    if (!uid) {
+      const { data } = await supabase.auth.getUser();
+      uid = data.user?.id ?? null;
+      if (!uid) throw new Error('Session expirée : reconnectez-vous pour joindre un fichier.');
+    }
+    return uid;
+  };
+
+  for (const choisi of fichiers) {
+    const id = `${choisi.name}-${choisi.lastModified}-${choisi.size}`;
     if (existantes.some((a) => a.id === id)) continue;
     if (nb >= MAX_PIECES) { erreur ??= `${MAX_PIECES} pièces jointes au plus par message.`; break; }
+    // LOT G9 : photo de téléphone (HEIC, plus de 5 Mo, enregistrée tournée) → copie pour le chat + original pour le placement.
+    let file: File = choisi;
+    let pourCalage: File | null = null;
+    let notePhoto = '';
+    if (choisi.type.startsWith('image/') || /\.hei[cf]$/i.test(choisi.name)) {
+      p.surEtape?.(`Préparation de la photo « ${choisi.name} »…`);
+      const ph = await preparerPhotoTelephone(choisi);
+      if (!ph.ok) { erreur ??= ph.raison; continue; }
+      file = ph.pourChat;
+      pourCalage = ph.pourCalage;
+      notePhoto = ph.note;
+    }
     const m = modeEnvoi(file);
     if (!m.ok) { erreur ??= m.erreur; continue; }
     try {
+      // Copie pour le placement : déposée à côté, référencée par la pièce (jamais envoyée au modèle).
+      let original: { originalPath: string; originalMediaType: string } | null = null;
+      if (pourCalage) {
+        try {
+          const cheminOriginal = cheminPieceJointe(await utilisateur(), dossier, nomOriginal(choisi.name), pourCalage.type);
+          await televerser(cheminOriginal, pourCalage, pourCalage.type, (e, t) =>
+            p.surEtape?.(`Envoi de l’original de « ${choisi.name} » : ${Math.round((100 * e) / Math.max(1, t))} %`));
+          original = { originalPath: cheminOriginal, originalMediaType: pourCalage.type };
+        } catch (e) {
+          // L'original n'est pas indispensable : la copie du chat servira de photo du projet (moins précise) — dit.
+          console.warn('[MimmozIA] original de la photo non déposé :', e);
+          notePhoto = notePhoto ? `${notePhoto} (original non envoyé : la copie réduite servira)` : 'Original non envoyé : la copie réduite servira';
+        }
+      }
       if (m.mode === 'inline') {
         if (totalInline + file.size > TOTAL_MAX_INLINE) { erreur ??= 'Taille cumulée des images dépassée (4 Mo) : envoyez-les en plusieurs messages.'; continue; }
-        acceptees.push({ id, name: file.name, size: file.size, mediaType: file.type, data: await readAsBase64(file) });
+        acceptees.push({
+          id, name: file.name, size: file.size, mediaType: file.type, data: await readAsBase64(file),
+          ...(original ?? {}), ...(notePhoto ? { detail: notePhoto } : {}),
+        });
         totalInline += file.size;
         nb++;
         continue;
       }
-      if (!uid) {
-        const { data } = await supabase.auth.getUser();
-        uid = data.user?.id ?? null;
-        if (!uid) throw new Error('Session expirée : reconnectez-vous pour joindre un fichier.');
-      }
-      const chemin = cheminPieceJointe(uid, dossier, file.name, file.type);
+      const chemin = cheminPieceJointe(await utilisateur(), dossier, file.name, file.type);
       await televerser(chemin, file, file.type, (e, t) =>
         p.surEtape?.(`Envoi de « ${file.name} » : ${Math.round((100 * e) / Math.max(1, t))} %`));
-      const piece: UiAttachment = { id, name: file.name, size: file.size, mediaType: file.type, storagePath: chemin };
+      const piece: UiAttachment = {
+        id, name: file.name, size: file.size, mediaType: file.type, storagePath: chemin,
+        ...(original ?? {}), ...(notePhoto ? { detail: notePhoto } : {}),
+      };
       if (file.type === 'application/pdf') {
         let pages: string[] | null = null;
         try {
@@ -208,8 +255,8 @@ export async function preparerPiecesJointes(
 /** Charge utile pour copilot-chat : une pièce stockée part en RÉFÉRENCE (jamais avec son base64). */
 export function versPayload(pieces: readonly UiAttachment[]): CopilotAttachment[] {
   return pieces.map((a) => (a.storagePath
-    ? { mediaType: a.mediaType, name: a.name, storagePath: a.storagePath, size: a.size, ...(a.textePath ? { textePath: a.textePath } : {}) }
-    : { mediaType: a.mediaType, data: a.data, name: a.name }));
+    ? { mediaType: a.mediaType, name: a.name, storagePath: a.storagePath, size: a.size, ...(a.textePath ? { textePath: a.textePath } : {}), ...champsOriginal(a) }
+    : { mediaType: a.mediaType, data: a.data, name: a.name, ...champsOriginal(a) }));
 }
 
 /** Pièces encore disponibles en base64 (préparation 3D, conservation des plans). */

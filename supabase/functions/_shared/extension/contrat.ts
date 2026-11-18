@@ -1,5 +1,5 @@
 // supabase/functions/_shared/extension/contrat.ts
-// COPIE (lot X7, 16/11/2026) de mimmozia-studio/src/core/extension/contrat.ts @ lot X7 sur a73c418 (sha256 du fichier source : ff6dd62e5e8465afa3b1016e2272841f735639d2c3da24cc128e4500eb0b343a).
+// COPIE (lot G7, 18/11/2026) de mimmozia-studio/src/core/extension/contrat.ts @ lot G7 sur 6a6fc08 (sha256 du fichier source : 196231d9dd3e2e3277645102803654b8f26049cfe73f55e1743444d04c203104).
 // Copie VERBATIM (aucune ligne modifiée) : même validation au site (Deno et navigateur), au Studio et au worker.
 // Le Studio fait foi : toute évolution du contrat se fait d'abord dans le Studio, puis est recopiée ici.
 // ----- DÉBUT DE LA COPIE -----
@@ -68,11 +68,35 @@ export type OrientationFaitage = 'grand-axe' | 'petit-axe';
 export const MENUISERIES_CONTRAT = ['av-aluminium-noir', 'av-aluminium-blanc', 'av-chene-porte'] as const;
 export type MenuiserieContrat = (typeof MENUISERIES_CONTRAT)[number];
 
+/**
+ * LOT G7 (18/11/2026) — revêtements de FAÇADE de l'extension que le site peut proposer (bibliothèque ArchViz, catégorie
+ * « façade », textures CC0 ou procédurales) : enduits, bardages bois, briques, pierre, bétons, zinc. Toute autre valeur
+ * est refusée. Absent : convention Mimmoza (enduit accordé à la teinte de la maison mesurée sur la photo), dite.
+ */
+export const FACADES_CONTRAT = [
+  'av-enduit-blanc', 'av-enduit-creme', 'av-enduit-beige', 'av-bardage-bois-brun', 'av-bardage-bois-clair', 'av-bardage-bois-noirci',
+  'av-brique-rouge', 'av-brique-claire', 'av-pierre-calcaire', 'av-beton-clair', 'av-beton-brut', 'av-zinc-facade',
+] as const;
+export type FacadeContrat = (typeof FACADES_CONTRAT)[number];
+
+/** LOT G7 — couvertures du toit de l'EXTENSION (bibliothèque ArchViz, catégorie « toiture »). */
+export const COUVERTURES_CONTRAT = ['av-tuiles-terre-cuite', 'av-ardoise', 'av-zinc-anthracite', 'av-membrane-sombre'] as const;
+export type CouvertureContrat = (typeof COUVERTURES_CONTRAT)[number];
+
 /** LOT X7 — habillage de l'extension choisi par l'utilisateur (facultatif ; absent : convention Mimmoza, dite). */
 export interface HabillageDemande {
   readonly menuiserie?: Donnee<MenuiserieContrat>;
   /** « auto » : baies placées par la règle d'habillage (lot X5) ; « aucune » : façades aveugles (choix explicite). */
   readonly baies?: Donnee<'auto' | 'aucune'>;
+  /**
+   * LOT F3 — aligner allèges et linteaux de l'extension sur ceux des baies relevées de la maison (défaut : oui quand des
+   * baies sont relevées ; `false` confirmé : désactivé).
+   */
+  readonly alignerSurExistant?: Donnee<boolean>;
+  /** LOT G7 — revêtement de façade choisi (variante « en bardage bois », « en brique »…). */
+  readonly facade?: Donnee<FacadeContrat>;
+  /** LOT G7 — couverture du toit de l'extension choisie (« en ardoise », « en zinc »…). */
+  readonly couverture?: Donnee<CouvertureContrat>;
 }
 
 /**
@@ -122,6 +146,18 @@ export interface ExistantProjet {
   readonly niveaux?: Donnee<number>;
   readonly surfacePlancherM2?: Donnee<number>;
   readonly bdnb?: DonneesBdnb;
+  /**
+   * LOT F3 — allèges et linteaux des baies RELEVÉES sur la photo calée (hauteurs au-dessus du pied, m), posés par le
+   * worker (jamais saisis) : l'habillage de l'extension peut s'y aligner. 12 lignes au plus.
+   */
+  readonly lignesBaies?: Donnee<readonly LigneBaieContrat[]>;
+}
+
+/** LOT F3 — une ligne d'allège ou de linteau relevée sur la maison. */
+export interface LigneBaieContrat {
+  readonly nature: 'allege' | 'linteau';
+  readonly hauteurM: number;
+  readonly incertitudeM: number;
 }
 
 export interface ReculsExtension {
@@ -234,6 +270,9 @@ function lireDonnee<T>(
 const nombreDans = (b: readonly [number, number]) => (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x >= b[0] && x <= b[1];
 const entierDans = (b: readonly [number, number]) => (x: unknown): x is number => nombreDans(b)(x) && Number.isInteger(x);
 const parmi = <T extends string>(l: readonly T[]) => (x: unknown): x is T => dans(x, l);
+/** LOT F3 — lignes de baies relevées : ≤ 12, hauteurs bornées, clés exactes. */
+const lignesBaiesValides = (x: unknown): x is readonly LigneBaieContrat[] =>
+  Array.isArray(x) && x.length <= 12 && x.every((l) => estObjet(l) && Object.keys(l).every((k) => ['nature', 'hauteurM', 'incertitudeM'].includes(k)) && (l['nature'] === 'allege' || l['nature'] === 'linteau') && nombreDans([0, 30])(l['hauteurM']) && nombreDans([0, 2])(l['incertitudeM']));
 
 function verifierCles(o: Brut, permises: readonly string[], chemin: string, erreurs: string[]): void {
   const inconnues = Object.keys(o).filter((k) => !permises.includes(k));
@@ -274,7 +313,7 @@ function lireExistant(v: unknown, i: number, erreurs: string[]): ExistantProjet 
     erreurs.push(`${c} : objet attendu.`);
     return null;
   }
-  verifierCles(v, ['id', 'source', 'mode', 'hauteurEgoutM', 'hauteurFaitageM', 'formeToit', 'penteToitDeg', 'orientationFaitage', 'niveaux', 'surfacePlancherM2', 'bdnb'], c, erreurs);
+  verifierCles(v, ['id', 'source', 'mode', 'hauteurEgoutM', 'hauteurFaitageM', 'formeToit', 'penteToitDeg', 'orientationFaitage', 'niveaux', 'surfacePlancherM2', 'bdnb', 'lignesBaies'], c, erreurs);
   const id = v['id'];
   if (typeof id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(id)) erreurs.push(`${c}.id : identifiant de 1 à 64 caractères [A-Za-z0-9_.:-].`);
   if (!dans(v['source'], ['bdtopo', 'utilisateur'] as const)) erreurs.push(`${c}.source : bdtopo | utilisateur.`);
@@ -302,6 +341,8 @@ function lireExistant(v: unknown, i: number, erreurs: string[]): ExistantProjet 
   if (sdp) out.surfacePlancherM2 = sdp;
   const bdnb = lireBdnb(v['bdnb'], `${c}.bdnb`, erreurs);
   if (bdnb) out.bdnb = bdnb;
+  const lignes = lireDonnee(v['lignesBaies'], `${c}.lignesBaies`, erreurs, lignesBaiesValides, 'liste (≤ 12) de { nature: allege | linteau, hauteurM: 0–30, incertitudeM: 0–2 }');
+  if (lignes) out.lignesBaies = lignes;
   return out;
 }
 
@@ -314,7 +355,7 @@ function lireExtension(v: unknown, erreurs: string[], avert: string[]): Extensio
   verifierCles(v, ['type', 'facade', 'existantId', 'dimensions', 'toiture', 'reculs', 'habillage'], c, erreurs);
   const type = v['type'];
   if (!dans(type, TYPES_EXTENSION)) erreurs.push(`${c}.type : ${TYPES_EXTENSION.join(' | ')}.`);
-  if (type === 'veranda') avert.push('Véranda : acceptée par le contrat, mais le volume vitré n’existe pas encore dans le moteur (lot X2b) — le travail sera refusé avec cette raison.');
+  if (type === 'veranda') avert.push('Véranda : acceptée par le contrat, mais le volume vitré n’existe pas encore dans le moteur — le travail sera refusé avec cette raison.');
   let facade: FacadeAccroche | undefined;
   if (v['facade'] !== undefined) {
     const f = v['facade'];
@@ -345,7 +386,7 @@ function lireExtension(v: unknown, erreurs: string[], avert: string[]): Extensio
     if (S) dims.surfacePlancherM2 = S;
     if (N) dims.niveaux = N;
     if (H) dims.hauteurEgoutM = H;
-    if (type !== 'surelevation' && !S && !(L && P)) avert.push('Dimensions de l’extension incomplètes (ni largeur × profondeur, ni surface) : le moteur (lot X2) proposera des dimensions SUPPOSÉES, à confirmer.');
+    if (type !== 'surelevation' && !S && !(L && P)) avert.push('Dimensions de l’extension incomplètes (ni largeur × profondeur, ni surface) : Mimmoza proposera des dimensions SUPPOSÉES, à confirmer.');
   }
   let toiture: ToitureExtension | undefined;
   if (v['toiture'] !== undefined) {
@@ -377,12 +418,16 @@ function lireExtension(v: unknown, erreurs: string[], avert: string[]): Extensio
   let habillage: HabillageDemande | undefined;
   if (v['habillage'] !== undefined) {
     const h = v['habillage'];
-    if (!estObjet(h)) erreurs.push(`${c}.habillage : objet { menuiserie?, baies? } attendu.`);
+    if (!estObjet(h)) erreurs.push(`${c}.habillage : objet { menuiserie?, baies?, alignerSurExistant?, facade?, couverture? } attendu.`);
     else {
-      verifierCles(h, ['menuiserie', 'baies'], `${c}.habillage`, erreurs);
+      verifierCles(h, ['menuiserie', 'baies', 'alignerSurExistant', 'facade', 'couverture'], `${c}.habillage`, erreurs);
       const men = lireDonnee(h['menuiserie'], `${c}.habillage.menuiserie`, erreurs, parmi(MENUISERIES_CONTRAT), MENUISERIES_CONTRAT.join(' | '));
       const baies = lireDonnee(h['baies'], `${c}.habillage.baies`, erreurs, parmi(['auto', 'aucune'] as const), 'auto | aucune');
-      habillage = { ...(men ? { menuiserie: men } : {}), ...(baies ? { baies } : {}) };
+      const aligner = lireDonnee(h['alignerSurExistant'], `${c}.habillage.alignerSurExistant`, erreurs, (x: unknown): x is boolean => typeof x === 'boolean', 'true | false');
+      // LOT G7 — revêtement de façade et couverture de l'extension (listes fermées de la bibliothèque).
+      const fac = lireDonnee(h['facade'], `${c}.habillage.facade`, erreurs, parmi(FACADES_CONTRAT), FACADES_CONTRAT.join(' | '));
+      const cou = lireDonnee(h['couverture'], `${c}.habillage.couverture`, erreurs, parmi(COUVERTURES_CONTRAT), COUVERTURES_CONTRAT.join(' | '));
+      habillage = { ...(men ? { menuiserie: men } : {}), ...(baies ? { baies } : {}), ...(aligner ? { alignerSurExistant: aligner } : {}), ...(fac ? { facade: fac } : {}), ...(cou ? { couverture: cou } : {}) };
     }
   }
   if (!dans(type, TYPES_EXTENSION) || typeof existantId !== 'string') return null;

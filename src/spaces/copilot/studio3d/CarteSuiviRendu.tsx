@@ -21,6 +21,8 @@ import { AtelierPlacement } from './AtelierPlacement';
 import { BlocExistantConserve } from './CarteExtensionMaison';
 // LOT X9 (17/11/2026) — image d'extension sans vraie photo : aucune image, « Envoyer une photo de ma maison ».
 import { DemandePhotoMaison } from './DemandePhotoMaison';
+// LOT G4 (17/11/2026) — plans de l'extension (PDF, DXF) dessinés depuis le même modèle que l'image.
+import { CartePlansExtension } from './CartePlansExtension';
 import './CarteSuiviRendu.css';
 
 type Liens =
@@ -124,6 +126,7 @@ export function CarteSuiviRendu({ indice, onSend }: { indice: IndiceSuivi; onSen
       </div>}
       {vue.etat === 'termine' && vue.image?.mention && <p className="mz-suivi-rendu__mention">{vue.image.mention}</p>}
       {vue.etat === 'termine' && vue.photoRequise && <DemandePhotoMaison requise={vue.photoRequise} travail={travail} onSend={onSend} />}
+      {vue.etat === 'termine' && travail && <CartePlansExtension travail={travail} />}
       {vue.existant && <BlocExistantConserve existant={vue.existant} />}
       {vue.etat === 'termine' && vue.image?.effacement && <div className="mz-suivi-rendu__effacement" role="note">
         <p className="mz-suivi-rendu__mention"><strong>{vue.image.effacement.mention}</strong></p>

@@ -58,12 +58,16 @@ import type { ResultatOutil } from './types.ts';
 // LOT P2 (11/11/2026) — image dans sa rue : options de fond (règles partagées avec le site et la base), couverture
 // Panoramax (Licence Ouverte, instance IGN) et façades sur voie transmises à la machine de rendu.
 import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from '../../../../src/lib/studio/fondImage.ts';
+// LOT G8 — durée d'une image dans une photo (voie express de la machine de rendu).
+import { dureeAnnonceeImagePhoto, estFondPhoto } from '../../../../src/lib/studio/dureeRendu.ts';
 import {
   contourDepuisGeometrie, phraseCouverture, verifierCouverture, type CouverturePhotoRue, type LonLat, type ResultatCouverture,
 } from '../../../../src/lib/studio/couverturePhotoRue.ts';
 import { facadesVoieDeLaParcelle, type FacadeVoieFiche } from './voisines-parcelle.ts';
 // LOT X9 (17/11/2026) — image d'extension : photo réelle obligatoire, sinon une photo de la maison est demandée.
 import { CONSIGNES_PHOTO_MAISON, estTravailExtension, imageSurPhotoReelle, photoRequiseDuResultat, TEXTES_PHOTO_REQUISE } from '../../../../src/lib/studio/photoReelle.ts';
+// LOT G4 — plans de l'extension (PDF, DXF) livrés avec l'image : le modèle dit seulement s'ils sont prêts.
+import { plansPourModele } from '../../../../src/lib/studio/plansExtension.ts';
 // LOT P9 : volume d'étude posé au recul sur voie, règles PLU de la conception dans `charge.regles`.
 import { ligneHauteurFiche, poserVolumeSurVoie } from '../../../../src/spaces/copilot/studio3d/implantationVoieVolume.ts';
 import { reglesFicheDepuisReglesLues } from '../../../../src/spaces/copilot/studio3d/reglesFiche.ts';
@@ -73,8 +77,12 @@ import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../
 // pour tout type de rendu, toit de la maison confirmé exigé, 3D préparée seulement (jamais une version de conception).
 import {
   avertissementsRenduExtension, ficheAvecProjetExtension, MESSAGE_EXTENSION_VERSION, MESSAGE_RENDU_EXTENSION_FERME, MESSAGE_TOIT_A_CONFIRMER,
-  optionsAvecExistant, projetDesSorties, RENDU_EXTENSION_OUVERT, toitConfirme,
+  facadesChoisiesDesSorties, facadesLuesDesSorties, optionsAvecExistant, projetDesSorties, RENDU_EXTENSION_OUVERT, toitConfirme,
 } from './extension.ts';
+// LOT G3 — photo de la maison envoyée dans la conversation : fond de l'image de l'extension.
+import { optionPhotoClient, photoProjetDesSorties, photoProjetUtilisableCommeFond, type PhotoProjet } from './photo-projet.ts';
+// LOT G10b — maison neuve : image et plans de la maison du parcours (aucune 3D préparée, aucun immeuble).
+import { confirmerRenduMaison, devisRenduMaison, maisonDeLaConversation, MESSAGE_MAISON_SANS_3D, MESSAGE_PHOTO_REQUISE_MAISON, type OutilsStudio } from './studio-maison.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -462,8 +470,10 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
 const LIBELLE_TYPE: Record<TypeRendu, string> = { film: 'Film', visite360: 'Visite 360°', image: 'Image du projet' };
 
 /** Durée annoncée : formule du front pour l'image (travauxLogique.dureeEstimeeImage) ; délais MAXIMAUX du worker sinon. */
-export function dureeAnnoncee(type: TypeRendu, options: Obj): string {
+export function dureeAnnoncee(type: TypeRendu, options: Obj, extension = false): string {
   if (type === 'image') {
+    // LOT G8 — image dans une photo : durée de la voie express (estimée, chiffres mesurés), pas la formule de l'image d'étude.
+    if (estFondPhoto(options.fond)) return dureeAnnonceeImagePhoto({ extension, nombreVues: Array.isArray(options.vues) ? options.vues.length : 1 });
     const n = Array.isArray(options.vues) ? Math.max(1, Math.min(3, options.vues.length)) : 1;
     const h = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
     return `environ ${h(10 + 7 + 20 * n)} à ${h(10 + 7 + 60 * n)} une fois le rendu démarré (préparation, aperçu de contrôle, puis 20 à 60 min par vue)`;
@@ -1012,7 +1022,9 @@ export interface ChargeJeton {
   u: string;
   t: TypeRendu;
   o: Obj;
-  s: { genre: 'version'; conception_id: string; n: number; modele_ref: string } | { genre: 'preparation'; preparation_id: string };
+  s: { genre: 'version'; conception_id: string; n: number; modele_ref: string } | { genre: 'preparation'; preparation_id: string }
+    // LOT G10b — maison neuve du parcours (empreinte du projet : le devis décrit CETTE maison).
+    | { genre: 'maison'; idu: string; empreinte: string };
   c: string;
   iat: number;
   exp: number;
@@ -1206,6 +1218,15 @@ export interface DepotStudio {
    * du plus récent au plus ancien. Facultatif (dépôt de test) ; erreur de lecture → [].
    */
   sortiesExtension?(userId: string, conversationId: string): Promise<Record<string, unknown>[]>;
+  /**
+   * LOT G7 — options du dernier rendu d'IMAGE de la conversation (fond, photo, calage validé) : une variante d'extension
+   * garde la même photo et le même placement. Facultatif (dépôt de test) ; erreur de lecture → null.
+   */
+  optionsDernierRenduImage?(userId: string, conversationId: string): Promise<Record<string, unknown> | null>;
+  /** LOT G10b — sorties `data` du parcours « maison neuve » de la conversation (plus récent d'abord) ; erreur → []. */
+  sortiesMaison?(userId: string, conversationId: string): Promise<Record<string, unknown>[]>;
+  /** LOT G10b — dernier parcours de la conversation (extension ou maison neuve) ; null si aucun. */
+  dernierParcours?(userId: string, conversationId: string): Promise<'extension_maison' | 'maison_neuve' | null>;
 }
 
 export interface EnvStudio {
@@ -1336,11 +1357,17 @@ export const MESSAGE_EXTENSION_SANS_DOSSIER =
   '(mission de conception) ; n’annonce aucune image.';
 
 async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
+  // LOT G10b — maison neuve du parcours : aucune 3D préparée (jamais un volume d'immeuble présenté au client).
+  if (!env.mission && env.userId && await maisonDeLaConversation(env, env.userId)) return erreur(MESSAGE_MAISON_SANS_3D, 'partial');
   // LOT X10 — conversation d'EXTENSION : la 3D préparée n'est que le SUPPORT DE PARCELLE de l'image (la machine de rendu
   // dessine la maison conservée et l'extension du parcours) ; jamais un immeuble ni des logements présentés au client.
   const ext = !env.mission && env.userId ? await projetExtensionConversation(env, env.userId) : null;
   if (ext && !ext.placee) return erreur(MESSAGE_EXTENSION_NON_PLACEE, 'partial');
-  const c = await resoudreConception(input, env);
+  // LOT G3 — extension : sans parcelle désignée, d'abord le dossier de la parcelle du parcours d'extension (et non le
+  // dossier le plus récent du compte).
+  const iduExt = ext && !estUuid(input.conception_id) && typeof input.idu !== 'string' ? await iduExtensionConversation(env, env.userId!) : null;
+  // (Sans dossier pour la parcelle du parcours : comportement antérieur inchangé.)
+  const c = (iduExt ? await resoudreConception({ ...input, idu: iduExt }, env) : null) ?? await resoudreConception(input, env);
   if (!c && ext) return erreur(MESSAGE_EXTENSION_SANS_DOSSIER, 'partial');
   if (!c) {
     return erreur('Aucune conception trouvée pour cet utilisateur' + (input.idu ? ` sur ${String(input.idu)}` : '') +
@@ -1472,10 +1499,46 @@ async function devisDeLaConversation(
   return null;
 }
 
+/** LOT G7 — les options demandent-elles explicitement un fond (photo de rue, photo du client, calage) ? */
+function fondExplicite(o: unknown): boolean {
+  return estObj(o) && (CLES_FOND as readonly string[]).some((k) => o[k] !== undefined && o[k] !== null);
+}
+
+/**
+ * LOT G7 — fond d'un rendu précédent de la conversation à reprendre pour une variante : photo de rue ou photo du client,
+ * avec le calage validé s'il y en a un. Une image d'étude (fond « etude ») n'est jamais reprise. Pur.
+ */
+export function fondDuRenduPrecedent(options: unknown): Obj | null {
+  if (!estObj(options)) return null;
+  const fond = fondDe(options);
+  if (fond !== 'photo_client' && fond !== 'photo_rue') return null;
+  const out: Obj = {};
+  for (const k of CLES_FOND) if (options[k] !== undefined && options[k] !== null) out[k] = structuredClone(options[k]);
+  return out;
+}
+
 /** LOT X3 : projet d'extension VALIDE de la conversation (dernier parcours terminé), ou null. Ne lève jamais. */
 async function projetExtensionConversation(env: EnvStudio, uid: string): Promise<ReturnType<typeof projetDesSorties>> {
   if (!env.depot.sortiesExtension || !env.conversationId) return null;
   try { return projetDesSorties(await env.depot.sortiesExtension(uid, env.conversationId)); } catch { return null; }
+}
+
+/** LOT G3 — parcelle du parcours d'extension de la conversation (dernière sortie qui la porte) ; null sinon. */
+async function iduExtensionConversation(env: EnvStudio, uid: string): Promise<string | null> {
+  if (!env.depot.sortiesExtension || !env.conversationId) return null;
+  try {
+    for (const d of await env.depot.sortiesExtension(uid, env.conversationId)) {
+      const idu = estObj(d) && estObj(d.vue) && typeof d.vue.idu === 'string' ? d.vue.idu : estObj(d) && estObj(d.etat) && typeof d.etat.idu === 'string' ? d.etat.idu : null;
+      if (idu && RE_IDU.test(idu)) return idu;
+    }
+  } catch { /* aucune */ }
+  return null;
+}
+
+/** LOT G3 — photo de la maison envoyée dans la conversation (parcours d'extension) ; null sinon. */
+async function photoProjetConversation(env: EnvStudio, uid: string): Promise<PhotoProjet | null> {
+  if (!env.depot.sortiesExtension || !env.conversationId) return null;
+  try { return photoProjetDesSorties(await env.depot.sortiesExtension(uid, env.conversationId)); } catch { return null; }
 }
 
 async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
@@ -1502,6 +1565,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       }
       return erreur('Le type demandé ne correspond pas au devis : établis un nouveau devis. RIEN N’A ÉTÉ LANCÉ.');
     }
+    // LOT G10b — devis d'une maison neuve : lancement propre (fiche de LA maison du parcours).
+    if (j.s.genre === 'maison') return await confirmerRenduMaison(j, env, outilsMaison());
     const deja = await env.depot.travailParDevis(uid, j.id);
     if (deja) return { status: 'ok', source: SOURCE_STUDIO, data: { deja_lance: true, ...vueTravail(deja) }, message: 'Ce devis a déjà été lancé : rien n’a été relancé.' +
         ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' +
@@ -1541,7 +1606,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }
-    if (ext) fiche = ficheAvecProjetExtension(fiche, ext.projet);
+    // LOT G6 — avec le plan de la maison lu (`existant_lu`) : repris au cartouche des plans de l'extension.
+    if (ext) fiche = ficheAvecProjetExtension(fiche, ext.projet, ext.existantLu ?? null);
     fiche.devis_id = j.id;
     let t: TravailLu;
     try {
@@ -1579,6 +1645,9 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     const autorise = await env.depot.typeRenduAutorise('image', opts0.valeur);
     if (autorise === false) return fondPhoto(opts0.valeur) ? refusFondPhoto() : refusImage();
   }
+  // LOT G10b — maison neuve placée dans le parcours (dernier parcours de la conversation) : devis de SON image.
+  const maisonNeuve = await maisonDeLaConversation(env, uid);
+  if (maisonNeuve) return await devisRenduMaison(type, input, env, maisonNeuve, carte, outilsMaison());
   // LOT X3 : un projet d'EXTENSION (maison conservée) ne se rend pas comme un bâtiment neuf.
   // LOT X4 site : rendu ouvert ; il exige le toit de la maison confirmé et part de la 3D préparée par Mimmo (une version
   // de conception ne contient pas la maison conservée) : la source automatique prend donc la 3D préparée.
@@ -1587,7 +1656,14 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (extension && !extension.placee) return erreur(MESSAGE_EXTENSION_NON_PLACEE, 'partial');
   if (extension && input.source === 'version') return erreur(MESSAGE_EXTENSION_VERSION, 'partial');
   if (extension && !toitConfirme(extension.projet)) return erreur(MESSAGE_TOIT_A_CONFIRMER, 'partial');
-  const src = await resoudreSource(extension ? { ...input, source: 'preparation' } : input, env);
+  // LOT G3 — extension : la 3D préparée de la parcelle DU PARCOURS (jamais celle du dossier le plus récent du compte).
+  let entreeSource: Obj = extension ? { ...input, source: 'preparation' } : input;
+  if (extension && !estUuid(input.preparation_id) && !estUuid(input.conception_id)) {
+    const iduExt = await iduExtensionConversation(env, uid);
+    const cExt = iduExt ? await env.depot.conception(uid, { idu: iduExt }) : null;
+    if (cExt) entreeSource = { ...entreeSource, conception_id: cExt.id };
+  }
+  const src = await resoudreSource(entreeSource, env);
   if (!src.ok) return src.res;
   if (type === 'image' && fondPhoto(opts0.valeur) && src.source.genre !== 'preparation') {
     return erreur('L’image sur une photo de rue ne se fait pour l’instant qu’à partir de la 3D préparée par Mimmo (la fiche d’une version enregistrée ne transmet pas la façade sur voie). RIEN N’A ÉTÉ LANCÉ. Propose l’image d’étude, ou la 3D préparée (source « preparation »).');
@@ -1595,10 +1671,43 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // LOT X9 — image d'EXTENSION : jamais d'image de synthèse. Photo de la rue si elle existe, photo de l'utilisateur
   // sinon ; sans l'une ni l'autre, rien n'est lancé et une photo de la maison est demandée.
   let noteFondExtension: string | null = null;
+  // LOT G3 — photo de la maison envoyée dans la conversation (avec les instructions) : elle est LE fond de l'image de
+  // l'extension, sauf si l'utilisateur vient de choisir un autre fond dans la carte (bloc du message reçu).
+  let optsFond: Obj = opts0.valeur;
+  // LOT G7 — VARIANTE d'une extension déjà rendue : la nouvelle image garde la MÊME photo et le MÊME placement (calage
+  // validé compris) que l'image précédente de la conversation, sauf fond choisi explicitement (options, carte).
+  let fondRepris = false;
+  if (extension && type === 'image' && !fondExplicite(input.options) && !(carte?.ok && carte.valeur.fond) && env.depot.optionsDernierRenduImage) {
+    let prec: Obj | null = null;
+    try { prec = await env.depot.optionsDernierRenduImage(uid, env.conversationId); } catch { prec = null; }
+    const repris = fondDuRenduPrecedent(prec);
+    if (repris) {
+      const essai: Obj = { ...Object.fromEntries(Object.entries(estObj(optionsDemandees) ? optionsDemandees : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), ...repris };
+      const v = validerOptionsRendu(type, essai, uid);
+      if (v.ok && await env.depot.typeRenduAutorise('image', v.valeur) !== false) {
+        optionsDemandees = essai; optsFond = v.valeur; fondRepris = true;
+        noteFondExtension = repris.calage_client
+          ? 'Image de la variante : même photo et même placement (ajusté) que l’image précédente de l’extension.'
+          : 'Image de la variante : même photo que l’image précédente de l’extension.';
+      }
+    }
+  }
+  if (extension && type === 'image' && !fondRepris && fondDe(opts0.valeur) !== 'photo_client' && !(carte?.ok && carte.valeur.fond)) {
+    const photo = await photoProjetConversation(env, uid);
+    // LOT G9 : accord sur l'usage de la photo jointe (ACCORD_PHOTO_JOINTE, décision d'Albé en attente ; implicite aujourd'hui).
+    if (photo && photoProjetUtilisableCommeFond(photo)) {
+      optionsDemandees = { ...Object.fromEntries(Object.entries(estObj(optionsDemandees) ? optionsDemandees : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), fond: 'photo_client', photo_client: optionPhotoClient(photo) };
+      const v = validerOptionsRendu(type, optionsDemandees, uid);
+      if ('erreur' in v) return erreur(`${v.erreur} RIEN N’A ÉTÉ LANCÉ.`);
+      if (await env.depot.typeRenduAutorise('image', v.valeur) === false) return refusFondPhoto();
+      optsFond = v.valeur;
+      noteFondExtension = 'Image de l’extension : la photo de votre maison envoyée dans la conversation sert de fond.';
+    }
+  }
   if (extension && type === 'image' && src.source.genre === 'preparation') {
-    const garde = await gardePhotoExtension(env, uid, src.source.preparation, opts0.valeur);
+    const garde = await gardePhotoExtension(env, uid, src.source.preparation, optsFond);
     if ('refus' in garde) return garde.refus;
-    if (garde.fond === 'photo_rue' && fondDe(opts0.valeur) !== 'photo_rue') {
+    if (garde.fond === 'photo_rue' && fondDe(optsFond) !== 'photo_rue') {
       optionsDemandees = { ...Object.fromEntries(Object.entries(estObj(optionsDemandees) ? optionsDemandees : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), fond: 'photo_rue' };
       noteFondExtension = 'Image de l’extension : seule une vraie photo est utilisée — la photo de la rue (Panoramax / IGN, Licence Ouverte) servira de fond.';
     }
@@ -1702,7 +1811,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     jetons: 0,
     cout_jetons: 'Aucun jeton débité pour ce rendu : les rendus ne sont pas facturés aujourd’hui (seul ce message du chat est compté, comme d’habitude).',
     calcul_gpu: 'Calcul sur la machine de rendu Mimmoza (carte graphique, Unreal), un rendu à la fois ; aucun service payant externe.',
-    duree: dureeAnnoncee(type, opts.valeur),
+    duree: dureeAnnoncee(type, opts.valeur, !!extension),
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     ...(type === 'image' ? { fond: LIBELLES_FOND[fondDe(opts.valeur)] } : {}),
@@ -1756,6 +1865,15 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
 
 // ── LOT P2 (11/11/2026) — image dans sa rue ────────────────────────────────
 
+/** LOT G10b — fonctions de ce module prêtées au rendu de maison neuve (studio-maison.ts). */
+function outilsMaison(): OutilsStudio {
+  return {
+    validerOptionsRendu, signerJeton, devisDeLaConversation, etatMachine, heureParis, jsonCanonique, sha256Hex, vueTravail,
+    resumeOptions: (t, o) => resumeOptions(t, o), messageEtatEnDirect: MESSAGE_ETAT_EN_DIRECT,
+    devisValiditeMs: DEVIS_VALIDITE_MS, nombreMaxTravauxActifs: NOMBRE_MAX_TRAVAUX_ACTIFS,
+  };
+}
+
 /** Les options demandent-elles une image sur photo (rue ou client) ou un calage ? */
 function fondPhoto(o: unknown): boolean {
   return estObj(o) && (fondDe(o) !== 'etude' || o.calage_client !== undefined);
@@ -1771,7 +1889,7 @@ function refusFondPhoto(): ResultatOutil {
  */
 export const MESSAGE_PHOTO_REQUISE =
   'AUCUNE IMAGE n’est montrée : une image d’extension n’est faite que sur une vraie photo de la maison, et aucune n’est exploitable. ' +
-  'Dis-le en une phrase, puis demande à l’utilisateur une photo de sa maison prise depuis la rue (de face ou de trois quarts, toute la maison avec le pied des murs et le toit, ' +
+  'Dis-le en une phrase, puis demande à l’utilisateur une photo de sa maison prise depuis la rue ou depuis le jardin (de face ou de trois quarts, toute la maison avec le pied des murs et le toit, ' +
   'le côté de l’extension visible, en plein jour, sans zoom). N’annonce ni ne décris aucune image, ne propose pas d’« image d’étude », ' +
   'et n’écris aucun nom d’outil, de logiciel ou de machine.';
 
@@ -1805,6 +1923,10 @@ export function refusPhotoMaison(raison: string | null, contour: readonly LonLat
 export async function gardePhotoExtension(env: EnvStudio, uid: string, p: PreparationLue, options: Obj): Promise<GardePhoto> {
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
   const contour = contourDepuisGeometrie(estObj(entree.parcelle) ? entree.parcelle.geometrie : null);
+  // LOT G9 : la limite sur rue reste nécessaire (la machine de rendu replace l'extension à partir d'elle), mais elle
+  // est maintenant aussi reprise du parcours de la conversation (facadesVoiePreparation) quand la fiche de parcelle ne
+  // l'a pas. Elle ne sert PAS à caler la photo : une photo de l'utilisateur prise depuis le JARDIN est acceptée
+  // (placement guidé « Placer ma maison sur la photo », lot G2, si le placement automatique ne suffit pas).
   const voie = await facadesVoiePreparation(env, uid, p);
   if (!voie.facades.length) {
     return { refus: erreur('Le côté rue de la parcelle n’a pas été identifié : aucune photo ne peut servir de fond à l’image de l’extension pour l’instant, et aucune image de synthèse n’est faite. RIEN N’A ÉTÉ LANCÉ. Dis-le simplement, sans proposer d’autre image.', 'partial') };
@@ -1829,7 +1951,20 @@ export async function facadesVoiePreparation(env: EnvStudio, uid: string, p: Pre
   let c: ConceptionLue | null = null;
   try { c = env.conception?.id === p.conception_id ? env.conception : await env.depot.conception(uid, { id: p.conception_id }); } catch { c = null; }
   if (!c) return { facades: [], raison: 'Conception de la 3D préparée introuvable : façade sur voie non identifiée.' };
-  return facadesVoieDeLaParcelle(c.parcelle);
+  const r = facadesVoieDeLaParcelle(c.parcelle);
+  if (r.facades.length || !env.depot.sortiesExtension || !env.conversationId) return r;
+  // LOT G9 : la fiche de parcelle n'a pas (encore) ses voisines, mais le parcours d'extension de CETTE conversation a lu
+  // la limite sur rue au cadastre (lot X10, `facades_voie_lues`, même source « cadastre-voisines ») : elle est reprise,
+  // pour la garde comme pour la fiche transmise à la machine de rendu.
+  try {
+    const sorties = await env.depot.sortiesExtension(uid, env.conversationId);
+    const l = facadesLuesDesSorties(sorties, c.idu);
+    if (l) return { facades: [...l.facades], raison: null };
+    // INTÉGRATION 18/11 — sinon, le côté de la rue DÉSIGNÉ par l'utilisateur dans le parcours (puces « Côté de la rue »).
+    const choisies = facadesChoisiesDesSorties(sorties, c.idu);
+    if (choisies) return { facades: [...choisies.facades], raison: null };
+  } catch { /* lecture impossible : raison d'origine gardée */ }
+  return r;
 }
 
 /** Ce que le devis d'une image dit du fond : données pour la carte et le modèle, avertissements. */
@@ -1846,8 +1981,12 @@ export async function fondDuDevis(env: EnvStudio, uid: string, p: PreparationLue
   const avertissements: string[] = [];
   if (fond !== 'etude' && extension) {
     // LOT X9 — extension : aucune image de synthèse ; sans placement vérifié, aucune image et une photo est demandée.
-    avertissements.push('L’extension est insérée dans la photo seulement si son placement est vérifié (ou validé par vous dans « Ajuster le placement ») ; sinon aucune image n’est montrée et une photo de votre maison vous est demandée.');
-    if (fond === 'photo_client') avertissements.push('Votre photo est conservée dans votre espace privé et n’est utilisée que pour ce rendu ; visages et plaques ne sont pas floutés.');
+    avertissements.push('L’extension est insérée dans la photo seulement si son placement est vérifié (ou validé par vous dans « Placer ma maison sur la photo ») ; sinon aucune image n’est montrée et une photo de votre maison vous est demandée.');
+    if (fond === 'photo_client') {
+      avertissements.push('Votre photo est conservée dans votre espace privé et n’est utilisée que pour ce rendu ; visages et plaques ne sont pas floutés.');
+      // LOT G9 : photo prise depuis la rue ou depuis le jardin : le placement peut demander 4 à 6 touches.
+      avertissements.push('Photo prise depuis la rue ou depuis le jardin : si le placement automatique n’est pas assez précis, « Placer ma maison sur la photo » vous fera toucher 4 à 6 angles de la maison.');
+    }
   } else if (fond !== 'etude') {
     avertissements.push('Insertion dans la photo : la machine de rendu propose un placement ; l’image n’est livrée « insérée dans la rue » que si ce placement est vérifié (ou validé par vous dans l’atelier). Sinon : image d’étude, avec la raison, et « Ajuster le placement ».');
     if (!voie.facades.length) avertissements.push(`Façade sur voie non identifiée (${(voie.raison ?? 'raison inconnue').replace(/[.\s]+$/u, '')}) : la machine de rendu ne pourra pas chercher la photo de la rue ; l’image d’étude sera livrée.`);
@@ -1950,7 +2089,7 @@ async function etatRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       // LOT X9 — image d'extension sans vraie photo : aucune image (même livrée par une ancienne machine), photo demandée.
       const requise = photoRequiseDuResultat(r)!;
       liens.images = [];
-      data.photo_requise = { code: requise.code, texte: requise.texte, ajuster_le_placement: requise.atelier };
+      data.photo_requise = { code: requise.code, texte: requise.texte, ajuster_le_placement: requise.atelier, ...(requise.nature === 'maison' ? { projet: 'maison_neuve' } : {}) };
     } else if (t.type === 'image') {
       const images = Array.isArray(r.images) ? r.images.filter(estObj) : [];
       const chemins = images.length ? images.map((i) => i.jpeg_path).filter((x): x is string => typeof x === 'string') : typeof r.image_path === 'string' ? [r.image_path] : [];
@@ -1962,18 +2101,22 @@ async function etatRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     data.liens_valables = 'URL signées valables 1 h (rappelle l’outil pour en obtenir de nouvelles) ; la visite 360° a un lien public permanent.';
     if (Array.isArray(r.avertissements)) data.avertissements = r.avertissements.filter((a) => typeof a === 'string').slice(0, 6);
   }
+  const plans = t.statut === 'termine' && t.type === 'image' ? plansPourModele(t.resultat) : null;
+  if (plans) data.plans = plans.data;
   if (data.photo_requise) {
     return {
       status: 'ok', source: SOURCE_STUDIO, data,
-      message: MESSAGE_PHOTO_REQUISE + ' La carte du chat affiche la raison, les consignes et le bouton « Envoyer une photo de ma maison »' +
-        ((data.photo_requise as Obj).ajuster_le_placement ? ' ainsi que « Ajuster le placement »' : '') + ' : ne les recopie pas.',
+      message: ((data.photo_requise as Obj).projet === 'maison_neuve'
+        ? MESSAGE_PHOTO_REQUISE_MAISON + ' La carte du chat affiche la raison, les consignes et le bouton « Envoyer une photo du terrain »'
+        : MESSAGE_PHOTO_REQUISE + ' La carte du chat affiche la raison, les consignes et le bouton « Envoyer une photo de ma maison »') +
+        ((data.photo_requise as Obj).ajuster_le_placement ? ' ainsi que « Ajuster le placement »' : '') + ' : ne les recopie pas.' + (plans?.phrase ?? ''),
     };
   }
   return {
     status: 'ok', source: SOURCE_STUDIO, data,
     message: 'Statut lu en base (écrit par la machine de rendu) à cet instant ; n’invente ni progression ni délai.' +
       ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' +
-      MESSAGE_ETAT_EN_DIRECT,
+      (plans?.phrase ?? '') + MESSAGE_ETAT_EN_DIRECT,
   };
 }
 
@@ -2094,6 +2237,33 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
         const o = (l as { tool_output?: { status?: unknown; data?: unknown } }).tool_output;
         return o?.status === 'ok' && estObj(o.data) ? [o.data as Record<string, unknown>] : [];
       });
+    },
+    async optionsDernierRenduImage(userId, conversationId) {
+      // LOT G7 — lecture sous l'identité de l'utilisateur (RLS) quand elle est disponible, bornée à SA conversation.
+      const { data, error } = await db.from('studio_jobs').select('options').eq('user_id', userId).eq('conversation_id', conversationId)
+        .eq('type', 'image').order('cree_le', { ascending: false }).limit(1);
+      if (error || !Array.isArray(data) || !data.length) return null;
+      const o = (data[0] as { options?: unknown }).options;
+      return estObj(o) ? o : null;
+    },
+    async sortiesMaison(userId, conversationId) {
+      // LOT G10b : même lecture bornée que l'extension ; le projet est revalidé (lireProjetMaison).
+      const { data, error } = await admin.from('copilot_tool_calls').select('tool_output')
+        .eq('user_id', userId).eq('conversation_id', conversationId).eq('tool_name', 'maison_neuve')
+        .order('created_at', { ascending: false }).limit(10);
+      if (error || !Array.isArray(data)) return [];
+      return data.flatMap((l) => {
+        const o = (l as { tool_output?: { status?: unknown; data?: unknown } }).tool_output;
+        return o?.status === 'ok' && estObj(o.data) ? [o.data as Record<string, unknown>] : [];
+      });
+    },
+    async dernierParcours(userId, conversationId) {
+      const { data, error } = await admin.from('copilot_tool_calls').select('tool_name')
+        .eq('user_id', userId).eq('conversation_id', conversationId).in('tool_name', ['extension_maison', 'maison_neuve'])
+        .order('created_at', { ascending: false }).limit(1);
+      if (error || !Array.isArray(data) || !data.length) return null;
+      const n = (data[0] as { tool_name?: unknown }).tool_name;
+      return n === 'extension_maison' || n === 'maison_neuve' ? n : null;
     },
     async briefsMessages(userId, conversationId) {
       // Lecture serveur (service) bornée à l'utilisateur ET à la conversation ; le bloc est revalidé par briefDuMessage.

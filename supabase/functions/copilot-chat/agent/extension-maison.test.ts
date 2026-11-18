@@ -203,7 +203,9 @@ Deno.test('X3-8 : parcours P0646 — arrière 5 × 4 m, plain-pied : moteur OK (
   assertMatch(t[1]!.blocChoix!, /"id":"x3_toit".*"defaut":"2 pans"/);
   assertMatch(t[1]!.blocChoix!, /"id":"x3_niveaux".*"defaut":"R\+1"/);
   const fin = t[4]!;
-  assertEquals(fin.blocChoix, null);
+  // LOT G7 — extension placée : seules les suggestions de variante (« Retoucher l’extension ») sont proposées en puces.
+  assertEquals(fin.attendues, ['x3_retouche']);
+  assertMatch(fin.blocChoix!, /"id":"x3_retouche"/);
   assertEquals(fin.vue.extension!.verdict, 'ok');
   assertEquals(fin.vue.extension!.sdpCreee!.valeur, 16.8);
   assertEquals(fin.vue.extension!.empriseCreeeM2, 20);

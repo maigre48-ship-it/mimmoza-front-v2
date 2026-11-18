@@ -24,7 +24,8 @@ export const CONSIGNE_PAS_DE_CALCUL =
 
 /** Outils dont le résultat EST un calcul de moteur : leur présence dans le tour lève la garde. */
 // LOT X3 : extension_maison fait tourner le moteur d'extension et le calcul DP / PC (chiffres du serveur).
-const RE_OUTIL_CALCUL = /^(?:calculer_|studio_preparer_3d$|get_bilan_promoteur$|extension_maison$)/;
+// LOT G10b : maison_neuve place la maison (reculs mesurés) et donne l'autorisation indicative (chiffres du serveur).
+const RE_OUTIL_CALCUL = /^(?:calculer_|studio_preparer_3d$|get_bilan_promoteur$|extension_maison$|maison_neuve$)/;
 
 export function calculParMoteur(outilsAppeles: ReadonlyArray<{ name: string }>): boolean {
   return outilsAppeles.some((o) => RE_OUTIL_CALCUL.test(o.name));

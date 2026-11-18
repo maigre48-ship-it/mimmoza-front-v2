@@ -40,13 +40,20 @@ import { urlStudio3D } from '@/spaces/promoteur/shared/ouvrirStudio3D';
 import { StudioIntegre, type DemandeStudioIntegre } from './studio3d/StudioIntegre';
 // LOT D9 — « Préparer mon dossier » (carte Extension de maison) → Studio intégré, espace Dossier.
 import { blocDossierPourStudio, EVENEMENT_PREPARER_DOSSIER, rendusLivresPourDossier, verifierPreparationDossier } from './studio3d/dossierExtension';
+// LOT G4 — « Modifier dans le Studio » depuis la carte des plans : même ouverture que « Préparer mon dossier ».
+import { EVENEMENT_OUVRIR_PLANS_STUDIO } from '@/lib/studio/plansExtension';
 import { derniereVueExtension } from './studio3d/extensionMaison';
 // LOT F5 — lecture du plan de l'existant confiée au Studio intégré (aucun jeton), photo calée, relevé validé en retour.
 import {
   blocPhotoCalee, blocPlanExistant, contexteCopilotReleve, DUREE_URL_PLAN_S, etatLirePlanExistant, EVENEMENT_IMPORTER_PLAN_EXISTANT,
   lignesReleve, memoriserReleve, MENTION_LECTURE_LOCALE, oublierPlanEnAttente, photoCaleePourStudio, planEnAttente,
   type BlocPhotoCalee, type SyntheseReleve,
+  deposerPlanEnAttente,
 } from './studio3d/planExistantStudio';
+// LOT G6 — plan joint dans le chat (lu dans le Studio, jamais par le modèle) et carte « Plan lu » (confirmations, saisie).
+import { base64VersOctets, contextePlanLu, indicePlanJoint, messageValidationPlan, texteAvecMarqueurPlan, type PlanLuSite } from './studio3d/planLuChat';
+import { CartePlanLu, type EtatCartePlanLu } from './studio3d/CartePlanLu';
+import { BUCKET_PIECES_JOINTES } from './pieces-jointes/piecesJointesLogique';
 import { signerTransferts } from './studio3d/transfertStudio';
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import { setActiveCopilotContext } from './store/activeCopilotContext.store';
@@ -519,6 +526,24 @@ export default function MimmozIAPage() {
     memoriserReleve(userStorage, s, useCopilotStore.getState().currentConversationId);
     setActiveCopilotContext({ pageSnapshot: contexteCopilotReleve(s) });
     setNoticePlan(lignesReleve(s).join(' '));
+    // LOT G6 — plan fourni lu : carte « Plan lu » (valeurs clés à confirmer, points douteux).
+    releveCourantRef.current = s;
+    if (s.planLu) setCartePlan({ mode: 'lu', plan: s.planLu });
+  }, []);
+  /** LOT G6 — carte « Plan lu » : état, plan confirmé / corrigé (mémorisé et donné au contexte de la page). */
+  const [cartePlan, setCartePlan] = useState<EtatCartePlanLu | null>(null);
+  const releveCourantRef = useRef<SyntheseReleve | null>(null);
+  const surPlanLu = useCallback((p: PlanLuSite) => {
+    setCartePlan({ mode: 'lu', plan: p });
+    const s = releveCourantRef.current;
+    if (s && p.source === 'import-plan') {
+      const maj = { ...s, planLu: p };
+      releveCourantRef.current = maj;
+      memoriserReleve(userStorage, maj, useCopilotStore.getState().currentConversationId);
+      setActiveCopilotContext({ pageSnapshot: contexteCopilotReleve(maj) });
+    } else {
+      setActiveCopilotContext({ pageSnapshot: contextePlanLu(p) });
+    }
   }, []);
   useEffect(() => {
     const surDossier = (e: Event) => {
@@ -528,6 +553,15 @@ export default function MimmozIAPage() {
     };
     window.addEventListener(EVENEMENT_PREPARER_DOSSIER, surDossier);
     return () => window.removeEventListener(EVENEMENT_PREPARER_DOSSIER, surDossier);
+  }, [preparerDossier]);
+  useEffect(() => {
+    const surPlans = () => {
+      const regime = derniereVueExtension(useCopilotStore.getState().messages as never)?.dossier?.choix?.[0] ?? null;
+      if (!regime) { setAttachError('Pour modifier les plans dans le Studio, terminez d’abord le parcours d’extension avec Mimmo.'); return; }
+      void preparerDossier(regime).catch(error => setAttachError(error instanceof Error ? error.message : 'Ouverture du Studio impossible.'));
+    };
+    window.addEventListener(EVENEMENT_OUVRIR_PLANS_STUDIO, surPlans);
+    return () => window.removeEventListener(EVENEMENT_OUVRIR_PLANS_STUDIO, surPlans);
   }, [preparerDossier]);
   const preparerMission3D = useCallback((mission: Mission) => {
     const state = useCopilotStore.getState();
@@ -608,13 +642,37 @@ export default function MimmozIAPage() {
     if (!message) return;
     void track('search', { source: 'mimmozia' });
     if (preparationPj) { setAttachError('Patientez : la pièce jointe est en cours de préparation.'); return; }
+    // LOT G6 — plan de la maison joint : gardé dans l'onglet et lu dans le Studio (sans jeton), JAMAIS envoyé au modèle
+    // de langage ; le message part avec un marqueur « [Plan de la maison joint …] ».
+    let pieces = attachments;
+    let texte = message;
+    const iPlan = indicePlanJoint(attachments, message);
+    if (iPlan >= 0) {
+      const pj = attachments[iPlan]!;
+      pieces = attachments.filter((_, i) => i !== iPlan);
+      let octets: ArrayBuffer | null = null;
+      try {
+        if (typeof pj.data === 'string') octets = base64VersOctets(pj.data);
+        else if (pj.storagePath) { const { data } = await supabase.storage.from(BUCKET_PIECES_JOINTES).download(pj.storagePath); octets = data ? await data.arrayBuffer() : null; }
+      } catch { octets = null; }
+      const c = octets ? deposerPlanEnAttente({ nom: pj.name, type: pj.mediaType || 'application/octet-stream', taille: octets.byteLength, octets, provenance: 'conversation', deposeLeMs: Date.now() }) : { ok: false as const, raison: 'fichier illisible' };
+      if (c.ok) {
+        texte = texteAvecMarqueurPlan(message, pj.name);
+        setCartePlan({ mode: 'attente', nom: pj.name });
+        const vue = derniereVueExtension(useCopilotStore.getState().messages as never);
+        if (etatLirePlanExistant(vue)) window.setTimeout(() => window.dispatchEvent(new Event(EVENEMENT_IMPORTER_PLAN_EXISTANT)), 0);
+        else setNoticePlan(`Plan « ${pj.name} » gardé : il sera lu dans le Studio dès que la maison est identifiée et conservée (parcours « agrandir ma maison »), avec le bouton « Lire le plan de l’existant » de la carte. ${MENTION_LECTURE_LOCALE}`);
+      } else {
+        setAttachError(`Le plan « ${pj.name} » n’a pas pu être gardé pour la lecture (${c.raison}) : il n’est pas envoyé.`);
+      }
+    }
     // V1.8 : une pièce stockée part en RÉFÉRENCE ; le dossier 3D ne reçoit que le base64.
-    const files = versPayload(attachments);
+    const files = versPayload(pieces);
     try {
       setAttachError(null);
       if (send) {
-        await send(message, files.length ? { attachments: files } : undefined);
-        await conserverPieces3d(message, { attachments: piecesBase64(attachments) });
+        await send(texte, files.length ? { attachments: files } : undefined);
+        await conserverPieces3d(texte, { attachments: piecesBase64(pieces) });
       }
       else console.warn('[MimmozIA] Aucune fonction d’envoi détectée — voir INTEGRATION.md.');
       setAttachments([]);
@@ -714,6 +772,14 @@ export default function MimmozIAPage() {
         <span style={{ flex: 1 }}>{noticePlan}</span>
         <button type="button" onClick={() => setNoticePlan(null)} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#312e81' }}><X size={14} /></button>
       </div>}
+      {/* LOT G6 — carte « Plan lu » : plan joint en lecture, plan lu à confirmer, ou cotes saisies. */}
+      {cartePlan && <CartePlanLu etat={cartePlan}
+        onPlan={surPlanLu}
+        onValider={(p) => { surPlanLu(p); setCartePlan(null); setNoticePlan('Plan transmis à Mimmo : il en tient compte pour votre projet.'); void startWith(messageValidationPlan(p)); }}
+        onSaisie={() => setCartePlan({ mode: 'saisie' })}
+        onRelevePhoto={() => window.dispatchEvent(new Event(EVENEMENT_IMPORTER_PLAN_EXISTANT))}
+        onRelire={() => window.dispatchEvent(new Event(EVENEMENT_IMPORTER_PLAN_EXISTANT))}
+        onFermer={() => setCartePlan(null)} />}
       {/* Agent autonome : panneau Missions / À valider / Mémoire (fermé par défaut) */}
       <PanneauAgent />
       {/* LOT D1 : réponses longues, ordre et rapport de mission présentés comme des documents (fermé par défaut) */}

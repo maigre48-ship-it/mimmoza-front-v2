@@ -33,6 +33,9 @@ import { appelsSuiviRemplaces, cartesSuivi } from '../studio3d/suiviRenduChat';
 import { CarteBriefCreatif } from '../studio3d/CarteBriefCreatif';
 // LOT X3 (14/11/2026) — parcours « extension de maison » : carte des valeurs et de leurs statuts (calculés par le serveur).
 import { CarteExtensionMaison } from '../studio3d/CarteExtensionMaison';
+// LOT G7 (18/11/2026) — variantes d'extension (V1, V2…) côte à côte, sous la dernière carte du parcours.
+import { CarteVariantesExtension } from '../studio3d/CarteVariantesExtension';
+import { variantesDeConversation } from '../studio3d/variantesChat';
 import { lireVueExtension, OUTIL_EXTENSION_MAISON } from '../studio3d/extensionMaison';
 // Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
 import { LigneHabillage } from '../studio3d/LigneHabillage';
@@ -120,6 +123,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   const cartesResultat = useMemo(() => preparerCartes(message.toolCalls, message.status), [message.toolCalls, message.status]);
   // LOT E1-suivi : carte de suivi vivante d'un rendu Studio (dernier appel qui cite chaque travail).
   const suivisRendu = useMemo(() => cartesSuivi(messages), [messages]);
+  const variantesExtension = useMemo(() => variantesDeConversation(messages), [messages]);
   // LOT P2 : un appel de suivi plus ancien (sortie figée « en_attente ») renvoie vers la carte vivante du même travail.
   const suivisRemplaces = useMemo(() => appelsSuiviRemplaces(messages), [messages]);
   // LOT CHOIX-CLIQUABLES : puces actives sur le dernier message seulement ; sinon figées avec la réponse donnée.
@@ -194,7 +198,10 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
                 : <CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} />;
               return demande.origine === 'demande' ? brief : <><CopilotApiResultCard call={tc} />{brief}<ChoixFondImage call={tc} demande={demande} messageId={message.id} onSend={onSend} /></>;
             } }
-            if (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running') { const vue = lireVueExtension(tc.output); if (vue) return <CarteExtensionMaison vue={vue} />; }
+            if (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running') {
+              const vue = lireVueExtension(tc.output);
+              if (vue) return <><CarteExtensionMaison vue={vue} />{variantesExtension.appelId === tc.id && <CarteVariantesExtension variantes={variantesExtension.variantes} />}</>;
+            }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de

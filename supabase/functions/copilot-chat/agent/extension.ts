@@ -22,6 +22,8 @@ import {
   type BatimentBdTopo, type LectureBdTopoMemorisee,
 } from '../../_shared/extension/bdtopoParcelle.ts';
 import { lambert93VersWgs84 } from '../../_shared/extension/lambert93.ts';
+// INTÉGRATION 18/11 — côté de la rue désigné par l'utilisateur, transmis à la machine de rendu.
+import { candidatChoisi, candidatsCoteRue } from '../../_shared/extension/coteRue.ts';
 import {
   avancerParcours, detecterIntentionExtension, lireEtat, OUTIL_EXTENSION_MAISON, Q, reponseAuParcours, suiteDuParcours,
   type ContexteParcours, type RegleSite, type SortieParcours,
@@ -29,8 +31,20 @@ import {
 import { evaluerSecteurProtege, lireSecteurEnregistre, type ReponseService, type SecteurProtege } from '../../_shared/extension/secteurProtege.ts';
 import { chercherVoisinesParcelle, facadesVoieDeLaParcelle, type FacadeVoieFiche } from './voisines-parcelle.ts';
 import type { OutilDef, ResultatOutil } from './types.ts';
+// LOT G3 — photo de la maison jointe au message (avec les instructions) : parcelle par sa position, fond de l'image.
+import {
+  lignesPhotoProjet, parcelleDepuisPhoto, photoProjetDesSorties, pointDansContour, recevoirPhoto,
+  type DepotPhotoProjet, type ParcelleDeLaPhoto, type PhotoDuTour, type PhotoProjet,
+} from './photo-projet.ts';
+// LOT G3 — dossier de parcelle minimal (contour + parcelles voisines du cadastre) pour qu'une extension placée ait son image.
+import { chercherContourParcelle } from './conception.ts';
+// LOT G6 — plan de la maison lu dans le Studio (contexte de la page), gardé dans l'état du parcours.
+import { CONSIGNE_PLAN_JOINT, existantLuPourFiche, lirePlanLu, planJointAuMessage, type PlanLuParcours } from '../../_shared/extension/planLu.ts';
+// LOT G7 — variantes : retouches écrites librement après un premier projet, historique V1, V2… rattaché au projet.
+import { demandeRetouche } from '../../_shared/extension/retouchesExtension.ts';
+import { avecVariante, empreinteProjet, variantesDesSorties } from '../../_shared/extension/variantesExtension.ts';
 
-export { detecterIntentionExtension, OUTIL_EXTENSION_MAISON, reponseAuParcours, suiteDuParcours };
+export { demandeRetouche, detecterIntentionExtension, OUTIL_EXTENSION_MAISON, reponseAuParcours, suiteDuParcours };
 
 export const SOURCE_EXTENSION = 'MimmozIA · Extension de maison';
 export const DELAI_SOURCE_MS = 10_000;
@@ -86,9 +100,20 @@ export function avertissementsRenduExtension(projet: ProjetExtension, type: 'ima
   ];
 }
 
-/** Fiche du travail complétée du projet d'extension (contrat X0), au même niveau que `habillage_batiments`. */
-export function ficheAvecProjetExtension<T extends Record<string, unknown>>(fiche: T, projet: ProjetExtension): T & { projet_extension: ProjetExtension } {
-  return { ...fiche, projet_extension: JSON.parse(JSON.stringify(projet)) as ProjetExtension };
+/**
+ * Fiche du travail complétée du projet d'extension (contrat X0), au même niveau que `habillage_batiments`. LOT G6 :
+ * avec le plan de la maison lu (`existant_lu`, valeurs et statuts), repris au cartouche des plans de l'extension.
+ */
+export function ficheAvecProjetExtension<T extends Record<string, unknown>>(fiche: T, projet: ProjetExtension, existantLu?: Record<string, unknown> | null): T & { projet_extension: ProjetExtension } {
+  return { ...fiche, projet_extension: JSON.parse(JSON.stringify(projet)) as ProjetExtension, ...(existantLu ? { existant_lu: JSON.parse(JSON.stringify(existantLu)) as Record<string, unknown> } : {}) };
+}
+
+/** LOT G6 — emprise BD TOPO relue dans la ligne « Emprise au sol » de la vue (« 104 m² »). Pur. */
+export function empriseBdTopoDeLaVue(lignes: readonly unknown[]): number | null {
+  const l = lignes.find((x) => typeof x === 'object' && x !== null && (x as Record<string, unknown>).libelle === 'Emprise au sol') as Record<string, unknown> | undefined;
+  const m = typeof l?.valeur === 'string' ? /(\d[\d\s  ]*(?:[.,]\d+)?)\s*m²/.exec(l.valeur) : null;
+  const v = m ? Number(m[1]!.replace(/[\s  ]/g, '').replace(',', '.')) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
 }
 
 type Obj = Record<string, unknown>;
@@ -136,6 +161,11 @@ export interface DepotExtension {
   conceptionDeLaConversation?(userId: string, conversationId: string): Promise<string | null>;
   /** Sorties `data` des appels précédents de l'outil dans la conversation, du plus récent au plus ancien. */
   sortiesPrecedentes(userId: string, conversationId: string): Promise<Obj[]>;
+  /**
+   * LOT G3 — crée le dossier MINIMAL de la parcelle (contour et parcelles voisines lus au cadastre ; aucune règle,
+   * aucun programme) quand une extension est placée sur une parcelle qui n'en a pas. Renvoie son identifiant, ou null.
+   */
+  creerDossierParcelle?(userId: string, d: { idu: string; commune: string | null; parcelle: Obj }): Promise<string | null>;
 }
 
 export interface EnvExtension {
@@ -151,6 +181,12 @@ export interface EnvExtension {
    * serveur ; null ou absent = service non branché (secteur « non vérifié », jamais « hors secteur protégé »).
    */
   patrimoine?: ServicesPatrimoine | null;
+  /** LOT G3 — photo jointe au message de CE tour (pièce jointe du chat, posée par le serveur) ; absente sinon. */
+  photoDuTour?: PhotoDuTour | null;
+  /** LOT G3 — dépôt de la photo d'origine dans l'espace privé de l'utilisateur (seau `studio-transfert`). */
+  depotPhoto?: DepotPhotoProjet | null;
+  /** LOT G6 — plan de la maison lu dans le Studio (ou cotes saisies), transmis par le site à ce tour ; absent sinon. */
+  planLu?: PlanLuParcours | null;
 }
 
 /** Appels des services internes (corps JSON → réponse JSON ; LÈVE en cas d'échec). */
@@ -287,7 +323,7 @@ export function etatPrecedent(sorties: readonly Obj[]): { etat: ReturnType<typeo
 }
 
 /** Dernier `projet_extension` VALIDE de la conversation (contrat X0), avec l'option de travail. */
-export function projetDesSorties(sorties: readonly Obj[]): { projet: ProjetExtension; existant: 'conserver' | 'effacer'; placee: boolean } | null {
+export function projetDesSorties(sorties: readonly Obj[]): { projet: ProjetExtension; existant: 'conserver' | 'effacer'; placee: boolean; existantLu?: Record<string, unknown> | null } | null {
   for (const d of sorties) {
     // LOT X4 site : la maison a été déclarée « à démolir » APRÈS le dernier projet (parcours arrêté, projet neuf) :
     // l'ancien projet d'extension ne vaut plus (le rendu étant ouvert, il dessinerait une extension non voulue).
@@ -299,7 +335,11 @@ export function projetDesSorties(sorties: readonly Obj[]): { projet: ProjetExten
     // LOT X10 — l'extension de ce projet a-t-elle été PLACÉE (verdict du moteur affiché) ? Un refus affiché la rend
     // impossible à rendre (aucune 3D, aucun rendu) ; une sortie sans verdict (antérieure au lot) est lue comme placée.
     const verdict = estObj(d.vue) && estObj(d.vue.extension) ? d.vue.extension.verdict : undefined;
-    return { projet: lu.projet, existant: opt, placee: verdict !== 'refus' };
+    // LOT G6 — plan de la maison lu (état du parcours) : repris par les plans de l'extension (`fiche.existant_lu`).
+    const planLu = estObj(d.etat) ? lirePlanLu(d.etat.planLu) : null;
+    const emprise = lu.projet.existants[0] && estObj(d.vue) && estObj(d.vue.maison) && Array.isArray(d.vue.maison.lignes)
+      ? empriseBdTopoDeLaVue(d.vue.maison.lignes) : null;
+    return { projet: lu.projet, existant: opt, placee: verdict !== 'refus', ...(planLu ? { existantLu: existantLuPourFiche(planLu, emprise) } : {}) };
   }
   return null;
 }
@@ -325,7 +365,7 @@ function erreur(message: string, status = 'error'): ResultatOutil {
  * sans nom interne, sans annoncer un résultat absent. Le modèle ne l'improvise plus (essai du 17/11 : « le serveur a
  * affiché le gabarit » alors que rien n'avait été calculé).
  */
-export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 'resultatMoteur'> & { readonly attendues?: readonly string[] }): string {
+export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 'resultatMoteur'> & { readonly attendues?: readonly string[]; readonly photoFournie?: boolean; readonly variante?: SortieParcours['variante'] }): string {
   switch (s.etape) {
     case 'sans_parcelle': return 'Donnez-moi l’adresse ou la référence cadastrale de la maison, et je reprends.';
     case 'sans_bdtopo': return 'Vos réponses sont gardées : cliquez « Réessayer » dans un instant pour reprendre au même point.';
@@ -341,6 +381,13 @@ export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 're
       // LOT X8b — extension plus haute que la maison : les choix de hauteur sont proposés en puces.
       if (s.attendues?.includes(Q.hauteur.id)) return 'Choisissez la hauteur de l’extension ci-dessous, et je la replace.';
       if (s.attendues?.includes(Q.facade.id)) return 'Choisissez un autre côté ci-dessous, et je replace l’extension.';
+      // LOT G7 — retouche ambiguë : une précision à puces, puis la variante est recalculée.
+      if (s.attendues?.some((a) => a.startsWith('x3_ret_'))) return 'Choisissez ci-dessous, et je recalcule la variante.';
+      if (s.variante && s.variante.n >= 2 && s.variante.changements.length && s.projet && s.resultatMoteur?.ok) {
+        return `Voici la variante V${s.variante.n}. Si vous le souhaitez, je peux maintenant préparer une image de l’extension (avec ses plans), sur la même photo et avec le même placement.`;
+      }
+      // LOT G3 — photo de la maison envoyée dans la conversation : c'est elle qui sert de fond.
+      if (s.projet && s.resultatMoteur?.ok && s.photoFournie) return 'Si vous le souhaitez, je peux maintenant préparer l’image de l’extension sur votre photo.';
       if (s.projet && s.resultatMoteur?.ok) return 'Si vous le souhaitez, je peux maintenant préparer une image de l’extension dans la photo de la rue.';
       // LOT X10 — la VRAIE cause et la VRAIE action (essai du 17/11 : « modifiez les dimensions » alors que le blocage
       // était le côté rue).
@@ -353,8 +400,9 @@ export function phraseDeRelance(s: Pick<SortieParcours, 'etape' | 'projet' | 're
 }
 
 /** Résultat d'outil : données pour le front (vue, projet) et consigne courte pour le modèle. */
-export function resultatParcours(s: SortieParcours, lectureBdTopo: LectureBdTopoMemorisee | null = null): ResultatOutil {
-  const relance = phraseDeRelance(s);
+export function resultatParcours(s: SortieParcours, lectureBdTopo: LectureBdTopoMemorisee | null = null, photoFournie = false): ResultatOutil {
+  const relance = phraseDeRelance({ ...s, photoFournie });
+  const variante = s.etape === 'termine' && s.variante ? s.variante : null;
   return {
     status: 'ok', source: SOURCE_EXTENSION,
     data: {
@@ -364,6 +412,8 @@ export function resultatParcours(s: SortieParcours, lectureBdTopo: LectureBdTopo
       ...(s.erreursProjet.length ? { erreurs_projet: s.erreursProjet } : {}),
       // LOT X8 — lecture BD TOPO de la parcelle, réutilisée si la BD TOPO ne répond pas à un tour suivant.
       ...(lectureBdTopo ? { bdtopo_lue: lectureBdTopo } : {}),
+      // LOT G7 — variante affichée (numéro, changements, demandes non appliquées, point de vue).
+      ...(variante ? { variante } : {}),
     },
     message:
       'DÉJÀ AFFICHÉ À L’UTILISATEUR : ' + (s.etape === 'sans_bdtopo' || s.etape === 'sans_parcelle' || s.etape === 'aucun_batiment'
@@ -374,7 +424,12 @@ export function resultatParcours(s: SortieParcours, lectureBdTopo: LectureBdTopo
       'n’annonce aucun résultat (gabarit, régime, image) qui ne figure pas dans cette sortie.' +
       (s.etape === 'termine' && RENDU_EXTENSION_OUVERT && s.projet && s.resultatMoteur?.ok
         ? ' Si l’utilisateur accepte l’image (à un message SUIVANT) : appelle studio_lancer_rendu avec type « image », SANS brief (s’il répond « aucune 3D préparée », appelle d’abord studio_preparer_3d sans argument, puis studio_lancer_rendu) ; ' +
-          'l’image part de CETTE extension (maison existante conservée + extension placée), jamais d’un immeuble ni de logements. Ne promets ni délai ni image « insérée dans la rue » : la machine de rendu le vérifie elle-même.'
+          'l’image part de CETTE extension (maison existante conservée + extension placée), jamais d’un immeuble ni de logements. Ne promets ni délai ni image « insérée dans la rue » : la machine de rendu le vérifie elle-même.' +
+          // LOT G7 — variante demandée en parlant : si une image de l'extension existe déjà dans la conversation, la
+          // nouvelle image est proposée tout de suite (devis à confirmer), sur la même photo et avec le même placement.
+          (variante && variante.n >= 2 && variante.changements.length
+            ? ` C’EST LA VARIANTE V${variante.n} DU PROJET : si une image de l’extension a déjà été préparée dans cette conversation, appelle MAINTENANT studio_lancer_rendu avec type « image », SANS brief et SANS fond (la même photo et le même placement sont repris automatiquement) : il présente le devis, à confirmer par l’utilisateur ; n’annonce aucun délai.`
+            : '')
         : '') +
       // LOT X10 — extension NON placée : aucun lancement ne doit être annoncé (essai du 17/11 : « Parfait ! Je lance la
       // préparation de la maquette 3D… » alors que le placement était refusé).
@@ -405,14 +460,14 @@ export async function facadesParVoisines(idu: string, geometrie: unknown, f: typ
 }
 
 /** Relit une limite sur rue mémorisée (sortie d'un tour précédent) ; tout objet mal formé est écarté. */
-export function lireFacadesLues(v: unknown): FacadesVoieLues | null {
+export function lireFacadesLues(v: unknown, source: FacadeVoieFiche['source'] = 'cadastre-voisines'): FacadesVoieLues | null {
   if (!estObj(v) || typeof v.idu !== 'string' || !RE_IDU.test(v.idu) || typeof v.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.date)) return null;
   if (!Array.isArray(v.facades) || !v.facades.length || v.facades.length > 50) return null;
   const point = (p: unknown): p is [number, number] => Array.isArray(p) && p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0] as number) <= 180 && Math.abs(p[1] as number) <= 90;
   const out: FacadeVoieFiche[] = [];
   for (const x of v.facades) {
-    if (!estObj(x) || !point(x.debut) || !point(x.fin) || typeof x.longueurM !== 'number' || !Number.isFinite(x.longueurM) || x.source !== 'cadastre-voisines') return null;
-    out.push({ debut: [x.debut[0], x.debut[1]], fin: [x.fin[0], x.fin[1]], longueurM: x.longueurM, source: 'cadastre-voisines' });
+    if (!estObj(x) || !point(x.debut) || !point(x.fin) || typeof x.longueurM !== 'number' || !Number.isFinite(x.longueurM) || x.source !== source) return null;
+    out.push({ debut: [x.debut[0], x.debut[1]], fin: [x.fin[0], x.fin[1]], longueurM: x.longueurM, source });
   }
   return { idu: v.idu, date: v.date, facades: out };
 }
@@ -425,6 +480,38 @@ export function facadesLuesDesSorties(sorties: readonly Obj[], idu: string): Fac
     if (l && l.idu === idu) return l;
   }
   return null;
+}
+
+/**
+ * INTÉGRATION 18/11 — côté de la rue DÉSIGNÉ par l'utilisateur (puces « Côté de la rue », lot X10) pour CETTE parcelle,
+ * mémorisé comme limite sur rue (source « utilisateur ») : la machine de rendu le reçoit comme une limite lue.
+ */
+export function facadesChoisiesDesSorties(sorties: readonly Obj[], idu: string): FacadesVoieLues | null {
+  for (const d of sorties) {
+    if (!estObj(d) || d.facades_voie_choisies === undefined) continue;
+    const l = lireFacadesLues(d.facades_voie_choisies, 'utilisateur');
+    if (l && l.idu === idu) return l;
+  }
+  return null;
+}
+
+/** Longueur (m) d'une arête WGS 84 courte (approximation équirectangulaire, écart < 0,1 % à cette échelle). */
+export function longueurAreteM(debut: readonly [number, number], fin: readonly [number, number]): number {
+  const lat = ((debut[1] + fin[1]) / 2) * Math.PI / 180;
+  const dx = (fin[0] - debut[0]) * 111_320 * Math.cos(lat);
+  const dy = (fin[1] - debut[1]) * 110_574;
+  return Math.round(Math.hypot(dx, dy) * 100) / 100;
+}
+
+/** Côté du contour cadastral désigné par l'utilisateur → limite sur rue (source « utilisateur »), ou null. */
+export function facadesDuCoteChoisi(idu: string, date: string, anneau: readonly (readonly [number, number])[] | null, rueChoix: string | null | undefined): FacadesVoieLues | null {
+  if (!anneau || !rueChoix) return null;
+  const choix = candidatChoisi(candidatsCoteRue(anneau), rueChoix);
+  if (!choix || !choix.segments.length) return null;
+  return {
+    idu, date,
+    facades: choix.segments.map((s) => ({ debut: [s.debut[0], s.debut[1]], fin: [s.fin[0], s.fin[1]], longueurM: longueurAreteM(s.debut, s.fin), source: 'utilisateur' as const })),
+  };
 }
 
 /** LOT X8 — dernière lecture BD TOPO mémorisée pour CETTE parcelle dans la conversation (la plus récente). */
@@ -444,10 +531,25 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   let sorties: Obj[] = [];
   try { sorties = await env.depot.sortiesPrecedentes(env.userId, env.conversationId); } catch { sorties = []; }
   const prec = etatPrecedent(sorties);
+  const dateJour = new Date((env.maintenant ?? Date.now)()).toISOString().slice(0, 10);
+
+  // LOT G3 — photo de la maison jointe à CE message : lue (EXIF) et déposée dans l'espace privé de l'utilisateur ;
+  // sinon, photo d'un tour précédent de la conversation. Elle servira de fond à l'image de l'extension.
+  const photoPrecedente = photoProjetDesSorties(sorties);
+  const recue = env.photoDuTour ? await recevoirPhoto(env.photoDuTour, env.userId, env.depotPhoto, dateJour, prec.etat.idu) : null;
+  let photo: PhotoProjet | null = recue?.photo ?? photoPrecedente;
+  const lignesPhoto: string[] = recue?.raison ? [`Votre photo n’a pas pu être gardée pour l’image : ${recue.raison}.`] : [];
 
   // Parcelle : conception donnée, sinon identifiant donné, sinon celle du parcours en cours, sinon la 3D de la conversation.
   const iduDonne = typeof input.idu === 'string' ? input.idu.replace(/\s/g, '').toUpperCase() : null;
-  const idu = iduDonne && RE_IDU.test(iduDonne) ? iduDonne : prec.etat.idu;
+  let idu = iduDonne && RE_IDU.test(iduDonne) ? iduDonne : prec.etat.idu;
+  // LOT G3 — aucune parcelle connue : la position (et la direction) enregistrées dans la photo la retrouvent au cadastre.
+  let parcellePhoto: ParcelleDeLaPhoto | null = null;
+  if (!idu && recue?.photo?.position) {
+    const r = await parcelleDepuisPhoto(recue.photo.position, recue.photo.cap_deg, env.fetch);
+    if ('parcelle' in r) { parcellePhoto = r.parcelle; idu = r.parcelle.idu; }
+    else lignesPhoto.push(`Je n’ai pas pu retrouver la maison d’après la photo : ${r.raison}.`);
+  }
   let c: ConceptionExtension | null = null;
   try {
     if (typeof input.conception_id === 'string' && RE_UUID.test(input.conception_id)) c = await env.depot.conception(env.userId, { id: input.conception_id });
@@ -459,12 +561,22 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   } catch { c = null; }
   const iduRetenu = c?.idu ?? idu;
   if (!iduRetenu) {
+    // LOT G3 — la photo reçue est GARDÉE (sortie « ok » relue au tour suivant) ; l'adresse est demandée.
+    if (photo) {
+      const relance = 'J’ai bien votre photo. Donnez-moi l’adresse ou la référence cadastrale de la maison, et je reprends.';
+      return {
+        status: 'ok', source: SOURCE_EXTENSION,
+        data: { etape: 'sans_parcelle', photo_projet: photo, phrase_relance: relance, lignes_photo: [...lignesPhoto, ...lignesPhotoProjet(photo, !!recue?.photo, null)] },
+        message: `Parcelle inconnue. Écris EXACTEMENT cette phrase, et rien d’autre : « ${relance} » ${lignesPhoto.length ? `Ajoute seulement, en une phrase, pourquoi la photo n’a pas suffi : ${lignesPhoto.join(' ')} ` : ''}N’annonce aucune estimation, aucune image, aucun lancement.`,
+      };
+    }
     return erreur('Parcelle inconnue : demande à l’utilisateur l’adresse ou la référence cadastrale de sa maison (une seule question, en texte). Ne propose aucune estimation.', 'partial');
   }
+  if (photo && photo.idu !== iduRetenu) photo = { ...photo, idu: iduRetenu, depuis_terrain: parcellePhoto ? parcellePhoto.depuisTerrain : photo.idu === null ? photo.depuis_terrain : null };
 
   // Contour cadastral.
-  let geometrie: unknown = estObj(c?.parcelle) ? (c!.parcelle as Obj).geometrie : null;
-  let surface: number | null = estObj(c?.parcelle) && typeof (c!.parcelle as Obj).surface_m2 === 'number' ? (c!.parcelle as Obj).surface_m2 as number : null;
+  let geometrie: unknown = estObj(c?.parcelle) ? (c!.parcelle as Obj).geometrie : parcellePhoto?.geometrie ?? null;
+  let surface: number | null = estObj(c?.parcelle) && typeof (c!.parcelle as Obj).surface_m2 === 'number' ? (c!.parcelle as Obj).surface_m2 as number : parcellePhoto?.surfaceM2 ?? null;
   if (!geometrie) {
     const r = await lireJson(env.fetch, urlCadastre(iduRetenu));
     const f = 'data' in r && estObj(r.data) && Array.isArray(r.data.features) ? r.data.features[0] : null;
@@ -474,6 +586,8 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
     }
   }
   const anneau = anneauParcelle(geometrie);
+  // LOT G3 — photo prise depuis la parcelle (position dans le contour) : « gauche / droite » restent vus de la rue (dit).
+  if (photo && photo.position && photo.depuis_terrain === null && anneau) photo = { ...photo, depuis_terrain: pointDansContour(photo.position, anneau) };
 
   // Sources en parallèle (lecture seule, jamais bloquantes).
   let batiments: BatimentBdTopo[] | null = null;
@@ -483,7 +597,6 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
   let bdnb: DonneesBdnb | null = null;
   let noteBdnb: string | null = null;
   let zoneU: ContexteParcours['zoneU'] = { valeur: null, source: 'zonage non lu' };
-  const dateJour = new Date((env.maintenant ?? Date.now)()).toISOString().slice(0, 10);
   let dateBdTopo = dateJour;
   let secteur: SecteurProtege | null = null;
   if (anneau) {
@@ -534,10 +647,64 @@ export async function executerOutilExtension(input: Obj, env: EnvExtension): Pro
     batiments, raisonBdTopo, dateBdTopo, secteur, bdtopoReutilisee,
     bdnb, noteBdnb, zoneU, regles: reglesDeLaConception(c?.regles_plu),
     facadesVoie: facades.facades.map((f) => ({ debut: f.debut, fin: f.fin })), raisonFacades: facades.raison, sourceFacades,
+    ...(env.planLu ? { planLu: env.planLu } : {}),
   };
   const s = avancerParcours(prec.etat, env.texteUtilisateur ?? '', prec.attendues, ctx);
-  const r = resultatParcours(s, lecture);
-  return facadesLues && r.data ? { ...r, data: { ...(r.data as Obj), facades_voie_lues: facadesLues } } : r;
+  const r0 = resultatParcours(s, lecture, photo !== null);
+  // LOT G6 — plan joint au message : lu dans le Studio, jamais par le modèle (aucune cote citée ni estimée).
+  const r = planJointAuMessage(env.texteUtilisateur ?? '') ? { ...r0, message: `${r0.message}${CONSIGNE_PLAN_JOINT}` } : r0;
+  if (!r.data) return r;
+  // INTÉGRATION 18/11 — sans limite lue, le côté de la rue désigné par l'utilisateur est mémorisé pour la machine de rendu.
+  const facadesChoisies = !facadesLues && !ctx.facadesVoie.length ? facadesDuCoteChoisi(iduRetenu, dateJour, anneau, s.etat.rueChoix) : null;
+  let data: Obj = { ...(r.data as Obj), ...(facadesLues ? { facades_voie_lues: facadesLues } : {}), ...(facadesChoisies ? { facades_voie_choisies: facadesChoisies } : {}) };
+  // LOT G7 — historique des variantes (V1, V2…) rattaché au projet : numéro, changements, verdict, empreinte du projet.
+  const historique = variantesDesSorties(sorties);
+  if (s.etape === 'termine' && s.variante) {
+    let empreinte: string | null = null;
+    try { empreinte = s.projet ? await empreinteProjet(s.projet) : null; } catch { empreinte = null; }
+    const liste = avecVariante(historique, {
+      n: s.variante.n, cree_le: new Date((env.maintenant ?? Date.now)()).toISOString(), changements: s.variante.changements,
+      resume: s.variante.resume, verdict: s.resultatMoteur?.ok ? 'placee' : 'refusee', empreinte_projet: empreinte,
+    });
+    data = { ...data, variantes: liste };
+  } else if (historique.length) data = { ...data, variantes: historique };
+  // LOT G3 — extension PLACÉE sur une parcelle sans dossier dans Mimmoza (essai du 17/11, 64065000AI0002 : « aucune
+  // image sans dossier ») : le dossier minimal est créé (contour et parcelles voisines lus au cadastre, rien d'autre).
+  if (s.etape === 'termine' && s.resultatMoteur?.ok && !c && env.depot.creerDossierParcelle) {
+    let id: string | null = null;
+    try {
+      const p = await chercherContourParcelle(iduRetenu, env.fetch);
+      if (p) id = await env.depot.creerDossierParcelle(env.userId, { idu: iduRetenu, commune: null, parcelle: p as unknown as Obj });
+    } catch { id = null; }
+    const vue = estObj(data.vue) ? data.vue : null;
+    const ligne = id
+      ? `Dossier de la parcelle ${iduRetenu} créé dans Mimmoza pour préparer l’image (contour et parcelles voisines lus au cadastre le ${dateJour} ; aucune règle d’urbanisme lue).`
+      : `Le dossier de la parcelle ${iduRetenu} n’a pas pu être créé : l’image de l’extension ne pourra pas encore être préparée.`;
+    data = { ...data, ...(id ? { dossier_parcelle_id: id } : {}), ...(vue ? { vue: { ...vue, avertissements: [...(Array.isArray(vue.avertissements) ? vue.avertissements : []), ligne] } } : {}) };
+  }
+  // LOT G3 — photo du projet : mémorisée d'un tour à l'autre et dite sous la carte (avertissements de la vue).
+  if (photo) {
+    const lignes = [...lignesPhoto, ...lignesPhotoProjet(photo, !!recue?.photo, parcellePhoto)];
+    const vue = estObj(data.vue) ? data.vue : null;
+    data = { ...data, photo_projet: photo, ...(vue && lignes.length ? { vue: { ...vue, avertissements: [...(Array.isArray(vue.avertissements) ? vue.avertissements : []), ...lignes] } } : {}) };
+  } else if (lignesPhoto.length && estObj(data.vue)) {
+    const vue = data.vue;
+    data = { ...data, vue: { ...vue, avertissements: [...(Array.isArray(vue.avertissements) ? vue.avertissements : []), ...lignesPhoto] } };
+  }
+  return { ...r, data };
+}
+
+/** LOT G3 — dépôt de la photo d'origine dans `studio-transfert/<uid>/<uuid>.<ext>` (clé de service, dossier de l'utilisateur). */
+export function depotPhotoProjetSupabase(admin: ClientSb): DepotPhotoProjet {
+  return {
+    async deposer(userId, octets, mediaType) {
+      const uid = userId.toLowerCase();
+      if (!/^[0-9a-f-]{36}$/.test(uid)) return null;
+      const chemin = `${uid}/${crypto.randomUUID()}.${mediaType === 'image/png' ? 'png' : 'jpg'}`;
+      const { error } = await admin.storage.from('studio-transfert').upload(chemin, new Blob([new Uint8Array(octets)], { type: mediaType }), { contentType: mediaType, upsert: false });
+      return error ? null : chemin;
+    },
+  };
 }
 
 // ── Supabase ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -563,6 +730,12 @@ export function depotExtensionSupabase(admin: ClientSb, utilisateur: ClientSb | 
       if (error) return null;
       const id = data?.[0]?.conception_id;
       return typeof id === 'string' ? id : null;
+    },
+    async creerDossierParcelle(userId, d) {
+      // Client UTILISATEUR (RLS : insertion par le propriétaire) ; aucune mission liée, statut « regles » (rien de lu).
+      const { data, error } = await db.from('agent_conceptions')
+        .insert({ user_id: userId, idu: d.idu, commune: d.commune, parcelle: d.parcelle, regles_plu: [], statut: 'regles' }).select('id').single();
+      return error || !data?.id ? null : String(data.id);
     },
     async sortiesPrecedentes(userId, conversationId) {
       const { data, error } = await admin.from('copilot_tool_calls').select('tool_output')

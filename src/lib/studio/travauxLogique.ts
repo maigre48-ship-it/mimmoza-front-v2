@@ -13,6 +13,8 @@ import type { ProjetMimmozaV2 } from '../../spaces/promoteur/shared/echangeStudi
 import { lireElementsOmis, type ElementOmis } from './manifesteVisite.ts';
 // LOT P2 (11/11/2026) — image dans sa rue : options de fond (mêmes règles que la base et le serveur).
 import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from './fondImage.ts';
+// LOT G8 — durée d'une image dans une photo.
+import { dureeImagePhotoCourte, estFondPhoto } from './dureeRendu.ts';
 // LOT P5-SITE (12/11/2026) — effacement de l'existant : masque corrigé dans l'atelier, mention du résultat.
 // LOT X9 — photo réelle obligatoire pour une image d'extension.
 import { photoRequiseDuResultat, type PhotoRequise } from './photoReelle.ts';
@@ -157,6 +159,8 @@ export interface TravailStudio {
   projet_extension?: unknown;
   /** LOT X3 — `resultat.extension` (machine de rendu, lot X4), lu tel quel. */
   resultat_extension?: unknown;
+  /** LOT G10b — `resultat.maison` (maison neuve : contrôle, empreinte, plans), lu tel quel. */
+  resultat_maison?: unknown;
 }
 
 /** Ligne à insérer (le serveur force statut, suivi et dates). */
@@ -198,7 +202,9 @@ export const MENTION_MACHINE_RENDU = 'Le rendu démarre dès que la machine de r
  * finale (path tracer, mesures de l'image vitrine), plus la préparation du modèle 3D (≈ 10 min).
  * En aperçu : pas d'aperçu de contrôle séparé, ≈ 7 min par vue (estimation du worker), affichée 5 à 10 min.
  */
-export function dureeEstimeeImage(nombreVues: number, qualite: QualiteImage = 'finale'): string {
+export function dureeEstimeeImage(nombreVues: number, qualite: QualiteImage = 'finale', fond?: unknown): string {
+  // LOT G8 — image dans une photo : durée de la voie express (estimée), pas la formule de l'image d'étude.
+  if (estFondPhoto(fond)) return dureeImagePhotoCourte();
   const n = Math.max(1, Math.min(3, Math.round(Number.isFinite(nombreVues) ? nombreVues : 1)));
   const min = qualite === 'apercu' ? 10 + 5 * n : 10 + 7 + 20 * n;
   const max = qualite === 'apercu' ? 10 + 10 * n : 10 + 7 + 60 * n;
@@ -515,6 +521,7 @@ export function lireTravail(brut: unknown): TravailStudio | null {
     // LOT X3 : projet d'extension et retour de la machine de rendu, s'ils existent (jamais inventés).
     ...(brut.projet_extension !== undefined && brut.projet_extension !== null ? { projet_extension: brut.projet_extension } : {}),
     ...(estObjet(brut.resultat) && estObjet(brut.resultat.extension) ? { resultat_extension: brut.resultat.extension } : {}),
+    ...(estObjet(brut.resultat) && estObjet(brut.resultat.maison) ? { resultat_maison: brut.resultat.maison } : {}),
   };
 }
 

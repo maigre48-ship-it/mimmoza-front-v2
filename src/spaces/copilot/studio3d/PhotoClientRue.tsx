@@ -10,6 +10,14 @@
 //   4. consentement EXPLICITE (case à cocher) ; seulement ensuite, envoi du fichier d'ORIGINE, sans recompression,
 //      vers le seau privé `studio-transfert/<uid>/<uuid>.jpg`.
 // Logique pure : src/lib/studio/photoClientLogique.ts.
+// LOT G2 (17/11/2026) — photo de la MAISON (projet d'extension) : rue OU jardin ; le point de vue sur le plan devient
+// FACULTATIF (`pointDeVueFacultatif`) : sans lui, l'utilisateur place la maison lui-même sur la photo (4 à 6 touches).
+// Photo HEIC (hors iPhone, où iOS convertit lui-même en JPEG) : convertie en JPEG sur l'appareil, EXIF d'origine
+// recopiés (src/lib/studio/heicVersJpeg.ts) ; sinon message clair. C'est la seule recompression : JPEG et PNG partent tels quels.
+// LOT G9 (18/11/2026) — photo enregistrée « tournée » (balise EXIF Orientation ≠ 1, fréquent sur téléphone) : redressée
+// en pleine résolution avant l'envoi (la machine de rendu ne prend en charge que l'orientation 1 ; l'aperçu, lui, la
+// montrait déjà droite) ; photo de plus de 20 Mo : réduite juste sous 20 Mo (src/lib/studio/photoTelephone.ts).
+// Une photo droite de 20 Mo au plus part toujours TELLE QUELLE.
 // =============================================================================
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
@@ -20,13 +28,18 @@ import {
 } from '@/lib/studio/photoClientLogique';
 import { distanceAuContourM, type LonLat } from '@/lib/studio/couverturePhotoRue';
 import { televerserPhotoClient, type PhotoClientOption } from '@/lib/studio/travaux';
+import { preparerPhotoPourCalage } from '@/lib/studio/photoTelephone';
 import './ChoixFondImage.css';
 
 const M_LAT = 111_132;
 /** Marge du plan autour de la parcelle (m) : le trottoir d'en face doit être cliquable. */
 const MARGE_PLAN_M = 45;
 
-interface PhotoLue { fichier: File; url: string; exif: ExifPhotoClient; largeur: number | null; hauteur: number | null }
+interface PhotoLue { fichier: File; url: string; exif: ExifPhotoClient; largeur: number | null; hauteur: number | null; note: string | null }
+
+/** iPhone / iPad : le sélecteur ne propose que JPEG et PNG (iOS convertit alors la photo HEIC lui-même, EXIF gardés). */
+const APPAREIL_IOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+const FORMATS_ACCEPTES = APPAREIL_IOS ? 'image/jpeg,image/png' : 'image/jpeg,image/png,image/heic,image/heif,.heic,.heif';
 
 function PlanPointDeVue({ contour, exif, saisie, onSaisie }: { contour: LonLat[]; exif: ExifPhotoClient; saisie: SaisiePlan; onSaisie: (s: SaisiePlan) => void }) {
   const o = contour[0];
@@ -62,10 +75,12 @@ function PlanPointDeVue({ contour, exif, saisie, onSaisie }: { contour: LonLat[]
   );
 }
 
-export function PhotoClientRue({ contour, onPret, onFermer, titre = 'Votre photo du trottoir', consignes = CONSIGNES_PHOTO, libelleEnvoi = 'Envoyer la photo et demander le devis', introduction = 'Votre photo sert de fond à l’image du projet. Pour qu’elle soit utilisable :' }: {
+export function PhotoClientRue({ contour, onPret, onFermer, titre = 'Votre photo du trottoir', consignes = CONSIGNES_PHOTO, libelleEnvoi = 'Envoyer la photo et demander le devis', introduction = 'Votre photo sert de fond à l’image du projet. Pour qu’elle soit utilisable :', pointDeVueFacultatif = false }: {
   contour: LonLat[] | null; onPret: (photo: PhotoClientOption) => void; onFermer: () => void;
   /** LOT X9 — textes de la demande « photo de ma maison » (projet d'extension). */
   titre?: string; consignes?: readonly string[]; libelleEnvoi?: string; introduction?: string;
+  /** LOT G2 — photo de la maison : le point de vue sur le plan aide, mais n'est pas exigé (placement par l'utilisateur). */
+  pointDeVueFacultatif?: boolean;
 }) {
   const [photo, setPhoto] = useState<PhotoLue | null>(null);
   const [saisie, setSaisie] = useState<SaisiePlan>({ position: null, visee: null });
@@ -79,10 +94,16 @@ export function PhotoClientRue({ contour, onPret, onFermer, titre = 'Votre photo
     return () => window.removeEventListener('keydown', fermer);
   }, [onFermer, envoi.enCours]);
 
-  const choisir = async (fichier?: File) => {
-    if (!fichier) return;
+  const choisir = async (choisi?: File) => {
+    if (!choisi) return;
     setSaisie({ position: null, visee: null });
     setEnvoi({ enCours: false, progres: 0, erreur: '' });
+    // LOT G2 — HEIC : conversion LOCALE en JPEG (EXIF d'origine recopiés) ; échec : la photo reste telle quelle et le
+    // diagnostic la bloque, avec la raison. LOT G9 — photo tournée redressée, photo de plus de 20 Mo réduite.
+    let fichier = choisi;
+    let note: string | null = null;
+    const c = await preparerPhotoPourCalage(choisi);
+    if (c.ok) { fichier = c.fichier; note = c.note || null; } else note = c.raison;
     const url = URL.createObjectURL(fichier);
     // Lecture LOCALE : rien n'est envoyé à ce stade.
     let exif = EXIF_ABSENT;
@@ -93,7 +114,7 @@ export function PhotoClientRue({ contour, onPret, onFermer, titre = 'Votre photo
       img.onerror = () => resoudre({ l: null, h: null });
       img.src = url;
     });
-    setPhoto({ fichier, url, exif, largeur: dims.l, hauteur: dims.h });
+    setPhoto({ fichier, url, exif, largeur: dims.l, hauteur: dims.h, note });
   };
 
   const diagnostic = useMemo(() => (photo ? diagnostiquerPhoto({
@@ -104,12 +125,13 @@ export function PhotoClientRue({ contour, onPret, onFermer, titre = 'Votre photo
   const pdv = photo ? pointDeVueATransmettre(photo.exif, saisie) : null;
   const aSaisir = photo && (!photo.exif.gps || photo.exif.capDeg === null);
 
+  const pdvPret = !!pdv?.pret || pointDeVueFacultatif;
   const envoyer = async () => {
-    if (!photo || !consentement || bloque || !pdv?.pret || envoi.enCours) return;
+    if (!photo || !consentement || bloque || !pdvPret || envoi.enCours) return;
     setEnvoi({ enCours: true, progres: 0, erreur: '' });
     try {
       const r = await televerserPhotoClient(photo.fichier, (envoye, total) => setEnvoi((e) => ({ ...e, progres: total ? Math.round(envoye / total * 100) : 0 })));
-      onPret({ chemin: r.chemin, octets: r.octets, ...(pdv.point ? { point_de_vue: pdv.point } : {}) });
+      onPret({ chemin: r.chemin, octets: r.octets, ...(pdv?.pret && pdv.point ? { point_de_vue: pdv.point } : {}) });
     } catch (e) {
       setEnvoi({ enCours: false, progres: 0, erreur: e instanceof Error ? e.message : 'La photo n’a pas pu être envoyée. Réessayez.' });
     }
@@ -121,30 +143,32 @@ export function PhotoClientRue({ contour, onPret, onFermer, titre = 'Votre photo
         <header><h2>{titre}</h2><button type="button" aria-label="Fermer" onClick={onFermer} disabled={envoi.enCours}><X size={18} /></button></header>
         <p>{introduction}</p>
         <ul className="mz-photo-client__consignes">{consignes.map((c) => <li key={c}>{c}</li>)}</ul>
-        <input ref={entree} type="file" accept="image/jpeg,image/png" capture="environment" hidden onChange={(e) => { void choisir(e.target.files?.[0]); e.target.value = ''; }} />
+        <input ref={entree} type="file" accept={FORMATS_ACCEPTES} capture="environment" hidden onChange={(e) => { void choisir(e.target.files?.[0]); e.target.value = ''; }} />
         <button type="button" className="mz-photo-client__bouton" onClick={() => entree.current?.click()} disabled={envoi.enCours}>
           <Camera size={15} aria-hidden="true" /> {photo ? 'Changer de photo' : 'Prendre ou choisir la photo'}
         </button>
         {photo && <>
           <img className="mz-photo-client__apercu" src={photo.url} alt="Votre photo (aperçu local, pas encore envoyée)" />
+          {photo.note && <p className="mz-photo-client__note">{photo.note}</p>}
           <ul className="mz-photo-client__diagnostic">
             {diagnostic.map((l) => <li key={l.texte} className={`is-${l.niveau}`}>{l.texte}</li>)}
           </ul>
           {aSaisir && (contour
             ? <>
-              <p>{!photo.exif.gps ? 'Cliquez sur le plan l’endroit d’où la photo a été prise' : 'Position lue dans la photo'}
+              <p>{pointDeVueFacultatif ? 'Facultatif — ' : ''}{!photo.exif.gps ? 'Cliquez sur le plan l’endroit d’où la photo a été prise' : 'Position lue dans la photo'}
                 {photo.exif.capDeg === null ? ', puis cliquez vers où vous visiez.' : '.'}</p>
+              {pointDeVueFacultatif && !pdv?.pret && <p className="mz-photo-client__note">Sans ce repère, vous placerez vous-même la maison sur la photo, en touchant 4 à 6 de ses angles.</p>}
               <PlanPointDeVue contour={contour} exif={photo.exif} saisie={saisie} onSaisie={setSaisie} />
-              {pdv && !pdv.pret && <p className="mz-photo-client__manque">{pdv.manque}</p>}
+              {pdv && !pdv.pret && !pointDeVueFacultatif && <p className="mz-photo-client__manque">{pdv.manque}</p>}
               {pdv?.pret && pdv.point && <p className="mz-photo-client__ok">Point de vue retenu · direction {String(pdv.point.cap_deg).replace('.', ',')}° depuis le nord.</p>}
             </>
-            : <p className="mz-photo-client__manque">Le plan de la parcelle n’est pas disponible : reprenez la photo avec la localisation de l’appareil photo activée.</p>)}
+            : !pointDeVueFacultatif && <p className="mz-photo-client__manque">Le plan de la parcelle n’est pas disponible : reprenez la photo avec la localisation de l’appareil photo activée.</p>)}
           <label className="mz-photo-client__accord">
             <input type="checkbox" checked={consentement} onChange={(e) => setConsentement(e.target.checked)} disabled={envoi.enCours} />
             <span>{TEXTE_CONSENTEMENT}</span>
           </label>
           <button type="button" className="mz-photo-client__bouton is-principal" onClick={() => void envoyer()}
-            disabled={!consentement || bloque || !pdv?.pret || envoi.enCours}>
+            disabled={!consentement || bloque || !pdvPret || envoi.enCours}>
             <Upload size={15} aria-hidden="true" /> {envoi.enCours ? `Envoi… ${envoi.progres} %` : libelleEnvoi}
           </button>
           {!consentement && !bloque && <p className="mz-photo-client__note">Rien n’est envoyé tant que la case n’est pas cochée.</p>}

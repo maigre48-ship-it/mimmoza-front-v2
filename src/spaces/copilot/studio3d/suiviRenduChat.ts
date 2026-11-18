@@ -30,7 +30,11 @@ import { avertissementsSansMention } from '../../../lib/studio/masqueExistant.ts
 // LOT X3 (14/11/2026) — projet d'extension : bloc « maison existante conservée » (la mention du worker n'est pas répétée).
 import { avertissementsSansConservation, existantDuTravail, type ExistantTravail } from './extensionMaison.ts';
 // LOT X9 (17/11/2026) — image d'extension : jamais d'image sans vraie photo de la maison ; une photo est demandée.
-import { estTravailExtension, imageSurPhotoReelle, photoRequiseDuResultat, TITRE_PHOTO_NECESSAIRE, type PhotoRequise } from '../../../lib/studio/photoReelle.ts';
+import { estTravailExtension, imageSurPhotoReelle, photoRequiseDuResultat, TITRE_PHOTO_NECESSAIRE, TITRE_PHOTO_TERRAIN_NECESSAIRE, type PhotoRequise } from '../../../lib/studio/photoReelle.ts';
+// LOT G8 — temps écoulé et durée habituelle d'une image dans une photo.
+import { ligneTempsRendu } from '../../../lib/studio/dureeRendu.ts';
+// INTÉGRATION 18/11 — retouche photoréaliste de l'extension : ce qui a été fait et contrôlé.
+import { lignesRetoucheRealisme } from '../../../lib/studio/retoucheRealisme.ts';
 
 export const OUTIL_LANCER_RENDU = 'studio_lancer_rendu';
 export const OUTIL_ETAT_RENDU = 'studio_etat_rendu';
@@ -213,6 +217,7 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
       return {
         ...base, etat: 'en_cours', actif: true, titre: `${libelle} — rendu en cours`, pastille: 'En cours',
         progression: travail.progression, phrase: phraseSuivi(travail),
+        details: [ligneTempsRendu(travail, maintenant)].filter((x): x is string => !!x),
         alerte: silence !== null && silence > ACTIVITE_RECENTE_MS
           ? `Aucune progression reçue depuis ${dureeLisible(silence)} : la machine de rendu a peut-être été interrompue. Le statut se mettra à jour dès qu’elle reprendra.`
           : null,
@@ -223,7 +228,7 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
       if (extensionSansPhotoReelle(travail)) {
         const requise = photoRequiseDuResultat(travail.resultat)!;
         return {
-          ...base, etat: 'termine', actif: false, titre: TITRE_PHOTO_NECESSAIRE, pastille: 'Photo nécessaire', photoRequise: requise,
+          ...base, etat: 'termine', actif: false, titre: requise.nature === 'maison' ? TITRE_PHOTO_TERRAIN_NECESSAIRE : TITRE_PHOTO_NECESSAIRE, pastille: 'Photo nécessaire', photoRequise: requise,
           phrase: requise.texte,
           omis: null,
           avertissements: avertissementsSansConservation((travail.resultat?.avertissements ?? []).filter((a) => !RE_IMAGE_ETUDE.test(a) && a !== requise.texte), base.existant),
@@ -234,6 +239,7 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
       const image = travail.type === 'image' && travail.resultat ? libelleResultatImage(travail.resultat as ResultatImage) : null;
       return {
         ...base, etat: 'termine', actif: false, titre: `${image ? image.titre : libelle} — prêt${travail.type === 'film' ? '' : 'e'}`, pastille: 'Prêt', image,
+        details: travail.type === 'image' ? lignesRetoucheRealisme(travail.resultat) : [],
         phrase: travail.resultat ? phraseSuivi(travail) : `${quoi} est indiqué${travail.type === 'film' ? '' : 'e'} comme terminé${travail.type === 'film' ? '' : 'e'}, mais aucun fichier n’est lisible dans le résultat.`,
         omis: phraseElementsOmis(travail.elements_omis),
         avertissements: avertissementsSansConservation(avertissementsSansMention(travail.resultat?.avertissements ?? [], image?.effacement ?? null), base.existant),

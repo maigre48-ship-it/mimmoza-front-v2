@@ -70,8 +70,23 @@ import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
   CONSIGNE_EXTENSION, DELAI_PATRIMOINE_MS, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
-  OUTIL_EXTENSION_MAISON_DEF, reponseAuParcours, suiteDuParcours, type EnvExtension,
+  OUTIL_EXTENSION_MAISON_DEF, reponseAuParcours, suiteDuParcours, type EnvExtension, depotPhotoProjetSupabase, demandeRetouche,
 } from './agent/extension.ts';
+// LOT G3 — photo de la maison jointe au message avec les instructions (parcours d'extension).
+import { intentionPhotoExtension, photoDuTourGardee, type PhotoDuTour } from './agent/photo-projet.ts';
+// LOT G6 — plan de la maison lu (contexte de la page).
+import { lirePlanLu, messagePlanPourLeParcours } from '../_shared/extension/planLu.ts';
+// LOT G10b — maison neuve sur un terrain : parcours guidé par le serveur (gabarit, reculs, permis indicatif), image et plans.
+import {
+  CONSIGNE_MAISON_NEUVE, depotMaisonSupabase, detecterIntentionMaisonNeuve, executerOutilMaisonNeuve, OUTIL_MAISON_NEUVE,
+  OUTIL_MAISON_NEUVE_DEF, suiteDuParcoursMaison, type EnvMaison,
+} from './agent/maison-neuve.ts';
+
+/**
+ * LOT G3 — photo JPEG / PNG jointe au message de CE tour, par contexte de requête (jamais persistée, jamais montrée au
+ * modèle par ce biais : le modèle voit la pièce jointe comme d'habitude). Lue seulement par le parcours d'extension.
+ */
+const PHOTOS_DU_TOUR = new WeakMap<object, { nom: string | null; mediaType: string; data?: string; storagePath?: string; userId: string }>();
 // Lot choix-cliquables : questions à choix fermés → bloc ```mimmoza-choix (puces cliquables du front).
 import { CONSIGNE_CHOIX } from './agent/choix.ts';
 import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mission.ts';
@@ -721,6 +736,10 @@ interface CopilotAttachment {
   storagePath?: string; // V1.8 : <uid>/<conversation|brouillon-uuid>/<horodatage>-<nom>
   size?: number;        // V1.8 : octets (revérifiés dans les métadonnées du Storage)
   textePath?: string;   // V1.8 : storagePath + '.texte.json' (texte extrait par le navigateur)
+  // LOT G9 : copie de la photo POUR LE PLACEMENT (original droit, ou redressé), même bucket, même dossier du compte.
+  // Posée par le navigateur quand la copie envoyée au chat a été réduite ou redressée ; jamais lue par le modèle.
+  originalPath?: string;
+  originalMediaType?: string;
 }
 
 interface ChatRequest {
@@ -4558,6 +4577,8 @@ const TOOLS: ToolDef[] = [
   ...OUTILS_STUDIO_CHAT,
   // LOT X3 : parcours « extension de maison » (proposé seulement quand le tour en parle ou le poursuit).
   OUTIL_EXTENSION_MAISON_DEF,
+  // LOT G10b : parcours « maison neuve » (proposé seulement quand le tour en parle ou le poursuit).
+  OUTIL_MAISON_NEUVE_DEF,
 ];
 
 /**
@@ -4681,6 +4702,9 @@ async function executeTool(
     case OUTIL_EXTENSION_MAISON:
       // LOT X3 : identité = JWT vérifié ; réponses lues dans le message REÇU (jamais dans les paramètres du modèle).
       return (await executerOutilExtension(input, envExtension(ctx, auth))) as ToolResult;
+    case OUTIL_MAISON_NEUVE:
+      // LOT G10b : même règle (JWT vérifié ; réponses lues dans le message REÇU).
+      return (await executerOutilMaisonNeuve(input, envMaisonNeuve(ctx, auth))) as ToolResult;
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
   }
@@ -4696,10 +4720,47 @@ function envExtension(ctx: MimmozaContext, auth: AuthCtx | null): EnvExtension {
     texteUtilisateur: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '',
     depot: depotExtensionSupabase(getAdmin(), auth?.authHeader ? getUserClient(auth.authHeader) : null),
     fetch,
+    // LOT G3 : photo jointe à CE message (pièce jointe), déposée dans l'espace privé de l'utilisateur pour l'image.
+    photoDuTour: photoDuTourExtension(ctx, auth),
+    // LOT G6 : plan de la maison lu dans le Studio (ou cotes saisies), transmis par la page (clés plan_lu_*).
+    planLu: lirePlanLu((ctx as unknown as { pageSnapshot?: unknown }).pageSnapshot ?? null),
+    depotPhoto: depotPhotoProjetSupabase(getAdmin()),
     // LOT X3b : secteur protégé — servitudes GPU (AC1, AC2, AC4) et base Mérimée, mêmes fonctions que les outils du chat.
     patrimoine: {
       servitudes: INTERNAL_FUNCTIONS.servitudes ? (corps) => callInternalFunction(INTERNAL_FUNCTIONS.servitudes!, corps, DELAI_PATRIMOINE_MS) : null,
       merimee: INTERNAL_FUNCTIONS.merimee ? (corps) => callInternalFunction(INTERNAL_FUNCTIONS.merimee!, corps, DELAI_PATRIMOINE_MS) : null,
+    },
+  };
+}
+
+/** LOT G10b : environnement du parcours « maison neuve » (mêmes sources que l'extension, sorties propres). */
+function envMaisonNeuve(ctx: MimmozaContext, auth: AuthCtx | null): EnvMaison {
+  const e = envExtension(ctx, auth);
+  return {
+    userId: e.userId, conversationId: e.conversationId, texteUtilisateur: e.texteUtilisateur, fetch,
+    depot: depotMaisonSupabase(getAdmin(), e.depot), patrimoine: e.patrimoine ?? null,
+    photoDuTour: e.photoDuTour ?? null, depotPhoto: e.depotPhoto ?? null,
+  };
+}
+
+/** LOT G3 : photo du tour pour le parcours d'extension (base64 du message, ou fichier stocké DU compte). */
+function photoDuTourExtension(ctx: MimmozaContext, auth: AuthCtx | null): PhotoDuTour | null {
+  const p = PHOTOS_DU_TOUR.get(ctx as unknown as object);
+  if (!p || !auth?.userId || p.userId !== auth.userId) return null;
+  return {
+    nom: p.nom, mediaType: p.mediaType,
+    async charger() {
+      if (typeof p.data === 'string') {
+        const bin = atob(p.data);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      }
+      // Fichier stocké : seulement dans le dossier du compte (même règle que les pièces jointes).
+      if (typeof p.storagePath !== 'string' || !p.storagePath.startsWith(`${auth.userId}/`) || p.storagePath.includes('..')) return null;
+      const { data, error } = await getAdmin().storage.from(BUCKET_PIECES_JOINTES).download(p.storagePath);
+      if (error || !data) return null;
+      return new Uint8Array(await (data as Blob).arrayBuffer());
     },
   };
 }
@@ -10811,7 +10872,7 @@ async function runOrchestrator(params: {
     : buildSystemPrompt(ctx, mode);
   const system = consigneCarte ? `${systemBase}\n\n${consigneCarte}` : systemBase;
   const availableTools = toolsForMode(mode)
-    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON));
+    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
   // Lot E1 : outils Studio proposés quand le tour (ou la réponse précédente : devis à confirmer) parle de 3D / rendu.
@@ -10823,13 +10884,29 @@ async function runOrchestrator(params: {
   // issue du parcours ET réponse qui y répond). Dans ces deux cas, le premier tour est IMPOSÉ sur l'outil.
   const texteAssistantPrecedent = lastAssistantMessage ? extractText(lastAssistantMessage.content) : '';
   const parcoursEnCours = agentDisponible(ctx.vertical) && suiteDuParcours(texteAssistantPrecedent);
+  // LOT G7 : variantes « en parlant » — un parcours d'extension a eu lieu dans la conversation (une question du parcours
+  // dans un message de Mimmo, même avant une image) et ce message demande une retouche (« en bardage bois clair »,
+  // « 1 m plus large », « toit plat », « sans baie ») : le tour est imposé sur l'outil du parcours, qui recalcule.
+  const parcoursDansConversation = agentDisponible(ctx.vertical) && params.messages.some((message) => message.role === 'assistant' && suiteDuParcours(extractText(message.content)));
+  const retoucheAuTour = parcoursDansConversation && demandeRetouche(userText);
   const extensionAuTour = agentDisponible(ctx.vertical)
-    && (detecterIntentionExtension(userText).extension || (parcoursEnCours && reponseAuParcours(userText)));
+    && (detecterIntentionExtension(userText).extension || (parcoursEnCours && reponseAuParcours(userText)) || retoucheAuTour
+      // LOT G3 : photo de la maison jointe avec une demande d'agrandissement (« extension de 4 × 5 m à gauche »).
+      || intentionPhotoExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object))
+      // LOT G6 : plan de la maison joint, ou valeurs vérifiées dans la carte « Plan lu » : le parcours reprend.
+      || messagePlanPourLeParcours(userText));
+  // LOT G10b : parcours « maison neuve » — demandé dans ce message (et pas une extension), ou poursuivi (dernière
+  // question de Mimmo issue du parcours) ; premier tour IMPOSÉ sur l'outil, comme l'extension.
+  const parcoursMaisonEnCours = agentDisponible(ctx.vertical) && !extensionAuTour && suiteDuParcoursMaison(texteAssistantPrecedent);
+  const maisonAuTour = agentDisponible(ctx.vertical) && !extensionAuTour && !parcoursEnCours
+    && (detecterIntentionMaisonNeuve(userText) || (parcoursMaisonEnCours && userText.trim().length > 0));
   const selectedNames = new Set([
     ...selection.toolNames,
     ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
-    ...(studioAuTour ? NOMS_OUTILS_STUDIO : []),
+    // LOT G7 : une retouche d'extension peut relancer l'image de la variante (même photo, même placement).
+    ...(studioAuTour || retoucheAuTour ? NOMS_OUTILS_STUDIO : []),
     ...(extensionAuTour || parcoursEnCours ? [OUTIL_EXTENSION_MAISON] : []),
+    ...(maisonAuTour || parcoursMaisonEnCours ? [OUTIL_MAISON_NEUVE] : []),
     // Lot INT-10 : l'architecte d'intérieur reste proposé tant que le tour (ou la question précédente) parle d'aménagement.
     ...(interieurPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? ['amenager_interieur'] : []),
   ]);
@@ -10848,7 +10925,9 @@ async function runOrchestrator(params: {
     : tools;
   // Lot choix-cliquables : outils Studio au tour → la question d'habillage n'est jamais posée par le modèle.
   const systemStudio = studioAuTour ? `${system}\n\n${CONSIGNE_RENDU_STUDIO}` : system;
-  const systemExtension = !intentionMission.mission && (extensionAuTour || parcoursEnCours) ? `${systemStudio}\n\n${CONSIGNE_EXTENSION}` : systemStudio;
+  const systemExtension0 = !intentionMission.mission && (extensionAuTour || parcoursEnCours) ? `${systemStudio}\n\n${CONSIGNE_EXTENSION}` : systemStudio;
+  // LOT G10b : consigne du parcours « maison neuve ».
+  const systemExtension = !intentionMission.mission && (maisonAuTour || parcoursMaisonEnCours) ? `${systemExtension0}\n\n${CONSIGNE_MAISON_NEUVE}` : systemExtension0;
   const systemTour = intentionMission.mission
     ? `${systemStudio}\n\n${consigneIntentionMission(intentionMission)}`
     : systemExtension;
@@ -10856,6 +10935,7 @@ async function runOrchestrator(params: {
   let missionForcee = false;   // un seul tour imposé, même si l'outil échoue
   let renduForce = false;      // lot choix-cliquables : un seul tour imposé sur studio_lancer_rendu
   let extensionForcee = false; // LOT X3 : un seul tour imposé sur le parcours d'extension
+  let maisonForcee = false;    // LOT G10b : un seul tour imposé sur le parcours de maison neuve
   let blocChoixExtension: string | null = null; // LOT X3 : questions du parcours, placées à la toute fin de la réponse
   let dernierTexte = '';
 
@@ -10939,7 +11019,10 @@ async function runOrchestrator(params: {
     const forcerExtension = !forcerMission && !intentionMission.mission && extensionAuTour && !extensionForcee && iter === 0
       && toolsDuTour.some((tool) => tool.name === OUTIL_EXTENSION_MAISON);
     if (forcerExtension) extensionForcee = true;
-    const forcerRendu = !forcerMission && !forcerExtension && doitForcerLancerRendu({
+    const forcerMaison = !forcerMission && !forcerExtension && !intentionMission.mission && maisonAuTour && !maisonForcee && iter === 0
+      && toolsDuTour.some((tool) => tool.name === OUTIL_MAISON_NEUVE);
+    if (forcerMaison) maisonForcee = true;
+    const forcerRendu = !forcerMission && !forcerExtension && !forcerMaison && doitForcerLancerRendu({
       texteUtilisateur: userText, appels: toolCallsLog, dejaForce: renduForce, briefCarte: Boolean(briefCarte),
       outilDisponible: !(mode === 'quick' && rapportParcellaireAffiche) && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu'),
     });
@@ -10949,6 +11032,7 @@ async function runOrchestrator(params: {
       tools: mode === 'quick' && rapportParcellaireAffiche ? [] : toolsDuTour,
       toolChoice: forcerMission ? { type: 'tool', name: 'proposer_mission' }
         : forcerExtension ? { type: 'tool', name: OUTIL_EXTENSION_MAISON }
+        : forcerMaison ? { type: 'tool', name: OUTIL_MAISON_NEUVE }
         : forcerRendu ? { type: 'tool', name: 'studio_lancer_rendu' } : undefined,
       webBudget: webUnavailable || intentionMission.mission ? { search: 0, fetch: 0 }
         : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
@@ -11050,7 +11134,7 @@ async function runOrchestrator(params: {
 
         // LOT X3 : le parcours d'extension AFFICHE lui-même son texte (estimation, verdicts) ; ses questions à choix
         // sont posées à la toute fin de la réponse. Le modèle ne reçoit qu'une consigne courte : aucun chiffre à réécrire.
-        if (tu.name === OUTIL_EXTENSION_MAISON && output.status === 'ok') {
+        if ((tu.name === OUTIL_EXTENSION_MAISON || tu.name === OUTIL_MAISON_NEUVE) && output.status === 'ok') {
           const d = (output as { data?: Record<string, unknown> }).data ?? {};
           const texte = typeof d.texte_affiche === 'string' ? d.texte_affiche : '';
           if (texte) {
@@ -11700,6 +11784,13 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).forme_carte = formeDuMessage(payload.message);
     // LOT X3 : le parcours d'extension lit les réponses dans le message REÇU (même principe : jamais persisté).
     (effectiveContext as unknown as Record<string,unknown>).message_utilisateur = typeof payload.message === 'string' ? payload.message : '';
+    // LOT G3 : première photo JPEG / PNG jointe à CE message (base64 du tour, ou référence de stockage du compte).
+    {
+      const photo = (payload.attachments ?? []).find((a) => (a.mediaType === 'image/jpeg' || a.mediaType === 'image/png') && (typeof a.data === 'string' || typeof a.storagePath === 'string'));
+      // LOT G9 : l'original (pleine résolution, redressé) sert de photo du projet quand il est fourni et valide ;
+      // sinon la copie du chat (réduite) — photoDuTourGardee le décide (même règle de dossier que les pièces jointes).
+      if (photo) PHOTOS_DU_TOUR.set(effectiveContext as unknown as object, { ...photoDuTourGardee(photo, userId), userId });
+    }
 
     plan = planLu;
     mode = PLAN_POLICY[plan].mode;

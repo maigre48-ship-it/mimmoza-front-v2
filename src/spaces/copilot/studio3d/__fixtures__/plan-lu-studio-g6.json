@@ -1,0 +1,140 @@
+{
+  "format": "mimmoza-plan-lu",
+  "version": 1,
+  "origine": "niveau-0.dxf, niveau-1.dxf",
+  "echelle": {
+    "texte": "1/100 (déduite des cotes écrites sur le plan)",
+    "statut": "mesure",
+    "cotesConcordantes": 31,
+    "cotesDiscordantes": 0
+  },
+  "dimensions": {
+    "longueurM": 11,
+    "largeurM": 8.4,
+    "statut": "mesure"
+  },
+  "emprise": {
+    "lueM2": 92.4,
+    "statut": "mesure",
+    "bdTopoM2": 92.4,
+    "ecartPct": 0,
+    "signale": false
+  },
+  "position": {
+    "statut": "confirme",
+    "recouvrementPct": 100
+  },
+  "cotesExterieures": [
+    {
+      "libelle": "Façade sud-est (11,00 m)",
+      "cote": 0,
+      "longueurLueM": 11,
+      "statut": "mesure",
+      "longueurBdTopoM": 11,
+      "ecartM": 0
+    },
+    {
+      "libelle": "Façade nord-est (8,40 m)",
+      "cote": 1,
+      "longueurLueM": 8.4,
+      "statut": "mesure",
+      "longueurBdTopoM": 8.4,
+      "ecartM": 0
+    },
+    {
+      "libelle": "Façade nord-ouest (11,00 m)",
+      "cote": 2,
+      "longueurLueM": 11,
+      "statut": "mesure",
+      "longueurBdTopoM": 11,
+      "ecartM": 0
+    },
+    {
+      "libelle": "Façade sud-ouest (8,40 m)",
+      "cote": 3,
+      "longueurLueM": 8.4,
+      "statut": "mesure",
+      "longueurBdTopoM": 8.4,
+      "ecartM": 0
+    }
+  ],
+  "niveaux": {
+    "nombre": 2,
+    "statut": "lu",
+    "libelles": [
+      "Rez-de-chaussée",
+      "Étage"
+    ]
+  },
+  "pieces": [
+    {
+      "nom": "Séjour",
+      "niveau": "Rez-de-chaussée",
+      "surfaceM2": 30.04,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Cuisine",
+      "niveau": "Rez-de-chaussée",
+      "surfaceM2": 13.24,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Chambre 1",
+      "niveau": "Rez-de-chaussée",
+      "surfaceM2": 15.02,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Entrée",
+      "niveau": "Rez-de-chaussée",
+      "surfaceM2": 8.88,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Salle d'eau",
+      "niveau": "Rez-de-chaussée",
+      "surfaceM2": 5.58,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Chambre 2",
+      "niveau": "Rez-de-chaussée",
+      "surfaceM2": 5.58,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Chambre 3",
+      "niveau": "Étage",
+      "surfaceM2": 25,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Chambre 5",
+      "niveau": "Étage",
+      "surfaceM2": 18.28,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Chambre 4",
+      "niveau": "Étage",
+      "surfaceM2": 15.02,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Palier",
+      "niveau": "Étage",
+      "surfaceM2": 10.72,
+      "statut": "mesure"
+    },
+    {
+      "nom": "Salle de bain",
+      "niveau": "Étage",
+      "surfaceM2": 9.5,
+      "statut": "mesure"
+    }
+  ],
+  "surfacePiecesM2": 156.86,
+  "statutSurfacePieces": "mesure",
+  "pointsDouteux": []
+}

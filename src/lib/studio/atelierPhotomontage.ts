@@ -35,10 +35,12 @@ const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Adresse de l'atelier : `<adresse du Studio>?atelier=photomontage&travail=<id>`. */
-export function urlAtelier(urlStudio: string, travailId: string): string {
+export function urlAtelier(urlStudio: string, travailId: string, maisonNeuve = false): string {
   const u = new URL(urlStudio);
   u.searchParams.set('atelier', 'photomontage');
   u.searchParams.set('travail', travailId);
+  // LOT G10b — maison neuve : l'atelier propose le placement guidé du TERRAIN (aucune maison existante).
+  if (maisonNeuve) u.searchParams.set('projet', 'maison');
   u.hash = '';
   return u.toString();
 }

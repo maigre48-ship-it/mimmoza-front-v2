@@ -28,6 +28,8 @@ import {
 } from '@/lib/studio/atelierPhotomontage';
 import { urlStudio } from '@/lib/studioConfig';
 import { CarteSuiviRendu } from './CarteSuiviRendu';
+// LOT G2 — projet d'extension : l'atelier s'ouvre sur le placement guidé de la maison (4 à 6 touches).
+import { estTravailExtension } from '@/lib/studio/photoReelle';
 
 type Etape =
   | { etape: 'repos'; message?: string }
@@ -51,7 +53,7 @@ export function AtelierPlacement({ travail }: { travail: TravailStudio }) {
     if (!atelier) return;
     arreter.current?.();
     let url: string;
-    try { url = urlAtelier(urlStudio(), travail.id); } catch { setEtat({ etape: 'repos', message: 'Adresse du Studio introuvable : l’atelier ne peut pas s’ouvrir.' }); return; }
+    try { url = urlAtelier(urlStudio(), travail.id, !!travail.resultat_maison); } catch { setEtat({ etape: 'repos', message: 'Adresse du Studio introuvable : l’atelier ne peut pas s’ouvrir.' }); return; }
     // Fenêtre ouverte dans le geste de l'utilisateur (avant toute attente), sinon le navigateur la bloque.
     const fenetre = window.open(url, '_blank');
     if (!fenetre) { setEtat({ etape: 'repos', message: 'Le navigateur a bloqué l’ouverture de l’atelier : autorisez les fenêtres pour Mimmoza, puis réessayez.' }); return; }
@@ -156,7 +158,7 @@ export function AtelierPlacement({ travail }: { travail: TravailStudio }) {
           {etat.masque && <li>Zone du bâtiment existant à effacer : corrigée par vous dans l’atelier (jointe à la demande).</li>}
           {etat.egout && <li>Hauteur à l’égout de votre maison : {etat.egout.valeur_m.toLocaleString('fr-FR')} m, indiquée par vous dans l’atelier (CONFIRMÉE, elle prime sur l’estimation).</li>}
           <li>Jetons : 0 — les rendus ne sont pas facturés aujourd’hui.</li>
-          <li>Temps de calcul : {dureeEstimeeImage(etat.options.vues.length, etat.options.qualite)} une fois le rendu démarré.</li>
+          <li>Temps de calcul : {dureeEstimeeImage(etat.options.vues.length, etat.options.qualite, etat.options.fond)} une fois le rendu démarré.</li>
           <li>{MENTION_MACHINE_RENDU}</li>
         </ul>
         {etat.etape === 'devis' && etat.alerte && <p className="mz-suivi-rendu__alerte" role="alert">{etat.alerte}</p>}
@@ -175,7 +177,7 @@ export function AtelierPlacement({ travail }: { travail: TravailStudio }) {
   return (
     <div className="mz-suivi-rendu__atelier">
       <button type="button" className="mz-suivi-rendu__bouton" onClick={() => void ouvrir()} disabled={etat.etape === 'atelier'}>
-        <Crosshair size={14} aria-hidden="true" /> {etat.etape === 'atelier' ? (etat.recu ? 'Atelier ouvert : validez le placement…' : 'Ouverture de l’atelier…') : atelier.masque_path ? 'Corriger dans l’atelier' : 'Ajuster le placement'}
+        <Crosshair size={14} aria-hidden="true" /> {etat.etape === 'atelier' ? (etat.recu ? 'Atelier ouvert : validez le placement…' : 'Ouverture de l’atelier…') : atelier.masque_path ? 'Corriger dans l’atelier' : estTravailExtension(travail) ? 'Placer ma maison sur la photo' : 'Ajuster le placement'}
       </button>
       <p className="mz-suivi-rendu__detail">{atelier.masque_path
         ? 'L’atelier s’ouvre dans un nouvel onglet : vérifiez le placement (2 à 12 points de la photo et leur place sur le plan) et corrigez au pinceau la zone du bâtiment existant à effacer (en rouge). Une nouvelle image sera proposée, avec son devis.'

@@ -27,26 +27,46 @@ export interface PhotoRequise {
   atelier: boolean;
   /** Photo essayée : publique (rue) ou celle de l'utilisateur ; null si aucune. */
   source: 'panoramax' | 'client' | null;
+  /** LOT G10b — projet concerné : extension d'une maison existante (défaut) ou maison neuve sur un terrain. */
+  nature?: 'extension' | 'maison';
 }
 
 /** Consignes de prise de vue (mêmes textes que la machine de rendu). */
 export const CONSIGNES_PHOTO_MAISON: readonly string[] = [
-  'Depuis la rue (le trottoir d’en face), en plein jour, téléphone à l’horizontale.',
+  'Depuis la rue (le trottoir d’en face) ou depuis le jardin, en plein jour, téléphone à l’horizontale.',
   'De face ou de trois quarts, toute la maison dans le cadre : le pied des murs et le toit visibles.',
-  'Le côté où se fera l’extension bien visible.',
+  'Le côté où se fera l’extension bien visible, avec au moins deux angles de la maison.',
   'Objectif principal (×1), sans zoom ; localisation de l’appareil activée si possible.',
-  'La photo d’origine (JPEG ou PNG), sans retouche ni capture d’écran.',
+  'La photo d’origine (JPEG, PNG ou HEIC d’iPhone), sans retouche ni capture d’écran.',
 ];
 
 export const TEXTES_PHOTO_REQUISE: Readonly<Record<CodePhotoRequise, string>> = {
-  aucune_photo: 'Aucune photo de votre maison n’est disponible : sans vraie photo, aucune image de l’extension n’est montrée. Envoyez une photo de votre maison prise depuis la rue.',
-  calage_insuffisant: 'L’extension n’a pas pu être placée assez précisément dans la photo : aucune image n’est montrée. Ajustez le placement en cliquant quelques angles de votre maison, ou envoyez une autre photo prise depuis la rue.',
-  photo_inutilisable: 'La photo disponible ne permet pas d’insérer l’extension : aucune image n’est montrée. Envoyez une photo de votre maison prise depuis la rue.',
+  aucune_photo: 'Aucune photo de votre maison n’est disponible : sans vraie photo, aucune image de l’extension n’est montrée. Envoyez une photo de votre maison, prise depuis la rue ou depuis le jardin.',
+  calage_insuffisant: 'L’extension n’a pas pu être placée assez précisément dans la photo : aucune image n’est montrée. Placez votre maison sur la photo en touchant 4 à 6 de ses angles, ou envoyez une autre photo.',
+  photo_inutilisable: 'La photo disponible ne permet pas d’insérer l’extension : aucune image n’est montrée. Envoyez une photo de votre maison, prise depuis la rue ou depuis le jardin.',
 };
 const TEXTE_CALAGE_SANS_ATELIER = 'L’extension n’a pas pu être placée assez précisément dans la photo : aucune image n’est montrée. Envoyez une autre photo de votre maison prise depuis la rue.';
 
 /** Libellé du bouton (carte du chat). */
 export const LIBELLE_ENVOYER_PHOTO = 'Envoyer une photo de ma maison';
+
+/** LOT G10b — maison NEUVE : consignes de prise de vue du TERRAIN (mêmes textes que la machine de rendu). */
+export const CONSIGNES_PHOTO_TERRAIN: readonly string[] = [
+  'Depuis la rue (le trottoir d’en face), en plein jour, téléphone à l’horizontale.',
+  'Tout le terrain dans le cadre, avec au moins un angle du terrain (borne, piquet ou poteau de clôture) bien visible au sol.',
+  'Si possible, une ou deux maisons voisines dans le cadre, avec le pied de leurs murs et leur toit.',
+  'Objectif principal (×1), sans zoom ; localisation de l’appareil activée si possible.',
+  'La photo d’origine (JPEG, PNG ou HEIC d’iPhone), sans retouche ni capture d’écran.',
+];
+export const TEXTES_PHOTO_REQUISE_TERRAIN: Readonly<Record<CodePhotoRequise, string>> = {
+  aucune_photo: 'Aucune photo du terrain n’est disponible : sans vraie photo, aucune image de la maison n’est montrée. Envoyez une photo du terrain prise depuis la rue.',
+  calage_insuffisant: 'La maison n’a pas pu être placée assez précisément dans la photo : aucune image n’est montrée. Placez le terrain sur la photo en touchant 4 à 6 repères (angles du terrain, maisons voisines), ou envoyez une autre photo.',
+  photo_inutilisable: 'La photo disponible ne permet pas d’insérer la maison : aucune image n’est montrée. Envoyez une photo du terrain prise depuis la rue.',
+};
+const TEXTE_CALAGE_SANS_ATELIER_TERRAIN = 'La maison n’a pas pu être placée assez précisément dans la photo : aucune image n’est montrée. Envoyez une autre photo du terrain prise depuis la rue.';
+export const LIBELLE_ENVOYER_PHOTO_TERRAIN = 'Envoyer une photo du terrain';
+export const TITRE_PHOTO_TERRAIN_NECESSAIRE = 'Photo du terrain nécessaire';
+
 /** Titre de la carte quand aucune image n'est montrée. */
 export const TITRE_PHOTO_NECESSAIRE = 'Photo de votre maison nécessaire';
 
@@ -54,7 +74,8 @@ export const TITRE_PHOTO_NECESSAIRE = 'Photo de votre maison nécessaire';
 export function estTravailExtension(t: { projet_extension?: unknown; resultat_extension?: unknown; resultat?: unknown } | null | undefined): boolean {
   if (!t) return false;
   if (estObj(t.projet_extension) || estObj(t.resultat_extension)) return true;
-  return estObj(t.resultat) && (estObj(t.resultat.extension) || estObj(t.resultat.photo_requise));
+  // LOT G10b — maison neuve : même règle (photo réelle obligatoire).
+  return estObj(t.resultat) && (estObj(t.resultat.extension) || estObj(t.resultat.photo_requise) || estObj(t.resultat.maison));
 }
 
 /** Preuve d'une vraie photo de fond : projet inséré (« livre ») ET photo source connue (rue ou utilisateur). */
@@ -86,6 +107,16 @@ export function photoRequiseDuResultat(resultat: unknown): PhotoRequise | null {
       : p?.statut === 'repli_etude' && source ? 'photo_inutilisable'
         : 'aucune_photo';
   const atelier = code === 'calage_insuffisant' && atelierDepose && (pr ? pr.atelier !== false : true);
+  // LOT G10b — maison neuve (résultat `maison`) : textes du terrain.
+  if (estObj(r.maison)) {
+    return {
+      code, nature: 'maison',
+      texte: code === 'calage_insuffisant' && !atelier ? TEXTE_CALAGE_SANS_ATELIER_TERRAIN : TEXTES_PHOTO_REQUISE_TERRAIN[code],
+      raison: texte(pr?.raison, 300) ?? texte(p?.raison, 300),
+      atelier,
+      source: code === 'aucune_photo' ? null : source,
+    };
+  }
   return {
     code,
     texte: code === 'calage_insuffisant' && !atelier ? TEXTE_CALAGE_SANS_ATELIER : TEXTES_PHOTO_REQUISE[code],

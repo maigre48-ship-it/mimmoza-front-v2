@@ -22,6 +22,7 @@ import {
   type CoteFacade, type Donnee, type DonneesBdnb, type ExistantProjet, type ExtensionDemandee, type FormeToit, type ProjetExtension,
   type ReculsExtension, type StatutDonnee, type TypeExtension,
   type MenuiserieContrat, type OrientationFaitage,
+  COUVERTURES_CONTRAT, FACADES_CONTRAT, type CouvertureContrat, type FacadeContrat,
 } from './contrat.ts';
 import { estimerMaisonExistante, maisonPrincipale, type MaisonExistante, type SurchargesExistant } from './maisonExistante.ts';
 import { calculerExtension, PREFIXE_REFUS_HAUTEUR, type CategorieLimite, type ParcelleMoteur, type ReglesExtension, type ResultatExtension } from './moteur.ts';
@@ -37,6 +38,15 @@ import { ligneCourteSecteur, sourceCourteSecteur, type SecteurProtege } from './
 import { dossierPrevisionnel, type VueDossier } from './dossier.ts';
 // LOT X10 — côté rue proposé en puces quand le cadastre ne permet pas de le situer.
 import { candidatChoisi, candidatsCoteRue } from './coteRue.ts';
+// LOT G3 — instructions écrites librement (« extension de 4 × 5 m à gauche, même hauteur ») : parcours prérempli.
+import { completerParInstructions } from './instructionsExtension.ts';
+// LOT G6 — plan de la maison lu dans le Studio (ou cotes saisies), confirmé dans la carte « Plan lu » du chat.
+import { effetsPlanLu, lirePlanLu, planLuRetenu, surfaceChoisieDepuisPlan, texteSurfacePlan, type PlanLuParcours } from './planLu.ts';
+// LOT G7 — variantes : retouches écrites librement après un premier projet (« en bardage bois », « 1 m plus large »).
+import {
+  appliquerRetouches, changementsEntre, LIBELLES_TOIT_EXT, lireRetouches, QR, resumeHabillage, suggestionsRetouche,
+  type QuestionRetouche, type ToitRetouche,
+} from './retouchesExtension.ts';
 
 export const OUTIL_EXTENSION_MAISON = 'extension_maison';
 export const VERSION_PARCOURS = 1;
@@ -120,13 +130,25 @@ export interface EtatParcours {
   readonly memeHauteur?: boolean;
   /** LOT X10 — côté de la rue choisi (libellé de la puce, relu contre les côtés du contour cadastral à chaque tour). */
   readonly rueChoix?: string | null;
+  /** LOT G6 — plan de la maison lu (ou cotes saisies), gardé d'un tour à l'autre. */
+  readonly planLu?: PlanLuParcours | null;
+  /** LOT G7 — toit de l'EXTENSION choisi en variante (absent : forme calculée par le moteur, dite). */
+  readonly toitExtension?: ToitRetouche | null;
+  /** LOT G7 — toit végétalisé demandé (dessiné plat ; végétation non rendue, dit). */
+  readonly vegetalise?: boolean;
+  /** LOT G7 — revêtement de façade de l'extension choisi (absent : convention, teinte de la maison mesurée sur la photo). */
+  readonly facadeExtension?: FacadeContrat | null;
+  /** LOT G7 — couverture du toit de l'extension choisie. */
+  readonly couvertureExtension?: CouvertureContrat | null;
+  /** LOT G7 — numéro de la variante affichée (1 au premier projet terminé, +1 à chaque retouche qui change le projet). */
+  readonly variante?: number | null;
 }
 
 export const ETAT_INITIAL: EtatParcours = {
   v: 1, idu: null, conserver: null, toit: null, niveaux: null, hauteurEgoutM: null, type: null, facade: null,
   largeurM: null, profondeurM: null, niveauxExtension: null, sdpExistanteM2: null, sdpInconnue: false, demandeur: null,
   penteToit: null, faitage: null, egoutInconnu: false, cloture: null, menuiserie: null, baies: null, memeHauteur: false,
-  rueChoix: null,
+  rueChoix: null, planLu: null, toitExtension: null, vegetalise: false, facadeExtension: null, couvertureExtension: null, variante: null,
 };
 
 type Obj = Record<string, unknown>;
@@ -162,6 +184,14 @@ export function lireEtat(v: unknown): EtatParcours {
     baies: dans(v.baies, ['auto', 'aucune', 'inconnue'] as const) ? v.baies : null,
     memeHauteur: v.memeHauteur === true,
     rueChoix: typeof v.rueChoix === 'string' && v.rueChoix.length > 0 && v.rueChoix.length <= 80 ? v.rueChoix : null,
+    // LOT G6 — plan lu (relu et borné ; une forme illisible est ignorée).
+    planLu: lirePlanLu(v.planLu),
+    // LOT G7 — états antérieurs sans ces clés : rien de choisi, aucune variante.
+    toitExtension: dans(v.toitExtension, ['plat', 'monopente', 'deux-pans', 'prolongement'] as const) ? v.toitExtension : null,
+    vegetalise: v.vegetalise === true,
+    facadeExtension: dans(v.facadeExtension, FACADES_CONTRAT) ? v.facadeExtension : null,
+    couvertureExtension: dans(v.couvertureExtension, COUVERTURES_CONTRAT) ? v.couvertureExtension : null,
+    variante: ent(v.variante, 1, 999),
   };
 }
 
@@ -386,6 +416,8 @@ export interface ContexteParcours {
    * parcelle, `dateBdTopo` = date de cette lecture). Absent ou null : lecture faite à ce tour.
    */
   readonly bdtopoReutilisee?: string | null;
+  /** LOT G6 — plan lu transmis par le site à ce tour (contexte de la page) ; absent : rien de nouveau. */
+  readonly planLu?: PlanLuParcours | null;
 }
 
 /**
@@ -476,6 +508,9 @@ export interface VueExtension {
     readonly verdict: 'ok' | 'refus' | 'non-calcule'; readonly refus: readonly string[]; readonly alertes: readonly string[];
     readonly empriseCreeeM2: number | null; readonly sdpCreee: { valeur: number; min: number; max: number; source: string } | null;
     readonly suggestion: string | null;
+    /** LOT G7 — numéro de la variante et habillage choisi (« bardage bois clair · toit plat »). */
+    readonly variante?: number;
+    readonly habillage?: string;
   } | null;
   readonly regles: readonly string[];
   /** LOT D9 — `code` : régime indicatif brut (« DP », « PC », « DP ou PC », « inconnu »), lu par le bouton « Préparer mon dossier ». */
@@ -506,6 +541,11 @@ export interface SortieParcours {
   readonly erreursProjet: readonly string[];
   readonly regime: RegimeIndicatif | null;
   readonly resultatMoteur: ResultatExtension | null;
+  /**
+   * LOT G7 — variante du projet (parcours terminé) : numéro, ce qui a changé depuis la variante précédente, demandes non
+   * appliquées (dites), point de vue demandé ; null hors fin de parcours.
+   */
+  readonly variante?: { readonly n: number; readonly changements: readonly string[]; readonly limites: readonly string[]; readonly vueJardin: boolean; readonly resume: string } | null;
 }
 
 export function blocChoix(questions: readonly QuestionBloc[]): string | null {
@@ -556,8 +596,38 @@ function tableauMarkdown(lignes: readonly LigneVue[]): string {
  */
 export function avancerParcours(etatPrecedent: EtatParcours, texte: string, attenduesPrecedentes: readonly string[], ctx: ContexteParcours): SortieParcours {
   const base = etatPrecedent.idu && etatPrecedent.idu !== ctx.idu ? { ...ETAT_INITIAL } : etatPrecedent;
-  const etat: EtatParcours = { ...lireReponses(base, texte, attenduesPrecedentes), idu: ctx.idu };
+  const repondu: EtatParcours = { ...lireReponses(base, texte, attenduesPrecedentes), idu: ctx.idu };
+  // LOT G3 — instructions explicites du message (texte libre), champ vide par champ vide ; jamais une valeur du modèle.
+  const completion = completerParInstructions(repondu, texte, Object.values(Q).map((x) => x.libelle));
+  // LOT G6 — plan lu (le plus récent : reçu à ce tour, sinon gardé) ; niveaux CONFIRMÉS dans la carte « Plan lu » =
+  // réponse à « Niveaux de la maison » quand elle n'a pas encore été donnée.
+  const planLu = planLuRetenu(completion.etat.planLu ?? null, ctx.planLu ?? null);
+  const niveauxPlan = planLu && planLu.statutNiveaux === 'confirme' && planLu.niveaux !== null && planLu.niveaux <= 4 ? planLu.niveaux : null;
+  let etat: EtatParcours = {
+    ...completion.etat, planLu,
+    ...(completion.etat.niveaux === null && niveauxPlan !== null ? { niveaux: niveauxPlan } : {}),
+  };
+  // LOT G7 — parcours déjà terminé (variante affichée) : le message peut demander une RETOUCHE (« en bardage bois
+  // clair », « 1 m plus large », « toit plat »). Les variations relatives partent de la variante affichée (jamais d'une
+  // dimension relue ailleurs dans la phrase) ; l'ambigu devient une question à puces ; rien n'est deviné.
+  const enRetouche = (base.variante ?? 0) >= 1;
+  const retouches = enRetouche ? lireRetouches(texte) : null;
+  const limitesRetouche: string[] = [];
+  if (retouches) {
+    const depart: EtatParcours = { ...etat, ...(retouches.largeur ? { largeurM: base.largeurM } : {}), ...(retouches.profondeur ? { profondeurM: base.profondeurM } : {}) };
+    const a = appliquerRetouches(depart, retouches);
+    etat = a.etat;
+    limitesRetouche.push(...a.limites);
+  }
+  const changementsVariante = enRetouche ? changementsEntre(base, etat) : [];
+  if (enRetouche) etat = { ...etat, variante: changementsVariante.length ? (base.variante ?? 1) + 1 : base.variante ?? 1 };
+  const repris = [
+    ...(base.largeurM === null && etat.largeurM !== null && etat.profondeurM !== null && !attenduesPrecedentes.includes(Q.dimensions.id)
+      ? [`${fr(etat.largeurM, 2)} × ${fr(etat.profondeurM, 2)} m`] : []),
+    ...completion.reprises,
+  ];
   const avert: string[] = [];
+  if (completion.reprises.length) avert.push(`Repris de votre message : ${repris.join(', ')}. Corrigez-le si ce n’est pas ce que vous vouliez.`);
   const sources: string[] = [];
   const vueVide = (etape: Etape, msg: string): SortieParcours => ({
     etat, etape, attendues: [], texte: msg, blocChoix: null, projet: null, optionTravail: null, erreursProjet: [], regime: null, resultatMoteur: null,
@@ -603,12 +673,23 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   const estimation = estimerMaisonExistante(entreeExistant(bat, origine, ctx.bdnb ?? undefined));
   const m = estimerMaisonExistante(entreeExistant(bat, origine, ctx.bdnb ?? undefined), surcharges);
   const lignes = lignesMaison(m, ctx.bdnb);
+  // LOT G6 — plan lu : ligne à côté de l'emprise BD TOPO, écart > 10 % signalé, source datée. Le contour du calcul
+  // reste celui de la BD TOPO (jamais corrigé en silence).
+  const effetsPlan = etat.planLu ? effetsPlanLu(etat.planLu, m.empriseM2) : null;
+  if (effetsPlan) {
+    if (effetsPlan.ligne) lignes.splice(1, 0, ligne(effetsPlan.ligne.libelle, effetsPlan.ligne.valeur, effetsPlan.ligne));
+    avert.push(...effetsPlan.avertissements);
+    sources.push(effetsPlan.source);
+    if (niveauxPlan !== null && base.niveaux === null && etat.niveaux === niveauxPlan) avert.push(`Niveaux de la maison : ${niveauxPlan}, confirmés par vous sur votre plan.`);
+    if (etat.planLu!.surfacePiecesM2 !== null && etat.sdpExistanteM2 !== null && surfaceChoisieDepuisPlan(texte)) avert.push(`Surface de plancher existante retenue : somme des pièces de votre plan (choisie par vous).`);
+  }
   const maisonVue = { id: m.id, conservee: etat.conserver, lignes, hypotheses: [...m.hypotheses, ...m.avertissements] };
   if (autres.length) avert.push(`${autres.length} autre(s) bâtiment(s) BD TOPO sur la parcelle (annexes, abris) : conservés et pris comme obstacles pour placer l’extension.`);
   const presentation = `Sur la parcelle ${ctx.idu}${ctx.commune ? ` (${ctx.commune})` : ''}, la base de l’IGN (BD TOPO) décrit un bâtiment de ${fr(m.empriseM2, 0)} m² d’emprise au sol.`;
 
-  const sortie = (etape: Etape, texteQ: string, questions: QuestionBloc[], extra: Partial<Pick<SortieParcours, 'projet' | 'optionTravail' | 'erreursProjet' | 'regime' | 'resultatMoteur'>> & { extension?: VueExtension['extension']; regles?: string[]; dossier?: VueDossier } = {}): SortieParcours => ({
+  const sortie = (etape: Etape, texteQ: string, questions: QuestionBloc[], extra: Partial<Pick<SortieParcours, 'projet' | 'optionTravail' | 'erreursProjet' | 'regime' | 'resultatMoteur' | 'variante'>> & { extension?: VueExtension['extension']; regles?: string[]; dossier?: VueDossier } = {}): SortieParcours => ({
     etat, etape, attendues: questions.map((q) => q.id), texte: texteQ, blocChoix: blocChoix(questions),
+    ...(extra.variante ? { variante: extra.variante } : {}),
     projet: extra.projet ?? null, optionTravail: extra.optionTravail ?? null, erreursProjet: extra.erreursProjet ?? [], regime: extra.regime ?? null, resultatMoteur: extra.resultatMoteur ?? null,
     vue: {
       v: 1, etape, idu: ctx.idu, commune: ctx.commune, maison: maisonVue, extension: extra.extension ?? null, regles: extra.regles ?? [],
@@ -690,7 +771,7 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
 
   // Étape 4 : surface de plancher existante réelle et demandeur.
   const q4: QuestionBloc[] = [];
-  if (etat.sdpExistanteM2 === null && !etat.sdpInconnue) q4.push({ id: Q.surface.id, libelle: Q.surface.libelle, options: [Q.surface.inconnue, Q.surface.saisie], multiple: false });
+  if (etat.sdpExistanteM2 === null && !etat.sdpInconnue) q4.push({ id: Q.surface.id, libelle: Q.surface.libelle, options: [...(effetsPlan?.optionSurface ? [effetsPlan.optionSurface] : []), Q.surface.inconnue, Q.surface.saisie], multiple: false });
   if (!etat.demandeur) q4.push({ id: Q.demandeur.id, libelle: Q.demandeur.libelle, options: [Q.demandeur.particulier, Q.demandeur.morale], multiple: false });
   // LOT X7 — clôture sur rue (hauteur ou aucune) et habillage (menuiseries, baie vitrée), posés avec la surface.
   const q4x: QuestionBloc[] = [];
@@ -701,10 +782,13 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   if (!q4.length && q4x.length) return sortie('surface', `Dernières précisions.${texteX7}`, q4x);
   if (q4.length) {
     q4.push(...q4x);
-    return sortie('surface', `Pour savoir s’il faut une déclaration préalable ou un permis, et si un architecte est obligatoire, j’ai besoin de la **surface de plancher RÉELLE de la maison aujourd’hui** (acte de vente, avis de taxe foncière, plans) — écrivez-la, par exemple « 118 m² ». Mon estimation (${fr(estimation.surfacePlancher.valeur, 0)} m², entre ${fr(estimation.surfacePlancher.minM2, 0)} et ${fr(estimation.surfacePlancher.maxM2, 0)} m²) n’est pas une mesure.` + texteX7, q4);
+    return sortie('surface', `Pour savoir s’il faut une déclaration préalable ou un permis, et si un architecte est obligatoire, j’ai besoin de la **surface de plancher RÉELLE de la maison aujourd’hui** (acte de vente, avis de taxe foncière, plans) — écrivez-la, par exemple « 118 m² ». Mon estimation (${fr(estimation.surfacePlancher.valeur, 0)} m², entre ${fr(estimation.surfacePlancher.minM2, 0)} et ${fr(estimation.surfacePlancher.maxM2, 0)} m²) n’est pas une mesure.` + (etat.planLu && etat.sdpExistanteM2 === null ? texteSurfacePlan(etat.planLu) ?? '' : '') + texteX7, q4);
   }
 
   // Étape 5 : synthèse — moteur, régime, projet.
+  // LOT G7 — premier projet terminé = variante 1 ; une retouche qui change le projet a déjà incrémenté le numéro.
+  const numeroVariante = etat.variante ?? 1;
+  etat = { ...etat, variante: numeroVariante };
   const rm = reglesMoteur(ctx.regles);
   const pm = parcelleMoteur(contourL93, origine, facadesRetenues, ctx.surfaceParcelleM2);
   if (!pm.categories?.some((c) => c === 'voie')) avert.push(`Limite sur rue non identifiée${ctx.raisonFacades ? ` (${ctx.raisonFacades})` : ''} : sans elle, Mimmoza ne sait pas où sont la gauche, la droite et l’arrière, et ne peut pas placer l’extension.`);
@@ -721,18 +805,32 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   // LOT X7 — habillage choisi (menuiseries, baie vitrée) : CONFIRMÉ ; absent si « je ne sais pas » (convention, dite).
   const menuiserieChoisie = etat.menuiserie && etat.menuiserie !== 'inconnue' ? etat.menuiserie : null;
   const baiesChoisies = etat.baies && etat.baies !== 'inconnue' ? etat.baies : null;
+  // LOT G7 — variante : toit de l'extension, revêtement de façade et couverture CHOISIS (confirmés, avec leur source).
+  const toitChoisi = type !== 'surelevation' ? etat.toitExtension ?? null : null;
+  const facadeChoisie = type !== 'surelevation' ? etat.facadeExtension ?? null : null;
+  const couvertureChoisie = toitChoisi !== 'plat' ? etat.couvertureExtension ?? null : null;
+  const SOURCE_VARIANTE = `${SOURCE_SAISIE} ; demandé en variante`;
   const demande: ExtensionDemandee = {
     type,
     ...(type !== 'surelevation' ? { facade: { cote: etat.facade! } } : {}),
     existantId: m.id,
     dimensions,
+    ...(toitChoisi ? { toiture: { forme: D(toitChoisi, 'confirmee', `${SOURCE_VARIANTE} (${LIBELLES_TOIT_EXT[toitChoisi]})`) } } : {}),
     ...(Object.keys(rm.reculs).length ? { reculs: rm.reculs } : {}),
-    ...(menuiserieChoisie || baiesChoisies ? { habillage: {
+    ...(menuiserieChoisie || baiesChoisies || facadeChoisie || couvertureChoisie ? { habillage: {
       ...(menuiserieChoisie ? { menuiserie: D(menuiserieChoisie, 'confirmee', `${SOURCE_SAISIE} ; menuiseries « ${OPTIONS_MENUISERIE.find(([k]) => k === menuiserieChoisie)![1]} »`) } : {}),
       ...(baiesChoisies ? { baies: D(baiesChoisies, 'confirmee', `${SOURCE_SAISIE} ; ${baiesChoisies === 'auto' ? 'avec baie vitrée' : 'sans baie (murs pleins)'}`) } : {}),
+      ...(facadeChoisie ? { facade: D(facadeChoisie, 'confirmee', SOURCE_VARIANTE) } : {}),
+      ...(couvertureChoisie ? { couverture: D(couvertureChoisie, 'confirmee', SOURCE_VARIANTE) } : {}),
     } } : {}),
   };
-  const optionsMoteur = { ...(memeHauteur ? { memeHauteur: true } : {}), autresBatiments: autres.map((b) => ({ id: b.id, anneau: b.anneaux[0]!.map((p) => versRepere(p, origine)) })) };
+  const optionsMoteur = {
+    ...(memeHauteur ? { memeHauteur: true } : {}), autresBatiments: autres.map((b) => ({ id: b.id, anneau: b.anneaux[0]!.map((p) => versRepere(p, origine)) })),
+    ...(facadeChoisie || couvertureChoisie ? { habillage: {
+      ...(facadeChoisie ? { facade: D<string>(facadeChoisie, 'confirmee', SOURCE_VARIANTE) } : {}),
+      ...(couvertureChoisie ? { toiture: D<string>(couvertureChoisie, 'confirmee', SOURCE_VARIANTE) } : {}),
+    } } : {}),
+  };
   const res = calculerExtension({ maison: m, demande, parcelle: pm, regles: rm.regles, options: optionsMoteur });
   // LOT X8b — refus de placement (hors hauteur) d'une extension latérale ou arrière : les AUTRES côtés de la maison sont
   // essayés avec les mêmes dimensions et la même hauteur ; ceux qui passent sont proposés en puces (calcul, pas d'avis).
@@ -794,8 +892,20 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     empriseCreeeM2: res.surfaces ? res.surfaces.empriseCreeeM2.valeur : null,
     sdpCreee: sdpC ? { valeur: sdpC.valeur, min: sdpC.minM2, max: sdpC.maxM2, source: sdpC.source } : null,
     suggestion: res.suggestion ? `À cette position, une profondeur de ${fr(res.suggestion.profondeurMaxM, 2)} m au plus passerait.` : null,
+    variante: numeroVariante,
+    habillage: resumeHabillage(etat),
   };
+  // LOT G7 — en-tête de variante : ce qui a changé, ce qui n'a pas pu l'être (dit), le point de vue (celui de la photo).
+  const questionsRetouche: readonly QuestionRetouche[] = retouches?.questions ?? [];
+  const enteteVariante: string[] = [
+    ...(numeroVariante >= 2 && changementsVariante.length ? [`**Variante V${numeroVariante}** — modifié depuis la variante V${numeroVariante - 1} : ${changementsVariante.join(' ; ')}.`, ''] : []),
+    ...(enRetouche && !changementsVariante.length && (questionsRetouche.length || limitesRetouche.length || retouches?.vueJardin)
+      ? [`**Variante V${numeroVariante}** (inchangée) — ${questionsRetouche.length ? 'votre demande a besoin d’une précision : choisissez ci-dessous.' : 'rien n’a été modifié.'}`, ''] : []),
+    ...(limitesRetouche.length ? [...limitesRetouche.map((x) => `- ${x}`), ''] : []),
+    ...(retouches?.vueJardin ? ['Le point de vue de l’image est celui de la **photo** : pour voir l’extension depuis le jardin, envoyez une photo de la maison prise depuis le jardin (toute la maison dans le cadre, pied des murs visible) avec « Envoyer une photo de ma maison » sous l’image ; je placerai l’extension sur cette photo.', ''] : []),
+  ];
   const lignesTexte = [
+    ...enteteVariante,
     `**Votre projet : ${type === 'surelevation' ? 'surélévation' : type === 'garage' ? 'garage accolé' : `extension ${OPTIONS_TYPE[type].toLowerCase()}`}${type !== 'surelevation' ? `, côté ${COTE_LISIBLE[etat.facade!]} (vu de la rue)` : ''}, ${vueExt.dimensions}** — maison existante **conservée**.`,
     '',
     res.ok
@@ -817,6 +927,8 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
     'Règles d’implantation utilisées :',
     ...rm.lignes.map((x) => `- ${x}`),
   ];
+  // LOT G7 — habillage de la variante (choix confirmés ou convention), dit sous le projet.
+  lignesTexte.splice(enteteVariante.length + 1, 0, `Habillage de l’extension : ${resumeHabillage(etat)}${!facadeChoisie ? ' (teinte de la maison mesurée sur la photo quand c’est possible)' : ''}.`);
   if (!projet) avert.push(`Projet non transmissible (contrat refusé) : ${('erreurs' in lu ? lu.erreurs : []).join(' ; ')}`);
   // LOT D9 — dossier DP / PC : aperçu des pièces (serveur, déterministe) ; régime « DP ou PC » → la carte demande le choix.
   const dossier = projet && res.ok ? dossierPrevisionnel(regime.regime, ctx.secteur?.etat ?? null) : undefined;
@@ -825,8 +937,15 @@ export function avancerParcours(etatPrecedent: EtatParcours, texte: string, atte
   const qHauteur: QuestionBloc[] = refusHauteur
     ? [{ id: Q.hauteur.id, libelle: Q.hauteur.libelle, options: [HAUTEUR_MEME, OPTIONS_HAUTEUR[1]], multiple: false }]
     : autresCotes.length ? [{ id: Q.facade.id, libelle: Q.facade.libelle, options: autresCotes.map((c) => OPTIONS_FACADE[c]), multiple: false }] : [];
-  return sortie('termine', lignesTexte.join('\n'), qHauteur, {
+  // LOT G7 — questions d'une retouche ambiguë ; sinon, extension placée : suggestions de variantes (puces), le texte libre
+  // restant possible (« en bardage bois clair », « 1 m plus large »…).
+  const qRetouche: QuestionBloc[] = questionsRetouche.map((q) => ({ id: q.id, libelle: q.libelle, options: [...q.options], multiple: false }));
+  const qSuggestions: QuestionBloc[] = !qRetouche.length && !qHauteur.length && res.ok && projet
+    ? [{ id: QR.retouche.id, libelle: QR.retouche.libelle, options: suggestionsRetouche(etat), multiple: false }] : [];
+  if (qSuggestions.length) lignesTexte.push('', '**Pour une variante**, écrivez simplement ce que vous voulez changer (par exemple « en bardage bois clair », « 1 m plus large », « toit plat », « sans baie ») : je recalcule l’extension avec les mêmes règles, et l’image garde la même photo et le même placement.');
+  return sortie('termine', lignesTexte.join('\n'), [...qRetouche, ...qHauteur, ...qSuggestions], {
     projet, optionTravail: projet ? { existant: optionTravailExistant(projet) } : null, erreursProjet: 'erreurs' in lu ? lu.erreurs : [],
     regime, resultatMoteur: res, extension: vueExt, regles: rm.lignes, ...(dossier ? { dossier } : {}),
+    variante: { n: numeroVariante, changements: changementsVariante, limites: limitesRetouche, vueJardin: retouches?.vueJardin === true, resume: `${vueExt.type}${vueExt.facade ? `, ${vueExt.facade.toLowerCase()}` : ''} — ${vueExt.dimensions} — ${resumeHabillage(etat)}` },
   });
 }
