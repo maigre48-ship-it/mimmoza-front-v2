@@ -26,6 +26,13 @@ export function demanderOuvertureProjet3D(mission: Mission): Promise<IssuePrepar
   });
 }
 
+/** Conception d'avant VIS-15 qui ne couvre pas l'assiette demandée → message de relance proposé à l'utilisateur. */
+export function messageRelanceAssiette(erreur: string | null): string | null {
+  if (!erreur || !/assiette group/i.test(erreur)) return null;
+  const liste = /assiette group[ée]+e?\s+([0-9A-Z]+(?:\s*\+\s*[0-9A-Z]+)+)/i.exec(erreur)?.[1]?.replace(/\s+/g, ' ').trim();
+  return `Relance la mission de conception sur l'assiette groupée complète${liste ? ` (${liste})` : ''}, puis ouvre le projet en 3D.`;
+}
+
 export function BoutonProjet3D({ mission, onSend, onRapport, compact = false }: {
   mission: Mission;
   onSend?: (texte: string) => void;
@@ -60,6 +67,13 @@ export function BoutonProjet3D({ mission, onSend, onRapport, compact = false }: 
       </div>
       {info && <p className="mzag-info" role="status" style={{ margin: 0 }}>{info}</p>}
       {erreur && <p className="mzag-alerte" role="alert" style={{ margin: 0 }}>{erreur}</p>}
+      {erreur && onSend && messageRelanceAssiette(erreur) && (
+        <div className="mzag-actions">
+          <button type="button" className="mzag-btn mzag-btn--plein" onClick={() => onSend(messageRelanceAssiette(erreur) as string)}>
+            Relancer la conception sur toute l'assiette
+          </button>
+        </div>
+      )}
     </div>
   );
 }
