@@ -180,16 +180,10 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     );
   }
 
-  return (
-    <div style={{ margin: '10px 0' }}>
-      {decisionLimits.length > 0 && <aside role="status" style={{ padding: 12, marginBottom: 12, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, color: '#9a3412', fontSize: 13 }}>
-        <strong>Comparaison exploratoire · décision à confirmer</strong>
-        <ul>{decisionLimits.map(reason => <li key={reason}>{reason}</li>)}</ul>
-        <p>Ce contrôle porte sur les résultats d’outils de cette réponse. Une pièce fournie ou un contexte antérieur peut apporter des preuves complémentaires.</p>
-      </aside>}
-      {message.toolCalls.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
-          {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
+  // Ordre de lecture (19/11) : les cartes qui attendent une action de l'utilisateur (devis, brief, suivi de
+  // rendu, accord photo, proposition) sont rendues APRÈS le texte de Mimmo, qui y renvoie (« validez avec le
+  // bouton… ») ; les résultats d'outils purement informatifs restent avant le texte.
+  const rendreAppel = (tc: (typeof message.toolCalls)[number]) => {
             if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} /> : null; }
             { const suivi = suivisRendu.get(tc.id); if (suivi) return <CarteSuiviRendu indice={suivi} onSend={onSend} />; }
             if (suivisRemplaces.has(tc.id)) return <p style={{ margin: '4px 0', color: T.textMuted, fontSize: 12 }}>Suivi de ce rendu : voir la carte à jour plus bas dans la conversation.</p>;
@@ -242,7 +236,29 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             { const carte = cartesResultat.get(tc.id);
               if (carte?.masquee) return null;
               return <CopilotApiResultCard key={tc.id} call={tc} occurrences={carte?.occurrences} interrompue={carte?.interrompue} />; }
-          })()}</CopilotRenderBoundary>)}
+  };
+  const estInteractif = (tc: (typeof message.toolCalls)[number]): boolean =>
+    estAppelDevis(tc.name)
+    || suivisRendu.has(tc.id)
+    || !!lireDemandePhotoMaison(tc)
+    || !!lireDemandeBrief(tc)
+    || (OUTILS_PHOTO_PROJET.has(tc.name) && tc.status !== 'running' && !!lireDemandeAccordPhoto(tc.output))
+    || (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running')
+    || tc.name === 'proposer_suivi_projet'
+    || (isActionTool(tc.name) && tc.status !== 'running' && !!readAction(tc.output));
+  const appelsInfo = message.toolCalls.filter((tc) => !estInteractif(tc));
+  const appelsAction = message.toolCalls.filter(estInteractif);
+
+  return (
+    <div style={{ margin: '10px 0' }}>
+      {decisionLimits.length > 0 && <aside role="status" style={{ padding: 12, marginBottom: 12, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, color: '#9a3412', fontSize: 13 }}>
+        <strong>Comparaison exploratoire · décision à confirmer</strong>
+        <ul>{decisionLimits.map(reason => <li key={reason}>{reason}</li>)}</ul>
+        <p>Ce contrôle porte sur les résultats d’outils de cette réponse. Une pièce fournie ou un contexte antérieur peut apporter des preuves complémentaires.</p>
+      </aside>}
+      {appelsInfo.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          {appelsInfo.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{rendreAppel(tc)}</CopilotRenderBoundary>)}
         </div>
       )}
       {message.status === 'complete' && message.toolCalls.some(isGeoCall) && <CopilotRenderBoundary label="Cartes thématiques"><Suspense fallback={<div>Préparation des cartes thématiques…</div>}><CopilotThematicMaps calls={message.toolCalls} onSend={onSend} /></Suspense></CopilotRenderBoundary>}
@@ -271,6 +287,11 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             dangerouslySetInnerHTML={{ __html: htmlLisible(seg.text, markdownToSafeHtml, { reponseDabord: i === premierTexte && message.status === 'complete' }) }}
           />
         ),
+      )}
+      {appelsAction.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          {appelsAction.map((tc) => <CopilotRenderBoundary key={tc.id} label="Action proposée">{rendreAppel(tc)}</CopilotRenderBoundary>)}
+        </div>
       )}
       {choix.bloc && message.status === 'complete' && !carteBriefDemandee && <CopilotRenderBoundary label="Réponses proposées">
         <ChoixCliquables bloc={choix.bloc} messageId={message.id} actif={situation.actif}
