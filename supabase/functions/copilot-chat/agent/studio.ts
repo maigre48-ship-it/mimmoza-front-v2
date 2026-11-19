@@ -89,6 +89,8 @@ import { empreinteChamps, lireChampsContrat, type ChampsContratBrief } from '../
 import { estVueCatalogue, libelleCourtVue, MAX_VUES_PAR_IMAGE, phraseVuesDisponibles, phrasesPronosticVues, pronosticVues, VUES_DISPONIBLES, vuesARendre } from '../../../../src/lib/studio/catalogueVues.ts';
 // VIS-10 (19/11/2026) — option `livraison` (livraison commerciale du worker VIS-07 / VIS-INT-2), mêmes règles que la base.
 import { avecLivraisonParDefaut, validerOptionLivraison } from '../../../../src/lib/studio/livraisonCommerciale.ts';
+// VIS-15 : assiette groupée (plusieurs parcelles) — parcelles demandées / couvertes par la conception.
+import { idusDeLaConception, idusDeLaDemande, libelleAssiette, type AssietteFonciere } from './assiette.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -218,6 +220,10 @@ export interface ResumePreparation {
   controles: ControleVolume[];
   /** Lot formes-batiment : forme retenue (moteur, ou choisie dans la fiche / demandée) et comparaison du moteur. */
   forme?: ResumeForme;
+  /** VIS-15 : gabarit demandé plus haut que celui retenu par la conception (« R+4 demandé, R+2 retenu car … — modifiable »). */
+  gabarit_retenu?: string;
+  /** VIS-15 : assiette groupée (« AI0001 + AI0002 (2 349 m²) ») quand la conception porte sur plusieurs parcelles. */
+  assiette?: string;
 }
 
 /** Lot formes-batiment : forme du volume préparé et classement des formes par le moteur (suggestion). */
@@ -290,6 +296,40 @@ export function resumeCompact(r: ResumePreparation): Obj {
 }
 
 /** Fiche de conception → volume d'étude (code du Dossier 3D), contrôles et empreinte. Aucune I/O. */
+/** VIS-15 : assiette enregistrée avec la conception (absente d'une conception antérieure au lot). */
+export function assietteDeLaParcelle(p: unknown): AssietteFonciere | null {
+  const a = estObj(p) && estObj(p.assiette) ? p.assiette : null;
+  return a && Array.isArray(a.idus) && fini(a.surface_m2) ? a as unknown as AssietteFonciere : null;
+}
+
+/**
+ * VIS-15 — gabarit retenu plus bas que celui demandé (Ascain, 19/11 : conception « R+2 (hauteur 7 m UC) — R+4
+ * incompatible »). Phrase : « R+4 demandé, R+2 retenu car hauteur max 7 m en UC — modifiable ». Demande lue dans le
+ * gabarit (autre R+N cité, plus haut) ou `programme.gabarit_demande`, à défaut le gabarit de la conception lui-même ;
+ * retenu = niveaux du VOLUME préparé s'ils sont donnés (la 3D peut être plus basse que la conception : hauteur comptée
+ * acrotère compris — dit « dans la 3D »), sinon le gabarit de la conception. Raison lue dans le gabarit, sinon dans
+ * la règle de hauteur. null si rien n'est écarté.
+ */
+export function phraseGabaritRetenu(programme: unknown, regles: readonly Pick<RegleLue, 'cle' | 'valeur'>[] = [], niveauxVolume: number | null = null): string | null {
+  const g = estObj(programme) && typeof programme.gabarit === 'string' ? programme.gabarit : '';
+  const niveaux = (t: string) => [...t.matchAll(/\bR\s*\+\s*(\d{1,2})\b/gi)].map((m) => Number(m[1]));
+  const cites = niveaux(g);
+  const conception = cites[0] ?? null;
+  const retenu = fini(niveauxVolume) && niveauxVolume >= 1 ? Math.round(niveauxVolume) - 1 : conception;
+  if (retenu === null) return null;
+  const demandeTexte = estObj(programme) && typeof programme.gabarit_demande === 'string' ? programme.gabarit_demande : '';
+  const plusHauts = [...cites.slice(1), ...niveaux(demandeTexte)].filter((n) => conception === null || n > conception);
+  const demande = plusHauts.length ? Math.max(...plusHauts) : conception;
+  if (demande === null || demande <= retenu) return null;
+  const h = /[Hh]auteur\s*(?:max(?:imale)?\s*)?(?:de\s*)?[≤<=]?\s*(\d+(?:[.,]\d+)?)\s*m\b(?:\s*(?:en\s+)?(?:zone\s+|secteur\s+)?([A-Z][A-Za-z0-9]{0,5})\b)?/.exec(g);
+  const regleH = regles.find((r) => r.cle === 'hauteur_max_m' && typeof r.valeur === 'number');
+  const raison = h ? `hauteur max ${h[1].replace('.', ',')} m${h[2] ? ` en ${h[2]}` : ''}`
+    : regleH ? `hauteur max ${String(regleH.valeur).replace('.', ',')} m (règle du PLU)` : 'les règles du PLU retenues';
+  const lib = (n: number) => (n === 0 ? 'RDC' : `R+${n}`);
+  const dans3D = conception !== null && retenu < conception ? ' dans la 3D' : '';
+  return `${lib(demande)} demandé, ${lib(retenu)} retenu${dans3D} car ${raison} — modifiable`;
+}
+
 export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): Promise<IssuePreparation> {
   const parcelle = lireParcelle(c.parcelle, c.idu);
   if (!parcelle) return { ok: false, raison: 'Le contour cadastral de la parcelle manque dans la conception : relancez l’étape « parcelle » de la mission de conception (recuperer_parcelle).' };
@@ -372,7 +412,14 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
     ...(bandes.mesure ? { bandes: bandes.mesure } : {}) };
   // Sans choix de forme, empreinte inchangée (mêmes lignes qu'avant ce lot) ; avec, la forme saisie y entre.
   const empreinte = await sha256Hex(jsonCanonique({ version: VERSION_CALCUL, conception_id: c.id, entree, ...(f.cle ? { forme: f.cle } : {}) }));
-  return { ok: true, entree, volume, resume: { ...resumerVolume(volume, controles, pv), forme: f.resume }, empreinte };
+  const resume: ResumePreparation = { ...resumerVolume(volume, controles, pv), forme: f.resume };
+  // VIS-15 : le volume suit le gabarit RETENU par la conception (niveauxDuGabarit lit le premier R+N) ; l'écart avec la
+  // demande est DIT (carte du Dossier 3D, résultat d'outil), jamais laissé en silence.
+  const ecart = phraseGabaritRetenu(c.programme, regles, volume.niveaux);
+  if (ecart) { resume.gabarit_retenu = ecart; resume.alertes = [ecart, ...resume.alertes.filter((a) => a !== ecart)].slice(0, 8); }
+  const a = assietteDeLaParcelle(c.parcelle);
+  if (a && a.idus.length > 1) resume.assiette = libelleAssiette(a);
+  return { ok: true, entree, volume, resume, empreinte };
 }
 
 /** Lot formes-batiment : applique le choix de forme au volume du moteur (code PUR de la fiche, aucune seconde implémentation). */
@@ -1219,7 +1266,11 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
   // quand une commande existe) ; le texte `brief` le reprend à titre informatif.
   const composition = studioComposition(draft)?.map((c) => ({ ...c, commande: commandeAvecBrief(c.commande, brief, true) ?? c.commande })) ?? null;
   // Lot P9 : comment la hauteur est comptée (acrotère compris, décision de prudence) et où le volume est posé.
-  const lignesP9 = [ligneHauteurFiche(v, rv), ...(v.poseVoie ? [v.poseVoie.message] : [])].join('\n');
+  // VIS-15 : assiette groupée → UNE entrée `parcelles` dont la géométrie est l'UNION (la pose unique du contrat exige une
+  // seule parcelle) ; la liste des parcelles et la surface voyagent dans le brief.
+  const assietteFiche = assietteDeLaParcelle(entree.parcelle);
+  const lignesP9 = [ligneHauteurFiche(v, rv), ...(v.poseVoie ? [v.poseVoie.message] : []),
+    ...(assietteFiche && assietteFiche.idus.length > 1 ? [`assiette groupée : ${libelleAssiette(assietteFiche)}`] : [])].join('\n');
   const texteBrief = `${brief ? `${draftBrief(draft)}\nhabillage demandé : ${libelleBrief(brief)}` : draftBrief(draft)}\n${lignesP9}`;
   const construit = construireProjetChat({
     conversationId, etudeId: null, sessionId, origine, retourUrl: null, revision: 0, horodatage,
@@ -1277,7 +1328,8 @@ export interface TravailLu {
 }
 
 export interface DepotStudio {
-  conception(userId: string, q: { id?: string | null; idu?: string | null }): Promise<ConceptionLue | null>;
+  /** VIS-15 : `missionId` = conception produite par cette mission ; `idu` cherche aussi dans les assiettes groupées. */
+  conception(userId: string, q: { id?: string | null; idu?: string | null; missionId?: string | null }): Promise<ConceptionLue | null>;
   derniereVersion(userId: string, conceptionId: string): Promise<{ n: number; modele_ref: string } | null>;
   /** Upsert idempotent par (user_id, empreinte) ; renvoie l'id. */
   enregistrerPreparation(userId: string, ligne: Omit<PreparationLue, 'id' | 'cree_le'> & { origine: 'chat' | 'mission'; version_calcul: string }): Promise<string>;
@@ -1439,11 +1491,74 @@ export async function executerOutilStudio(nom: string, input: Obj, env: EnvStudi
   }
 }
 
+/** VIS-15 : action directe (sans tour de chat) du bouton « Ouvrir mon projet en 3D ». */
+export const ACTION_PREPARER_3D_CONCEPTION = 'preparer_3d_conception';
+
+/**
+ * VIS-15 — prépare la 3D de la conception d'une mission (ou d'une conception désignée) SANS appel au modèle : même
+ * outil, même moteur déterministe, aucun jeton. Le front relit ensuite la préparation et ouvre le Studio par le
+ * parcours existant « Voir en 3D » (comme « Ouvrir la 3D préparée »).
+ */
+export async function preparer3DDirect(corps: Obj, env: EnvStudio): Promise<ResultatOutil> {
+  const missionId = estUuid(corps.mission_id) ? corps.mission_id : null;
+  const conceptionId = estUuid(corps.conception_id) ? corps.conception_id : null;
+  if (!missionId && !conceptionId) return erreur('Mission ou conception à préparer non désignée.');
+  const parcelles = idusDeLaDemande({ parcel_ids: Array.isArray(corps.parcel_ids) ? corps.parcel_ids : [] });
+  return (await executerOutilStudio('studio_preparer_3d', {
+    ...(conceptionId ? { conception_id: conceptionId } : { mission_id: missionId }),
+    ...(parcelles.length ? { parcel_ids: parcelles } : {}),
+  }, env)) ?? erreur('Préparation 3D indisponible.');
+}
+
 async function resoudreConception(input: Obj, env: EnvStudio): Promise<ConceptionLue | null> {
   if (env.conception) return env.conception;
   const id = estUuid(input.conception_id) ? input.conception_id : null;
-  const idu = typeof input.idu === 'string' ? input.idu.replace(/\s/g, '').toUpperCase() : null;
+  // VIS-15 : conception produite par une mission (bouton « Ouvrir mon projet en 3D »).
+  if (!id && estUuid(input.mission_id)) return await env.depot.conception(env.userId!, { missionId: input.mission_id });
+  // VIS-15 : parcelle principale = première parcelle demandée (idu, parcel_ids, ou « A+B » écrit dans conception_id).
+  const idu = idusDemandees(input)[0] ?? null;
   return await env.depot.conception(env.userId!, { id, idu: idu && RE_IDU.test(idu) ? idu : null });
+}
+
+/** VIS-15 : parcelles désignées par l'entrée de l'outil (idu, parcel_ids, idus ; conception_id non-uuid « A+B » lu aussi). */
+export function idusDemandees(input: Obj): string[] {
+  return idusDeLaDemande({ ...input, ...(typeof input.conception_id === 'string' && !estUuid(input.conception_id) ? { assiette: input.conception_id } : {}) });
+}
+
+/** VIS-15 : ligne légère d'agent_conceptions (choix d'une conception par parcelle, assiettes comprises). */
+export interface LigneConceptionLegere { id: string; idu: string | null; maj_le?: string | null; assiette?: unknown }
+
+/**
+ * VIS-15 : conception la plus récente (lignes déjà triées) qui couvre TOUTES les parcelles demandées ; à défaut, la plus
+ * récente qui en couvre au moins une (preparer3D dira alors qu'elle ne couvre pas l'assiette). null si aucune.
+ */
+export function choisirConception(lignes: readonly LigneConceptionLegere[], idus: readonly string[]): string | null {
+  const couvre = (l: LigneConceptionLegere) => idusDeLaConception({ idu: l.idu, parcelle: { assiette: l.assiette } });
+  return lignes.find((l) => idus.every((i) => couvre(l).includes(i)))?.id
+    ?? lignes.find((l) => idus.some((i) => couvre(l).includes(i)))?.id ?? null;
+}
+
+/** VIS-15 : phrase claire quand aucune conception n'existe (au lieu d'une carte technique « Aucun résultat »). */
+export function messageSansConception(idus: readonly string[]): string {
+  const cible = idus.length > 1 ? `l’assiette ${idus.join(' + ')}` : idus.length === 1 ? `la parcelle ${idus[0]}` : 'ce projet';
+  return `PAS ENCORE DE CONCEPTION pour ${cible} : la 3D se prépare à partir d’une conception (parcelle, règles PLU, programme), ` +
+    'qui n’a pas encore été faite. Dis-le en UNE phrase simple, sans parler d’outil ni d’erreur, puis propose la mission de ' +
+    'conception (proposer_mission, type « conception »' + (idus.length > 1 ? `, criteres.parcel_ids = [${idus.map((i) => `"${i}"`).join(', ')}]` : '') + ').';
+}
+
+/**
+ * VIS-15 : la conception trouvée ne couvre pas toutes les parcelles demandées (Ascain : conception sur AI0001 seule,
+ * 66 m², pour une assiette AI0001 + AI0002) → aucune 3D, la raison est dite. null si elle les couvre.
+ */
+export function messageAssietteNonCouverte(c: Pick<ConceptionLue, 'idu' | 'parcelle'>, demandees: readonly string[]): string | null {
+  if (demandees.length < 2) return null;
+  const couvertes = idusDeLaConception(c);
+  const manquantes = demandees.filter((i) => !couvertes.includes(i));
+  if (!manquantes.length) return null;
+  const surf = estObj(c.parcelle) && fini(c.parcelle.surface_m2) ? ` (${Math.round(c.parcelle.surface_m2).toLocaleString('fr-FR')} m²)` : '';
+  return `AUCUNE 3D PRÉPARÉE : la conception enregistrée porte sur ${couvertes.join(' + ')}${surf}, pas sur l’assiette groupée ${demandees.join(' + ')} ` +
+    `(manque ${manquantes.join(', ')}). Une 3D sur cette seule surface serait fausse. Dis-le en une phrase et propose une mission de conception ` +
+    `sur l’assiette groupée (proposer_mission, type « conception », criteres.parcel_ids = [${demandees.map((i) => `"${i}"`).join(', ')}]).`;
 }
 
 /**
@@ -1474,10 +1589,9 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // (Sans dossier pour la parcelle du parcours : comportement antérieur inchangé.)
   const c = (iduExt ? await resoudreConception({ ...input, idu: iduExt }, env) : null) ?? await resoudreConception(input, env);
   if (!c && ext) return erreur(MESSAGE_EXTENSION_SANS_DOSSIER, 'partial');
-  if (!c) {
-    return erreur('Aucune conception trouvée pour cet utilisateur' + (input.idu ? ` sur ${String(input.idu)}` : '') +
-      ". Une conception (parcelle, règles PLU, programme) se prépare par une mission de conception (proposer_mission, type « conception »).", 'not_found');
-  }
+  if (!c) return erreur(messageSansConception(idusDemandees(input)), 'not_found');
+  // VIS-15 : assiette groupée demandée mais conception sur une partie seulement → rien n'est préparé.
+  { const nonCouverte = messageAssietteNonCouverte(c, idusDemandees(input)); if (nonCouverte) return erreur(nonCouverte, 'partial'); }
   // Lot formes-batiment : forme choisie dans la fiche (bloc du message, relu par index.ts) ou paramètre `forme`.
   const carte = env.formeCarte ?? null;
   if (carte && !carte.ok) return erreur(`Forme choisie dans la fiche refusée : ${carte.erreur}`, 'partial');
@@ -1507,6 +1621,9 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     data: {
       preparation_id: id, conception_id: c.id, idu: c.idu, commune: c.commune, empreinte: p.empreinte,
       calcul: 'déterministe — moteur du Dossier 3D (volumeParcelle + implantationProgramme), aucune IA',
+      // VIS-15 : écart de gabarit et assiette groupée, à dire tels quels.
+      ...(p.resume.gabarit_retenu ? { gabarit_retenu: p.resume.gabarit_retenu } : {}),
+      ...(p.resume.assiette ? { assiette: p.resume.assiette } : {}),
       volume: env.mission ? resumeCompact(p.resume) : p.resume,
       // Lot formes-batiment : forme retenue et classement des formes par le moteur (suggestion, l'utilisateur choisit).
       // (Mission : résultat plafonné à 3 000 caractères → seulement la suggestion.)
@@ -1518,6 +1635,8 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
         : "Bouton « Ouvrir la 3D préparée » dans le Dossier 3D, à droite du chat (un clic).",
     },
     message:
+      (p.resume.gabarit_retenu ? `GABARIT : écris tel quel « ${p.resume.gabarit_retenu} » (le volume suit le gabarit retenu par la conception). ` : '') +
+      (p.resume.assiette ? `ASSIETTE GROUPÉE : ${p.resume.assiette}. ` : '') +
       'Volume d’étude INDICATIF, calculé par le moteur (ne recalcule rien de tête, cite ces chiffres tels quels). ' +
       'Reprends chaque vérification avec son verdict : « dans la limite de la règle citée » seulement si verdict dans_la_limite, sinon « à vérifier » ou « non contrôlé » ; ' +
       'n’écris jamais « conforme ». Rien n’a été envoyé au Studio : l’utilisateur ouvre la 3D d’un clic. ' +
@@ -2385,7 +2504,16 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
     async conception(userId, q) {
       let r = db.from('agent_conceptions').select('id,idu,commune,parcelle,regles_plu,programme,maj_le').eq('user_id', userId).neq('statut', 'archive');
       if (q.id) r = r.eq('id', q.id);
-      else if (q.idu) r = r.eq('idu', q.idu);
+      else if (q.missionId) r = r.eq('mission_id', q.missionId);
+      else if (q.idu) {
+        // VIS-15 : la parcelle peut appartenir à une assiette groupée (idu principal différent) — lecture légère, choix ici.
+        const { data: legeres, error: e1 } = await db.from('agent_conceptions').select('id,idu,maj_le,assiette:parcelle->assiette')
+          .eq('user_id', userId).neq('statut', 'archive').order('maj_le', { ascending: false }).limit(30);
+        lever(e1);
+        const id = choisirConception((legeres ?? []) as LigneConceptionLegere[], [q.idu]);
+        if (!id) return null;
+        r = r.eq('id', id);
+      }
       const { data, error } = await r.order('maj_le', { ascending: false }).limit(1);
       lever(error);
       return (data?.[0] ?? null) as ConceptionLue | null;

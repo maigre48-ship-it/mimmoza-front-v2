@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Loader2, Rocket } from 'lucide-react';
 import { JETON_VALEUR_EUR } from '@/lib/billing/grille';
 import { useCopilotStore } from '../store/copilotStore';
-import { annulerMission, lireMissionParId, validerDevis } from './agentApi';
+import { annulerMission, lireMissionParId, suivreMission, validerDevis } from './agentApi';
 import {
   devisExpire, dureeLisible, formatJetons, MESSAGE_DEVIS_EXPIRE, libelleStatut, libelleType, missionFinie, resumerDevis, tonStatut,
   type AffichageDevis,
@@ -20,6 +20,9 @@ import './agent.css';
 import { ObjectifMission, TexteLisible } from './TexteLisible';
 import { creerActionVisualisationMission, missionVisualisable } from '../studio3d/missionPreparation3D';
 import { scinderObjectif } from '../utils/lisibilite';
+// VIS-15 : fin de mission de conception → ouvrir le projet en 3D.
+import { BoutonProjet3D } from './BoutonProjet3D';
+import { missionConceptionOuvrable3D } from './projet3DMission';
 // LOT D1 : ordre de mission et rapport présentés comme des documents dans le panneau.
 import { useDocumentUi } from '../document/documentUi.store';
 import { titreObjectif } from '../document/documentModele';
@@ -94,6 +97,9 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
   }, [missionId]);
 
   useEffect(() => { void relire(); }, [relire, version]);
+  // VIS-15 : mission lancée → la carte suit sa fin en direct (sans le panneau Missions) pour proposer aussitôt la 3D.
+  const suivie = !!mission && mission.statut !== 'devis' && mission.statut !== 'annulee' && !missionFinie(mission.statut);
+  useEffect(() => (missionId && suivie ? suivreMission(missionId, () => { void relire(); }) : undefined), [missionId, suivie, relire]);
 
   const devis = mission?.devis ?? proposition.devis;
   const statut = mission?.statut ?? 'devis';
@@ -160,7 +166,7 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
             onClick={() => useDocumentUi.getState().ouvrir({ genre: 'ordre', missionId: missionId ?? null, proposition, conversationId: conversationId ?? null })}>
             <FileText size={14} aria-hidden /> Ouvrir l’ordre de mission
           </button>
-          {mission && missionFinie(statut) && (mission.rapport || mission.rapport_brut != null) && (
+          {mission && missionFinie(statut) && !missionConceptionOuvrable3D(mission) && (mission.rapport || mission.rapport_brut != null) && (
             <button type="button" className="mzdoc-btn-ouvrir" onClick={() => useDocumentUi.getState().ouvrir({ genre: 'rapport', missionId: mission.id })}>
               <FileText size={14} aria-hidden /> Ouvrir le rapport de mission
             </button>
@@ -229,6 +235,11 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
         hotes > 0
           ? <div className="mzag-actions"><button type="button" className="mzag-btn" onClick={() => useAgentUi.getState().ouvrir('missions', missionId)}>Suivre la mission</button></div>
           : <p className="mzag-petit" style={{ margin: 0 }}>Suivez son avancement depuis la page MimmozIA, menu « Missions ».</p>
+      )}
+      {/* VIS-15 : conception terminée → Mimmo propose la suite ; « Ouvrir mon projet en 3D » est l'action principale. */}
+      {mission && missionConceptionOuvrable3D(mission) && (
+        <BoutonProjet3D mission={mission} onSend={onSend}
+          onRapport={panneauDocument && (mission.rapport || mission.rapport_brut != null) ? () => useDocumentUi.getState().ouvrir({ genre: 'rapport', missionId: mission.id }) : undefined} />
       )}
       {onVisualiserMission && missionVisualisable(mission, conversationId ?? null) && <div className="mzag-actions"><button type="button" className="mzag-btn" disabled={occupe !== null} onClick={() => void ouvrirPreparation()}>{occupe === 'visualiser' ? 'Vérification…' : 'Visualiser le projet en 3D'}</button></div>}
       {!missionId && <p className="mzag-petit" style={{ margin: 0 }}>Cette proposition n’a pas pu être enregistrée : demandez à MimmozIA de la reproposer.</p>}

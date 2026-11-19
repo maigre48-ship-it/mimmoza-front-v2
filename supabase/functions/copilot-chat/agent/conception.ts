@@ -20,6 +20,7 @@
 import { TAILLE_MAX_PIECE_JOINTE } from '../../_shared/documents/piecesJointes.ts';
 import { estConditionBande, valeurParBande } from '../../../../src/spaces/copilot/studio3d/reglesParBande.ts';
 import { chercherVoisinesParcelle, type VoisinesParcelle } from './voisines-parcelle.ts';
+import type { AssietteFonciere } from './assiette.ts';
 
 export type RegleCle =
   | 'hauteur_max_m' | 'niveaux_max' | 'emprise_sol_max_pct' | 'recul_voie_m' | 'recul_limites_m'
@@ -1318,6 +1319,11 @@ export interface ParcelleConception {
    * Absent d'une conception enregistrée avant ce lot : le volume garde alors l'emprise prudente du lot C6.
    */
   voisines?: VoisinesParcelle;
+  /**
+   * VIS-15 : assiette foncière (une ou plusieurs parcelles contiguës). Plusieurs : `geometrie` est l'UNION des contours
+   * et `surface_m2` la somme des contenances (assiette.ts). Absent d'une conception enregistrée avant ce lot.
+   */
+  assiette?: AssietteFonciere;
 }
 
 /**

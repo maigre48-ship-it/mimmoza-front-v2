@@ -65,7 +65,7 @@ import { TOOL_RECHERCHER_PARCELLES, executerRechercherParcelles } from './agent/
 import { briefingPourMissionVeille } from './agent/briefing.ts';
 import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUTILS_STUDIO } from './agent/outils.ts';
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
-import { briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, demandePlansSeuls, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
+import { ACTION_PREPARER_3D_CONCEPTION, preparer3DDirect, briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, demandePlansSeuls, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
@@ -11540,6 +11540,18 @@ function corsHeaders(): HeadersInit {
   };
 }
 
+/** VIS-15 : réponse JSON de l'action directe « preparer_3d_conception » (jamais de débit, jamais de LLM). */
+async function repondrePreparation3DDirecte(corps: Record<string, unknown>, userId: string, authHeader: string): Promise<Response> {
+  const conversationId = typeof corps.conversation_id === 'string' && /^[0-9a-f-]{36}$/i.test(corps.conversation_id) ? corps.conversation_id : null;
+  let r: ToolResult;
+  try {
+    r = await preparer3DDirect(corps, envStudio({ conversation_id: conversationId } as unknown as MimmozaContext, { userId, authHeader })) as ToolResult;
+  } catch (e) {
+    r = { status: 'error', source: 'MimmozIA · Studio 3D', message: errMsg(e).slice(0, 300) } as ToolResult;
+  }
+  return new Response(JSON.stringify(r), { status: 200, headers: { ...corsHeaders(), 'Content-Type': 'application/json' } });
+}
+
 async function requireUserId(req: Request): Promise<string> {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) throw new CopilotError('UNAUTHORIZED', 'Missing Authorization');
@@ -11769,7 +11781,12 @@ async function traiterRequete(req: Request): Promise<Response> {
     // gratuite. Le gain aurait de toute façon été nul sur le cas qui compte :
     // un message texte, dont la lecture du corps est locale et instantanée.
     userId = await requireUserId(req);
-    payload = validateRequest(await req.json(), userId);
+    const corpsRequete = await req.json();
+    // VIS-15 : « Ouvrir mon projet en 3D » (fin de mission de conception) — préparation déterministe, sans tour de chat.
+    if (corpsRequete && typeof corpsRequete === 'object' && (corpsRequete as Record<string, unknown>).action === ACTION_PREPARER_3D_CONCEPTION) {
+      return await repondrePreparation3DDirecte(corpsRequete as Record<string, unknown>, userId, req.headers.get('Authorization') ?? '');
+    }
+    payload = validateRequest(corpsRequete, userId);
 
     // ── Étape 2 : conversation+contexte ∥ plan ──────────────────
     // `ensureConversation` puis `loadLatestUserContext` restent enchaînés (le

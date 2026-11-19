@@ -21,6 +21,10 @@ import { MissionPreparation3DPanel, type ParcelleMissionConfirmee } from './stud
 import { missionVisualisable, iduAttenduMission, iduDeParcelle, verifierTerrainMission, preparerTransfertMission } from './studio3d/missionPreparation3D';
 import type { Mission } from './agent/agent.types';
 import { lireMissionParId } from './agent/agentApi';
+// VIS-15 : ouverture du projet en 3D à la fin d'une mission de conception.
+import { corpsPreparation3D, EVENEMENT_OUVRIR_PROJET_3D, lireIssuePreparation3D } from './agent/projet3DMission';
+import type { DemandeOuvertureProjet3D } from './agent/BoutonProjet3D';
+import { lirePreparationStockee, ouverturePreparation } from './studio3d/preparationStudio';
 import { AtelierConception } from './agent/conception/AtelierConception';
 import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
 import { usePlanAccess } from '@/lib/billing/usePlanAccess';
@@ -563,6 +567,33 @@ export default function MimmozIAPage() {
     window.addEventListener(EVENEMENT_OUVRIR_PLANS_STUDIO, surPlans);
     return () => window.removeEventListener(EVENEMENT_OUVRIR_PLANS_STUDIO, surPlans);
   }, [preparerDossier]);
+  // VIS-15 : « Ouvrir mon projet en 3D » (fin de mission de conception, chat ou panneau Missions) — le serveur prépare la 3D
+  // de la conception de la mission (action directe, moteur déterministe, aucun jeton), puis le Studio s'ouvre par le
+  // parcours existant « Voir en 3D », comme « Ouvrir la 3D préparée » du Dossier 3D.
+  useEffect(() => {
+    const surProjet3D = (e: Event) => {
+      const d = (e as CustomEvent<DemandeOuvertureProjet3D>).detail;
+      if (!d?.mission) return;
+      d.prise = true;
+      d.repondre((async () => {
+        const conversationId = d.mission.conversation_id ?? useCopilotStore.getState().currentConversationId;
+        if (!conversationId) return { ok: false as const, message: 'Conversation de la mission introuvable.' };
+        const { data, error } = await supabase.functions.invoke('copilot-chat', { body: corpsPreparation3D(d.mission) });
+        if (error) return { ok: false as const, message: 'La 3D n’a pas pu être préparée (service indisponible). Réessayez dans un instant.' };
+        const issue = lireIssuePreparation3D(data);
+        if (!issue.ok) return issue;
+        const lu = await supabase.from('studio_preparations').select('id,idu,entree,volume').eq('id', issue.preparationId).maybeSingle();
+        const p = lu.error ? null : lirePreparationStockee(lu.data);
+        if (!p) return { ok: false as const, message: 'La 3D préparée est illisible : réessayez.' };
+        const o = ouverturePreparation(p);
+        if (!o.ok) return { ok: false as const, message: o.erreur };
+        const res = await voirEn3D(o.fiche, conversationId, o.terrain);
+        return { ...issue, ouvert: res !== 'parcelle-requise' };
+      })());
+    };
+    window.addEventListener(EVENEMENT_OUVRIR_PROJET_3D, surProjet3D);
+    return () => window.removeEventListener(EVENEMENT_OUVRIR_PROJET_3D, surProjet3D);
+  }, [voirEn3D]);
   const preparerMission3D = useCallback((mission: Mission) => {
     const state = useCopilotStore.getState();
     if (!missionVisualisable(mission, state.currentConversationId)) throw new Error('Ouvrez la conversation de cette mission pour préparer son projet.');

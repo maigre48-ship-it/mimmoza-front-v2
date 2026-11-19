@@ -55,7 +55,8 @@ export const OUTIL_PROPOSER_MISSION: OutilDef = {
       objectif: { type: 'string', description: 'Objectif de la mission en une à trois phrases (≤ 2 000 caractères).' },
       criteres: {
         type: 'object',
-        description: 'Critères : communes (noms et/ou codes INSEE), surface_min_m2, surface_max_m2, zonages, programme, budget_charge_fonciere_eur, nombre_logements_vise, contraintes…',
+        description: 'Critères : communes (noms et/ou codes INSEE), surface_min_m2, surface_max_m2, zonages, programme, budget_charge_fonciere_eur, nombre_logements_vise, contraintes… ' +
+          'Type « conception » : idu (parcelle, 14 caractères) ; ASSIETTE GROUPÉE de plusieurs parcelles contiguës → parcel_ids (liste des idu, la première = parcelle principale) ; idu peut alors être omis.',
       },
       projet_id: { type: 'string', description: 'Identifiant du projet (uuid) si la mission s’y rattache.' },
     },
@@ -183,8 +184,10 @@ const PREUVES_PROPS = {
 
 export const OUTIL_RECUPERER_PARCELLE: OutilDef = {
   name: 'recuperer_parcelle',
-  description: 'Conception : récupère le CONTOUR cadastral réel (GeoJSON) et la contenance de la parcelle de la mission, et les enregistre dans le dossier.',
-  input_schema: { type: 'object', properties: { idu: { type: 'string' } }, required: ['idu'] },
+  description: 'Conception : récupère le CONTOUR cadastral réel (GeoJSON) et la contenance de la parcelle de la mission, et les enregistre dans le dossier. ' +
+    'Assiette groupée (critères parcel_ids) : UN appel récupère TOUTES les parcelles et enregistre leur union (surface = somme des contenances) ; ' +
+    'si elles ne sont pas d’un seul tenant, rien n’est enregistré et la question à poser à l’utilisateur est renvoyée.',
+  input_schema: { type: 'object', properties: { idu: { type: 'string', description: 'Parcelle de la mission (n’importe laquelle de l’assiette groupée).' } } },
   available_in_modes: TOUS_MODES,
 };
 export const OUTIL_LIRE_REGLES_IMPORTEES: OutilDef = {
@@ -261,6 +264,8 @@ export const OUTIL_STUDIO_PREPARER_3D: OutilDef = {
     properties: {
       conception_id: { type: 'string', description: 'Identifiant (uuid) de la conception, si connu.' },
       idu: { type: 'string', description: 'Identifiant cadastral (14 caractères) : la conception la plus récente de cette parcelle.' },
+      // VIS-15 : assiette groupée.
+      parcel_ids: { type: 'array', items: { type: 'string' }, description: 'Assiette groupée : TOUTES les parcelles du projet (idu). La 3D n’est préparée que si la conception les couvre toutes.' },
       // Lot formes-batiment.
       forme: {
         type: 'string', enum: ['barre', 'barres', 'plot', 'plots', 'l', 'u', 'cour', 'redans', 'auto'],

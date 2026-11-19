@@ -105,12 +105,15 @@ export type AffichageDevis =
  * devis. Une même mission peut arriver deux fois (sortie de l'outil ET
  * événement `mission_devis`) : une seule carte par mission.
  */
-export function devisAAfficher(appels: readonly AppelLike[]): Map<string, AffichageDevis> {
+export function devisAAfficher(appels: readonly AppelLike[], enCours = false): Map<string, AffichageDevis> {
   const res = new Map<string, AffichageDevis>();
   const vus = new Set<string>();
   const devisAppels = appels.filter((a) => estAppelDevis(a.name));
   const props = devisAppels.map((a) => ({ a, p: a.status === 'running' ? null : lirePropositionDevis(a.output) }));
   const unAvecId = props.some((x) => x.p?.missionId);
+  // VIS-15 (19/11) : un premier devis refusé puis reproposé dans le MÊME tour affichait une carte rouge transitoire.
+  // L'échec n'est montré qu'une fois la réponse terminée, et seulement si aucune autre proposition ne l'a remplacé.
+  const remplace = (a: AppelLike) => props.some((x) => x.a !== a && (x.a.status === 'running' || x.p != null));
   for (const { a, p } of props) {
     if (p?.missionId) {
       if (vus.has(p.missionId)) continue;
@@ -119,7 +122,7 @@ export function devisAAfficher(appels: readonly AppelLike[]): Map<string, Affich
     } else if (!unAvecId) {
       if (a.status === 'running') res.set(a.id, { etat: 'preparation' });
       else if (p) res.set(a.id, { etat: 'carte', proposition: p });
-      else if (a.status === 'error') res.set(a.id, { etat: 'erreur' });
+      else if (a.status === 'error' && !enCours && !remplace(a)) res.set(a.id, { etat: 'erreur' });
     }
   }
   return res;

@@ -53,6 +53,8 @@ import {
   fusionnerSecteursDeclares, secteursDepuisCriteres, secteursDepuisTexte, type SecteursDeclares, type Toiture,
 } from './conception.ts';
 import { lireTexteExtrait, planifierLecture } from '../../_shared/documents/piecesJointes.ts';
+// VIS-15 : assiette foncière groupée (plusieurs parcelles contiguës).
+import { assemblerAssiette, idusDeLaDemande, RE_IDU_ASSIETTE, type IssueAssiette } from './assiette.ts';
 import { mettreEnForme } from '../../_shared/texte/miseEnForme.ts';
 import { normaliserCodeZone, plagesLisibles } from '../../_shared/documents/lectureCiblee.ts';
 import {
@@ -975,6 +977,20 @@ async function executerOutilMission(
     case 'recuperer_parcelle': {
       const k = chargerConception(c.etat.conception, c.m);
       const idu = String(input.idu ?? k.idu ?? '').replace(/\s/g, '').toUpperCase();
+      // VIS-15 : assiette groupée (criteres.parcel_ids) — toute parcelle de l'assiette est acceptée, et TOUTES sont lues.
+      const assiette = idusDeLaDemande(c.m.criteres);
+      if (assiette.length > 1) {
+        if (idu && !assiette.includes(idu)) return `Refusé : la mission porte sur l’assiette ${assiette.join(' + ')}.`;
+        const lus = await Promise.all(assiette.map((i) => chercherContourParcelle(i, c.deps.fetch ?? fetch)));
+        const manquantes = assiette.filter((_, i) => !lus[i]);
+        if (manquantes.length) return `Contour cadastral introuvable (API Carto IGN) pour ${manquantes.join(', ')} : assiette groupée NON enregistrée. Ne déduis aucune surface ; dis-le à l'utilisateur.`;
+        const a = assemblerAssiette(lus as ParcelleConception[]);
+        if (!a.ok) { const ko = a as Extract<IssueAssiette, { ok: false }>; return `ASSIETTE NON ENREGISTRÉE : ${ko.raison} N'invente pas d'assiette : pose MAINTENANT cette question à l'utilisateur (poser_question) : « ${ko.question} »`; }
+        k.idu = a.parcelle.idu; k.parcelle = a.parcelle as ParcelleConception;
+        const ko = await persisterConceptionSure(c, k, 'regles');
+        c.etat.conception = k;
+        return JSON.stringify({ idus: a.parcelle.assiette.idus, surface_m2: a.parcelle.surface_m2, controle_surface: a.parcelle.assiette.controle, source: a.parcelle.source, conception_id: k.id, type_geometrie: a.parcelle.geometrie.type, ...resumeVoisines(k.parcelle), consigne: 'Toutes les règles et le programme portent sur cette ASSIETTE GROUPÉE (surface ci-dessus), jamais sur une seule parcelle.', ...(ko ? { dossier_non_mis_a_jour: ko } : {}) });
+      }
       if (k.idu && idu !== k.idu) return `Refusé : la mission porte sur ${k.idu}.`;
       const p = await chercherContourParcelle(idu, c.deps.fetch ?? fetch);
       if (!p) return 'Contour cadastral introuvable (API Carto IGN) : le Studio devra le recharger. Ne déduis aucune surface.';
@@ -2054,11 +2070,17 @@ export async function executerOutilAgentChat(
         if (JSON.stringify(criteres).length > 8000) criteres = { note: texte(criteres, 8000) };
         if (type === 'conception') {
           // Conception : un terrain précis (idu) et, si connue, la prospection d'origine (même utilisateur).
-          const idu = typeof criteres.idu === 'string' ? criteres.idu.replace(/\s/g, '').toUpperCase() : '';
-          if (!/^(2[AB]\d{3}|\d{5})\d{3}[0-9A-Z]{2}\d{4}$/.test(idu)) {
-            return { status: 'error', source: SOURCE, message: 'Conception : criteres.idu (identifiant cadastral à 14 caractères) est requis.' };
+          // VIS-15 (19/11, Ascain) : le modèle avait fourni l'assiette groupée dans parcel_ids SANS idu → devis refusé
+          // (carte rouge), puis reproposé. L'idu principal est désormais la première parcelle de l'assiette.
+          const brut = typeof criteres.idu === 'string' ? criteres.idu.replace(/\s/g, '').toUpperCase() : '';
+          if (brut && !RE_IDU_ASSIETTE.test(brut)) {
+            return { status: 'error', source: SOURCE, message: `Conception : criteres.idu « ${brut.slice(0, 40)} » n'est pas un identifiant cadastral à 14 caractères.` };
           }
-          criteres = { ...criteres, idu };
+          const assiette = idusDeLaDemande(criteres);
+          if (!assiette.length) {
+            return { status: 'error', source: SOURCE, message: 'Conception : criteres.idu (identifiant cadastral à 14 caractères) ou criteres.parcel_ids (assiette groupée) est requis.' };
+          }
+          criteres = { ...criteres, idu: assiette[0], ...(assiette.length > 1 ? { parcel_ids: assiette } : {}) };
           if (criteres.mission_origine_id != null) {
             const o = estUuid(criteres.mission_origine_id) ? await depot.chargerMissionUtilisateur(userId, criteres.mission_origine_id) : null;
             if (!o) criteres = { ...criteres, mission_origine_id: null };

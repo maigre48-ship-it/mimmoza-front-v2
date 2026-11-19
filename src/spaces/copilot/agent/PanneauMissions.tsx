@@ -16,6 +16,10 @@ import {
 } from './agentLogique';
 import type { LigneJournal, Mission } from './agent.types';
 import { RapportMission } from './RapportMission';
+// VIS-15 : ouverture du projet en 3D à la fin d'une mission de conception.
+import { BoutonProjet3D } from './BoutonProjet3D';
+import { missionConceptionOuvrable3D } from './projet3DMission';
+import { useCopilot } from '../hooks/useCopilot';
 import { FormulaireRegles } from './conception/FormulaireRegles';
 import { lireQuestionRegles } from '@/spaces/promoteur/shared/echangeStudio/conception';
 import { useAgentUi } from './agentUi.store';
@@ -216,7 +220,9 @@ function DetailMission({ id }: { id: string }) {
         </div>
       )}
 
-      {(mission.rapport || mission.rapport_brut != null) && <DocumentRapport missionId={mission.id} />}
+      {/* VIS-15 : fin d'une mission de conception → « Ouvrir mon projet en 3D » d'abord ; le rapport passe en second. */}
+      {missionConceptionOuvrable3D(mission) && <SuiteProjet3D mission={mission} />}
+      {(mission.rapport || mission.rapport_brut != null) && <DocumentRapport missionId={mission.id} secondaire={missionConceptionOuvrable3D(mission)} />}
       {(mission.rapport || mission.rapport_brut != null) && <RapportMission mission={mission} partiel={mission.statut !== 'terminee'} />}
 
       <section className="mzag-carte" aria-label="Journal de la mission">
@@ -241,13 +247,23 @@ function DetailMission({ id }: { id: string }) {
   );
 }
 
+/** VIS-15 : suite proposée par Mimmo à la clôture d'une conception (3D d'abord, puis plaquette). */
+function SuiteProjet3D({ mission }: { mission: Mission }) {
+  const { sendMessage } = useCopilot();
+  return (
+    <section className="mzag-carte" aria-label="Suite de la conception">
+      <BoutonProjet3D mission={mission} onSend={(t) => { void sendMessage(t); }} />
+    </section>
+  );
+}
+
 /** LOT D1 : bouton « pleine page » au-dessus du rapport (si le panneau document est monté). */
-function DocumentRapport({ missionId }: { missionId: string }) {
+function DocumentRapport({ missionId, secondaire = false }: { missionId: string; secondaire?: boolean }) {
   const panneauDocument = useDocumentUi((s) => s.hotes > 0);
   if (!panneauDocument) return null;
   return (
     <div className="mzag-actions">
-      <button type="button" className="mzdoc-btn-ouvrir" onClick={() => useDocumentUi.getState().ouvrir({ genre: 'rapport', missionId })}>
+      <button type="button" className={secondaire ? 'mzdoc-btn-ouvrir mzdoc-btn-ouvrir--clair' : 'mzdoc-btn-ouvrir'} onClick={() => useDocumentUi.getState().ouvrir({ genre: 'rapport', missionId })}>
         <FileText size={14} aria-hidden /> Ouvrir le rapport en pleine page
       </button>
     </div>

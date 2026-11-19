@@ -28,6 +28,7 @@ import { useCopilotStreaming } from '../hooks/useCopilotStreaming';
 import { trackFire } from '@/lib/mimmozia/track';
 import { CarteDevisMission } from '../agent/CarteDevisMission';
 import { devisAAfficher, estAppelDevis } from '../agent/agentLogique';
+import { phraseStudioSansConception } from '../agent/projet3DMission';
 import { CarteSuiviRendu } from '../studio3d/CarteSuiviRendu';
 import { appelsSuiviRemplaces, cartesSuivi } from '../studio3d/suiviRenduChat';
 import { CarteBriefCreatif } from '../studio3d/CarteBriefCreatif';
@@ -121,7 +122,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   })();
   const decisionLimits = tertiaryReview(linkedQuestion, message.toolCalls);
   // Agent autonome : une carte de devis par mission proposée (sans doublon).
-  const devisMissions = useMemo(() => devisAAfficher(message.toolCalls), [message.toolCalls]);
+  const devisMissions = useMemo(() => devisAAfficher(message.toolCalls, message.status === 'streaming'), [message.toolCalls, message.status]);
   // LOT C3 : cartes de résultat au contenu identique → une seule ; appel sans réponse à la fin du message → « interrompu ».
   const cartesResultat = useMemo(() => preparerCartes(message.toolCalls, message.status), [message.toolCalls, message.status]);
   // LOT E1-suivi : carte de suivi vivante d'un rendu Studio (dernier appel qui cite chaque travail).
@@ -208,6 +209,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
               if (vue) return <><CarteExtensionMaison vue={vue} />{carteAccord}{variantesExtension.appelId === tc.id && <CarteVariantesExtension variantes={variantesExtension.variantes} />}</>;
               if (carteAccord) return carteAccord;
             }
+            // VIS-15 : 3D demandée sans conception (ou sur une conception qui ne couvre pas l'assiette) → une phrase claire.
+            { const phrase = phraseStudioSansConception(tc); if (phrase) return <p key={tc.id} style={{ margin: '4px 0', color: T.textMuted, fontSize: 13 }}>{phrase}</p>; }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de
