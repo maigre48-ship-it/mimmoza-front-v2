@@ -16,6 +16,8 @@
 
 import { migrerV1versV2, validerProjet, type BatimentV2, type ProjetMimmozaV2 } from "../../promoteur/shared/echangeStudio/mimmozaProjetV2.ts";
 import type { ParcelleStudio, PointAdresse, TerrainStudio } from "../../promoteur/shared/ouvrirStudio3D.ts";
+// VIS-04 : brief projet (Style & tendances, programme, habillage, vues) — un seul point de passage vers le contrat.
+import { projetAvecBriefProjet, type ChampsContratBrief } from "../../../lib/studio/briefProjet.ts";
 
 export const COMPOSITION_MAX_V2 = 8;
 /** Bâtiments au plus dans Studio (ARCHITECTURE_LIMITS.maxBuildings) ; le contrat v2 en admet 20. */
@@ -62,6 +64,11 @@ export interface EntreeProjetChat {
   batiments?: readonly BatimentV2[] | null;
   /** Programme chiffré du volume (logements visés / modélisés, SDP estimée). */
   programmeVolume?: { logementsVises: number | null; logementsModelises: number | null; sdpM2: number | null } | null;
+  /**
+   * VIS-04 — champs facultatifs du contrat portés par le brief projet (programme.typologies/mix, brief, rendu).
+   * Absent ou vide : projet IDENTIQUE à celui d'avant le lot. Mêmes champs pour le chat et FilmVisitePanel.
+   */
+  briefProjet?: ChampsContratBrief | null;
 }
 
 /**
@@ -151,7 +158,10 @@ export function construireProjetChat(e: EntreeProjetChat): IssueProjetChat {
     session: { id: e.sessionId, conversationId: e.conversationId, retourOrigine: e.origine, retourUrl: e.retourUrl },
   };
   const lu = validerProjet(brut);
-  return lu.ok ? { ok: true, projet: lu.projet, avertissements: m.avertissements } : { ok: false, erreur: lu.erreur };
+  if (!lu.ok) return { ok: false, erreur: 'erreur' in lu ? lu.erreur : 'projet refusé' };
+  const avecBrief = projetAvecBriefProjet(lu.projet, e.briefProjet);
+  if ('erreur' in avecBrief) return { ok: false, erreur: `brief du projet refusé : ${avecBrief.erreur}` };
+  return { ok: true, projet: avecBrief.projet, avertissements: m.avertissements };
 }
 
 /** Format d'identifiant d'étude accepté par Studio (`?etude=`, contrat R4/R5). */

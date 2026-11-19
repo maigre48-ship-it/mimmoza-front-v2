@@ -13,7 +13,7 @@
 // =============================================================================
 import { useEffect, useMemo, useState } from 'react';
 import { Clapperboard, ExternalLink, Image as IconeImage, Loader2, Orbit } from 'lucide-react';
-import { lienVisite, suivreTravail, urlSigneeRendu, type TravailStudio } from '@/lib/studio/travaux';
+import { lienVisite, phrasesVuesNonProduites, suivreTravail, urlSigneeRendu, type ResultatImage, type TravailStudio } from '@/lib/studio/travaux';
 import { fichiersResultat, SONDAGE_SUIVI_CHAT_MS, vueCarteSuivi, type IndiceSuivi } from './suiviRenduChat';
 // LOT P2 (11/11/2026) — image dans sa rue : atelier « Ajuster le placement » puis nouveau travail avec le calage.
 import { AtelierPlacement } from './AtelierPlacement';
@@ -23,6 +23,8 @@ import { BlocExistantConserve } from './CarteExtensionMaison';
 import { DemandePhotoMaison } from './DemandePhotoMaison';
 // LOT G4 (17/11/2026) — plans de l'extension (PDF, DXF) dessinés depuis le même modèle que l'image.
 import { CartePlansExtension } from './CartePlansExtension';
+// VIS-10 (19/11/2026) — badge étude / photoréaliste, brief appliqué, livraison commerciale (liens signés au clic).
+import { BadgeRealisme, BlocLivraisonImage, DefinitionLivree, imageDuLibelle } from './BlocLivraisonImage';
 import './CarteSuiviRendu.css';
 
 type Liens =
@@ -121,10 +123,12 @@ export function CarteSuiviRendu({ indice, onSend }: { indice: IndiceSuivi; onSen
           <a href={i.url} target="_blank" rel="noopener noreferrer" title="Ouvrir l’image en grand">
             <img src={i.url} alt={`${vue.image?.titre ?? 'Image du projet'} — vue ${i.libelle}`} loading="lazy" onError={resigner} />
           </a>
-          <figcaption>{i.libelle}</figcaption>
+          {/* VIS-14 : badge PAR VUE et définition réellement livrée. */}
+          <figcaption>{i.libelle} {travail?.type === 'image' && <><BadgeRealisme resultat={travail.resultat as ResultatImage | null} image={imageDuLibelle(travail.resultat as ResultatImage | null, i.libelle)} /><DefinitionLivree image={imageDuLibelle(travail.resultat as ResultatImage | null, i.libelle)} /></>}</figcaption>
         </figure>)}
       </div>}
       {vue.etat === 'termine' && vue.image?.mention && <p className="mz-suivi-rendu__mention">{vue.image.mention}</p>}
+      {vue.etat === 'termine' && travail?.type === 'image' && liens?.genre === 'images' && <BlocLivraisonImage resultat={travail.resultat as ResultatImage | null} />}
       {vue.etat === 'termine' && vue.photoRequise && <DemandePhotoMaison requise={vue.photoRequise} travail={travail} onSend={onSend} />}
       {vue.etat === 'termine' && travail && <CartePlansExtension travail={travail} />}
       {vue.existant && <BlocExistantConserve existant={vue.existant} />}
@@ -150,6 +154,9 @@ export function CarteSuiviRendu({ indice, onSend }: { indice: IndiceSuivi; onSen
       {erreurLiens && <p className="mz-suivi-rendu__alerte" role="alert">{erreurLiens}</p>}
       {vue.omis && <p className="mz-suivi-rendu__detail">{vue.omis}</p>}
       {vue.avertissements.length > 0 && <ul className="mz-suivi-rendu__avertissements">{vue.avertissements.map(a => <li key={a}>{a}</li>)}</ul>}
+      {/* VIS-04 — vues demandées que la machine de rendu n'a pas produites, avec la raison (jamais retirées en silence). */}
+      {vue.etat === 'termine' && travail?.type === 'image' && phrasesVuesNonProduites(travail.resultat as ResultatImage | null).length > 0
+        && <ul className="mz-suivi-rendu__avertissements" aria-label="Vues non produites">{phrasesVuesNonProduites(travail.resultat as ResultatImage | null).map(a => <li key={a}>{a}</li>)}</ul>}
       {vue.etat === 'termine' && liens && liens.genre !== 'visite' && <p className="mz-suivi-rendu__detail">Liens valables 1 heure ; le rendu reste disponible dans le Dossier 3D.</p>}
     </section>
   );

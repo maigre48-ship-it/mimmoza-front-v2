@@ -24,6 +24,8 @@ import {
   raisonIndisponible, recapitulatif, type ChampCarte, type DemandeBrief, type EtatBrief,
 } from './briefCreatif';
 import { VignetteTravee } from './VignetteTravee';
+// VIS-04 — le brief projet de l'étude (Style & tendances, programme, vues) part avec l'habillage, qui y est mémorisé.
+import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
 import './CarteBriefCreatif.css';
 
 const ApercuBrief3D = lazy(() => import('./ApercuBrief3D'));
@@ -57,6 +59,7 @@ interface Props {
 export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFermer, toujoursOuverte, sansStyles, bandeau }: Props) {
   const messages = useCopilotStore((s) => s.messages);
   const enCours = useCopilotStore((s) => s.status === 'streaming');
+  const conversationId = useCopilotStore((s) => s.currentConversationId);
   const envoyeDansLeFil = useMemo(() => briefEnvoyeApres(messages, messageId), [messages, messageId]);
   const [etat, setEtat] = useState<EtatBrief>(() => etatInitial(demande));
   const [ecran, setEcran] = useState(0);
@@ -72,7 +75,13 @@ export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFerm
 
   const envoyer = (mimmo: boolean) => {
     if (!onSend || enCours) return;
-    onSend(messageBrief(etat, demande, mimmo));
+    // VIS-04 : habillage mémorisé dans le brief projet de l'étude, puis champs du contrat joints au bloc (sans étude : rien).
+    let projet: Record<string, unknown> | null = null;
+    try {
+      const choix = choixAppliques(etat, mimmo);
+      projet = conversationId ? (champsBriefDeLaConversation(conversationId, { habillage: { ...choix } })?.champs as Record<string, unknown> | undefined) ?? null : null;
+    } catch { projet = null; }
+    onSend(messageBrief(etat, demande, mimmo, { projet }));
     setEnvoye(recapitulatif(choixAppliques(etat, mimmo), demande));
     setOuverte(false);
     onEnvoye?.();

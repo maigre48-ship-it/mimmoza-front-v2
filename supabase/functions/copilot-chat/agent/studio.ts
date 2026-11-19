@@ -83,6 +83,12 @@ import {
 import { optionPhotoClient, photoProjetDesSorties, photoProjetUtilisableCommeFond, type PhotoProjet } from './photo-projet.ts';
 // LOT G10b — maison neuve : image et plans de la maison du parcours (aucune 3D préparée, aucun immeuble).
 import { confirmerRenduMaison, devisRenduMaison, empreinteProjetMaison, maisonDeLaConversation, MESSAGE_MAISON_SANS_3D, MESSAGE_PHOTO_REQUISE_MAISON, type OutilsStudio } from './studio-maison.ts';
+// VIS-04 (18/11/2026) — brief projet (Style & tendances, programme, habillage, vues) relié au rendu, et catalogue
+// commun des vues (mimmozia-studio docs/vis/COORDINATION.md). Code PUR partagé avec le front.
+import { empreinteChamps, lireChampsContrat, type ChampsContratBrief } from '../../../../src/lib/studio/briefProjet.ts';
+import { estVueCatalogue, libelleCourtVue, MAX_VUES_PAR_IMAGE, phraseVuesDisponibles, phrasesPronosticVues, pronosticVues, VUES_DISPONIBLES, vuesARendre } from '../../../../src/lib/studio/catalogueVues.ts';
+// VIS-10 (19/11/2026) — option `livraison` (livraison commerciale du worker VIS-07 / VIS-INT-2), mêmes règles que la base.
+import { avecLivraisonParDefaut, validerOptionLivraison } from '../../../../src/lib/studio/livraisonCommerciale.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -423,7 +429,8 @@ export function consigneFormeCarte(c: Validation<SaisieDimensions> | null): stri
 
 export type Validation<T> = { ok: true; valeur: T } | { ok: false; erreur: string };
 const AMBIANCES = ['jour', 'fin_de_journee', 'nuit'];
-const VUES = ['trois_quarts_gauche', 'trois_quarts_droite', 'face'];
+/** VIS-04 : vues DISPONIBLES du catalogue commun (avant le lot : 3/4 gauche, 3/4 droite, face). */
+const VUES: readonly string[] = VUES_DISPONIBLES;
 
 /**
  * Mêmes règles que _studio_job_options_valides (SQL) et travauxLogique.validerOptions (front). Absentes : défauts.
@@ -434,19 +441,36 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
   if (type !== 'film' && type !== 'visite360' && type !== 'image') return { ok: false, erreur: 'Type de rendu inconnu (film, visite360 ou image).' };
   if (brut !== undefined && brut !== null && !estObj(brut)) return { ok: false, erreur: 'Options illisibles.' };
   const o = (brut ?? {}) as Obj;
-  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique'] : type === 'visite360' ? ['ambiance', 'interieurs', 'resolution'] : ['vues', 'ambiance', ...CLES_FOND];
+  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique'] : type === 'visite360' ? ['ambiance', 'interieurs', 'resolution'] : ['vues', 'ambiance', 'livraison', ...CLES_FOND];
   const inconnue = Object.keys(o).find((k) => !permises.includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
   if (type === 'image') {
     const vues = o.vues ?? ['trois_quarts_gauche'];
-    if (!Array.isArray(vues) || vues.length < 1 || vues.length > 3 || new Set(vues).size !== vues.length || vues.some((v) => !VUES.includes(v as string))) {
-      return { ok: false, erreur: 'Choisissez de 1 à 3 vues : 3/4 gauche, 3/4 droite ou face.' };
+    const maxVues = Math.min(MAX_VUES_PAR_IMAGE, VUES.length);
+    if (!Array.isArray(vues) || vues.length < 1 || vues.length > maxVues || new Set(vues).size !== vues.length || vues.some((v) => !VUES.includes(v as string))) {
+      return { ok: false, erreur: `Choisissez de 1 à ${String(maxVues)} vues : ${phraseVuesDisponibles(VUES_DISPONIBLES)}.` };
     }
-    const ambiance = o.ambiance ?? 'jour';
-    if (ambiance !== 'jour' && ambiance !== 'fin_de_journee') return { ok: false, erreur: 'Choisissez une lumière : journée ou fin de journée.' };
+    // VIS-14 (I2) : l'ambiance n'est transmise QUE si elle a été choisie ; absente, le worker applique celle du brief
+    // projet (charge.renduMimmoza), sinon « jour ». (Avant : « jour » forcé ⇒ l'ambiance du brief n'était jamais appliquée.)
+    const ambiance = o.ambiance;
+    // VIS-03/VIS-04 : + crépuscule (preset du worker) ; la nuit reste refusée pour une image.
+    if (ambiance !== undefined && ambiance !== 'jour' && ambiance !== 'fin_de_journee' && ambiance !== 'crepuscule') return { ok: false, erreur: 'Choisissez une lumière : journée, fin de journée ou crépuscule.' };
     const fond = validerFond(o, proprietaire);
     if (!fond.ok) return fond;
-    return { ok: true, valeur: { vues: VUES.filter((v) => (vues as unknown[]).includes(v)), ambiance, ...fond.valeur } };
+    // VIS-10 : livraison commerciale (formats, mention, ZIP) — recopiée telle que validée ; absente : défaut du worker.
+    // VIS-14 (M2) : `livraison: null` (la clé elle-même) est REFUSÉE, comme par la base (le worker l'ignorerait, mais
+    // la base la refuse avant lui) — omettre la clé ; « pas de livraison » = `{ active: false }`.
+    let livraison: Obj | null = null;
+    if (o.livraison !== undefined) {
+      const l = validerOptionLivraison(o.livraison);
+      if ('erreur' in l) return { ok: false, erreur: l.erreur };
+      livraison = l.valeur as Obj;
+    }
+    // VIS-14 (I2) : image dans une PHOTO (rue ou client) — « jour » gardé par défaut comme avant (la lumière d'un
+    // photomontage suit la photo, jamais l'ambiance d'un brief).
+    const fondPhoto = (fond.valeur as Obj).fond === 'photo_rue' || (fond.valeur as Obj).fond === 'photo_client';
+    const ambianceFinale = ambiance ?? (fondPhoto ? 'jour' : undefined);
+    return { ok: true, valeur: { vues: VUES.filter((v) => (vues as unknown[]).includes(v)), ...(ambianceFinale !== undefined ? { ambiance: ambianceFinale } : {}), ...fond.valeur, ...(livraison ? { livraison } : {}) } };
   }
   const ambiance = o.ambiance ?? 'jour';
   if (!AMBIANCES.includes(ambiance as string)) return { ok: false, erreur: 'Choisissez une ambiance : journée, fin de journée ou nuit.' };
@@ -474,9 +498,16 @@ export function dureeAnnoncee(type: TypeRendu, options: Obj, extension = false):
   if (type === 'image') {
     // LOT G8 — image dans une photo : durée de la voie express (estimée, chiffres mesurés), pas la formule de l'image d'étude.
     if (estFondPhoto(options.fond)) return dureeAnnonceeImagePhoto({ extension, nombreVues: Array.isArray(options.vues) ? options.vues.length : 1 });
-    const n = Array.isArray(options.vues) ? Math.max(1, Math.min(3, options.vues.length)) : 1;
+    const n = Array.isArray(options.vues) ? Math.max(1, Math.min(MAX_VUES_PAR_IMAGE, options.vues.length)) : 1;
     const h = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
-    return `environ ${h(10 + 7 + 20 * n)} à ${h(10 + 7 + 60 * n)} une fois le rendu démarré (préparation, aperçu de contrôle, puis 20 à 60 min par vue)`;
+    // VIS-14 (I1 a) : vues décentrées rendues plus grandes (image livrée ≥ 2880 px) — même table que le front
+    // (travauxLogique.facteurDureeVue) : aérienne × 1,6–2,3 ; vues de rue piéton × 1–1,6 ; autres × 1.
+    const vues = Array.isArray(options.vues) ? (options.vues as unknown[]).slice(0, n).map(String) : [];
+    const RUE = ['trois_quarts_gauche', 'trois_quarts_droite', 'face', 'angle_rue', 'entree', 'coeur_ilot'];
+    const f = (v: string): [number, number] => (v === 'aerienne' ? [1.6, 2.3] : RUE.includes(v) ? [1, 1.6] : [1, 1]);
+    const min = vues.length ? Math.round(17 + vues.reduce((s, v) => s + 20 * f(v)[0], 0)) : 17 + 20 * n;
+    const max = vues.length ? Math.round(17 + vues.reduce((s, v) => s + 60 * f(v)[1], 0)) : 17 + 60 * n;
+    return `environ ${h(min)} à ${h(max)} une fois le rendu démarré (préparation, aperçu de contrôle, puis 20 à 60 min par vue, jusqu’au double pour une vue décentrée ou aérienne rendue plus grande)`;
   }
   return type === 'film'
     ? 'plusieurs heures possibles une fois le rendu démarré (aucune estimation fiable ; arrêt automatique au-delà de 12 h de rendu, 18 h au total)'
@@ -484,10 +515,11 @@ export function dureeAnnoncee(type: TypeRendu, options: Obj, extension = false):
 }
 
 export function resumeOptions(type: TypeRendu, o: Obj): string {
-  const amb: Record<string, string> = { jour: 'en journée', fin_de_journee: 'fin de journée', nuit: 'de nuit' };
+  const amb: Record<string, string> = { jour: 'en journée', fin_de_journee: 'fin de journée', nuit: 'de nuit', crepuscule: 'au crépuscule' };
   if (type === 'image') {
     const fond = fondDe(o);
-    return `${(o.vues as string[]).map((v) => ({ trois_quarts_gauche: '3/4 gauche', trois_quarts_droite: '3/4 droite', face: 'face' } as Obj)[v]).join(', ')} · ${amb[String(o.ambiance)]}` +
+    // VIS-14 (I2) : sans ambiance choisie, celle du brief projet (worker), sinon la journée.
+    return `${(o.vues as string[]).map((v) => (estVueCatalogue(v) ? libelleCourtVue(v) : v)).join(', ')} · ${o.ambiance !== undefined ? amb[String(o.ambiance)] : 'lumière du brief projet (sinon en journée)'}` +
       (fond !== 'etude' ? ` · fond : ${LIBELLES_FOND[fond].toLowerCase()}` : '') + (o.calage_client ? ' · placement ajusté' : '');
   }
   if (type === 'film') return [`${String(o.duree_s)} s`, amb[String(o.ambiance)], o.format === '9:16' ? 'vertical' : 'paysage', o.interieurs ? 'intérieurs' : null, o.musique ? 'musique' : null].filter(Boolean).join(' · ');
@@ -530,7 +562,10 @@ export const TEINTES_PAR_FACADE: Record<typeof BRIEF_FACADES[number], readonly t
 export const toitEnPente = (t: string): boolean => t.startsWith('deux_pans_');
 const CHAMPS_BRIEF = ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance', 'toiture', 'teinte', 'garde_corps', 'menuiseries', 'soubassement'] as const;
 type ChampBrief = typeof CHAMPS_BRIEF[number];
-/** Longueur maximale des précisions libres (informatives : le Studio ne les interprète pas). */
+/**
+ * Longueur maximale des précisions libres. VIS-04 : le Studio les INTERPRÈTE (couleurs, matières, menuiseries,
+ * garde-corps, ambiance, saison — src/core/brief/depuisProjetMimmoza.ts) et rend le reste « non appliqué ».
+ */
 export const BRIEF_PRECISIONS_MAX = 100;
 
 export interface BriefRendu {
@@ -796,7 +831,7 @@ export function libelleBrief(b: BriefRendu): string {
  * `plusieurs` : composition de bâtiments nommés (A à H, une commande par bâtiment) ; `batiments` :
  * nombre de bâtiments du contrat v2 (≥ 2 : chacun reçoit l'habillage, E1-rendu).
  */
-export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', plusieurs = false, batiments = 0): string[] {
+export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', plusieurs = false, batiments = 0, briefProjet = true): string[] {
   if (source === 'version') {
     return ['Habillage : la version enregistrée dans l’Atelier 3D est rendue TELLE QUELLE ; style, façade, balcons, attique et rez-de-chaussée du brief ne la modifient pas (seule l’ambiance de lumière s’applique).'];
   }
@@ -812,7 +847,11 @@ export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', 
   if (toitEnPente(b.toiture)) r.push(`Toit à deux pans (pente de 35°) : le Studio l’ajoute AU-DESSUS du dernier niveau (≈ 5,9 m au faîtage pour 16 m de profondeur)${batiments >= 2 ? ', sur chaque bâtiment' : ''} — la hauteur totale dépasse celle du volume calculé, à vérifier au regard du PLU.`);
   if (b.soubassement !== 'aucun') r.push('Soubassement : bandeau de 60 cm au pied des façades (matière demandée), interrompu devant les portes.');
   if (b.facade === 'brique' && b.teinte === 'claire') r.push('Brique claire : matière dessinée par le Studio (sans texture photographique, contrairement à la brique rouge).');
-  if (b.precisions) r.push('Précisions libres : transmises au Studio à titre informatif, non interprétées pour l’instant.');
+  // VIS-04 : précisions interprétées par le Studio ; ce qu'il ne comprend pas est listé dans le résultat (jamais ignoré).
+  // VIS-14 (B1) : SEULEMENT avec un brief projet enregistré (worker : sans brief, non interprétées — comportement
+  // d'avant VIS-04) ; les négations (« pas de… », « sans… », « éviter… ») ne sont jamais appliquées.
+  if (b.precisions && briefProjet) r.push('Précisions libres : interprétées par le Studio (couleurs, matières, menuiseries, garde-corps, lumière, saison ; une négation — « pas de… », « sans… », « éviter… » — n’est jamais appliquée) ; ce qui n’est pas compris sera listé « non appliqué » dans le résultat.');
+  else if (b.precisions) r.push('Précisions libres : transmises au Studio à titre informatif, non interprétées (aucun brief projet enregistré dans Style & tendances).');
   return r;
 }
 
@@ -857,6 +896,10 @@ export interface BriefCarte {
    * avec l'utilisateur du JWT dans lancerRendu.
    */
   fond?: OptionsFond;
+  /** VIS-04 — champs du contrat issus du brief projet de l'étude (relus ici, revalidés par le contrat v2). */
+  projet?: ChampsContratBrief;
+  /** VIS-04 — vues cochées par l'utilisateur (image seulement ; identifiants du catalogue commun). */
+  vues?: string[];
 }
 
 /**
@@ -870,8 +913,23 @@ export function briefDuMessage(texte: unknown): Validation<BriefCarte> | null {
   let brut: unknown;
   try { brut = JSON.parse(m[1]); } catch { return { ok: false, erreur: 'Bloc de brief illisible (JSON invalide).' }; }
   if (!estObj(brut) || brut.v !== BRIEF_BLOC_VERSION) return { ok: false, erreur: 'Bloc de brief d’une version inconnue.' };
-  const inconnue = Object.keys(brut).find((k) => !['v', 'type', 'brief', 'fond'].includes(k));
+  const inconnue = Object.keys(brut).find((k) => !['v', 'type', 'brief', 'fond', 'projet', 'vues'].includes(k));
   if (inconnue) return { ok: false, erreur: `Bloc de brief : champ inconnu ${inconnue}.` };
+  // VIS-04 — brief projet (structure lue ici ; le contrat v2 le revalide entièrement à la construction de la fiche).
+  let projet: ChampsContratBrief | null = null;
+  if (brut.projet !== undefined) {
+    projet = lireChampsContrat(brut.projet);
+    if (!projet) return { ok: false, erreur: 'Bloc de brief : brief du projet illisible.' };
+  }
+  // VIS-04 — vues cochées (image seulement) : identifiants du catalogue, sans doublon.
+  let vues: string[] | null = null;
+  if (brut.vues !== undefined) {
+    if (brut.type !== 'image') return { ok: false, erreur: 'Bloc de brief : les vues ne se choisissent que pour une image.' };
+    if (!Array.isArray(brut.vues) || !brut.vues.length || brut.vues.length > 15 || brut.vues.some((v) => !estVueCatalogue(v)) || new Set(brut.vues).size !== brut.vues.length) {
+      return { ok: false, erreur: 'Bloc de brief : vues illisibles (identifiants du catalogue attendus).' };
+    }
+    vues = brut.vues as string[];
+  }
   if (brut.type !== undefined && !(TYPES_RENDU as readonly unknown[]).includes(brut.type)) return { ok: false, erreur: 'Bloc de brief : type de rendu inconnu.' };
   // LOT X9 — bloc SANS brief : seulement « image » + fond (photo de la maison pour une extension).
   const sansBrief = brut.brief === undefined && brut.type === 'image' && brut.fond !== undefined;
@@ -886,7 +944,40 @@ export function briefDuMessage(texte: unknown): Validation<BriefCarte> | null {
     if (!f.ok) return { ok: false, erreur: f.erreur };
     fond = f.valeur;
   }
-  return { ok: true, valeur: { brief: v ? v.valeur : null, type: (brut.type as TypeRendu | undefined) ?? null, ...(fond ? { fond } : {}) } };
+  return { ok: true, valeur: { brief: v ? v.valeur : null, type: (brut.type as TypeRendu | undefined) ?? null, ...(fond ? { fond } : {}), ...(projet ? { projet } : {}), ...(vues ? { vues } : {}) } };
+}
+
+/**
+ * VIS-04 — dernier brief projet envoyé dans la conversation (bloc d'un message utilisateur), avec son heure ;
+ * `empreinte` : celle d'un devis à retrouver (confirmation). null si aucun.
+ */
+export async function projetDuFil(depot: DepotStudio, userId: string, conversationId: string, empreinte: string | null = null): Promise<{ projet: ChampsContratBrief; ms: number } | null> {
+  if (!depot.briefsMessages) return null;
+  let lignes: { texte: string; cree_le: string }[] = [];
+  try { lignes = await depot.briefsMessages(userId, conversationId); } catch { return null; }
+  for (const l of lignes) {
+    const v = briefDuMessage(l.texte);
+    const ms = Date.parse(l.cree_le);
+    if (v?.ok && v.valeur.projet && Number.isFinite(ms) && (empreinte === null || empreinteChamps(v.valeur.projet) === empreinte)) return { projet: v.valeur.projet, ms };
+  }
+  return null;
+}
+
+/** VIS-04 — résumé lisible du brief projet pour le devis (aucune valeur inventée). */
+export function resumeBriefProjetDevis(c: ChampsContratBrief): string {
+  const b = c.brief;
+  const typos = c.programme?.typologies ?? [];
+  const nb = typos.reduce((s, t) => s + t.nombre, 0);
+  return [
+    b?.gamme ? `gamme ${b.gamme}` : null,
+    b?.directionStyle?.titre ? `direction « ${b.directionStyle.titre} »` : null,
+    b?.cible ? `cible : ${b.cible}` : null,
+    nb ? `${String(nb)} logements visés (${typos.filter((t) => t.nombre > 0).map((t) => `${t.type} × ${String(t.nombre)}`).join(', ')})` : null,
+    // VIS-14 (M1) : chaînage sûr (un brief partiel sans `materiaux` / `palette` ne fait plus tomber le devis).
+    b?.materiaux?.length ? `matériaux : ${b.materiaux.slice(0, 5).map((m) => m.libelle).join(', ')}` : null,
+    b?.palette?.length ? `palette : ${b.palette.slice(0, 4).map((p) => `${p.nom} ${p.hex}`).join(', ')}` : null,
+    c.rendu?.saison ? `saison : ${c.rendu.saison}` : null,
+  ].filter(Boolean).join(' · ') || 'brief du projet transmis';
 }
 
 /** Consigne ajoutée au système quand le message de l'utilisateur porte un bloc de brief (index.ts). */
@@ -908,6 +999,11 @@ export function consigneBriefCarte(c: Validation<BriefCarte> | null): string {
     return 'PHOTO DE LA MAISON ENVOYÉE par l’utilisateur (dernier message, avec son accord) pour l’image de l’extension. ' +
       'Rappelle IMMÉDIATEMENT studio_lancer_rendu (type « image ») pour établir le devis : la photo est lue dans le message (ne recopie ni chemin ni options) ; ' +
       'présente le devis en une ou deux phrases et attends l’accord. Ne promets aucune image : elle n’est montrée que si l’extension est placée avec précision dans la photo.';
+  }
+  if (c.valeur.vues && c.valeur.type === 'image' && !c.valeur.fond) {
+    return `VUES DE L’IMAGE CHOISIES sous le devis (dernier message de l’utilisateur) : ${c.valeur.vues.map((v) => (estVueCatalogue(v) ? libelleCourtVue(v) : v)).join(', ')}. ` +
+      'Rappelle IMMÉDIATEMENT studio_lancer_rendu (type « image ») pour établir le NOUVEAU devis : le serveur lit lui-même les vues, ' +
+      'l’habillage et le brief du projet dans le message (ne recopie pas les options) ; présente le devis et attends l’accord.';
   }
   if (c.valeur.fond) {
     return `FOND DE L’IMAGE CHOISI sous le devis (dernier message de l’utilisateur) : ${LIBELLES_FOND[fondDe(c.valeur.fond)]}. ` +
@@ -1033,6 +1129,8 @@ export interface ChargeJeton {
   b?: string;
   /** FINITIONS 18/11 — devis des PLANS SEULS (aucune image) : la fiche du travail portera `plans_seuls: true`. */
   ps?: true;
+  /** VIS-04 — empreinte du brief projet du devis (retrouvé dans le fil à la confirmation) ; absent sans brief projet. */
+  bp?: string;
 }
 
 const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -1095,7 +1193,11 @@ export function titreRendu(draft: JarvisDraft): string {
  * signale : terrain supposé plat) ni pièces jointes.
  */
 export function ficheDepuisPreparation(p: PreparationLue, conversationId: string, horodatage: string, sessionId: string, origine: string, brief: BriefRendu | null = null, facadesVoie: readonly FacadeVoieFiche[] | null = null,
-  options: { /** Lot P9 : façades recopiées dans `charge.site` (contrat photo-rue §2) ; sinon seulement pour poser le volume. */ facadesDansSite?: boolean } = {}): Validation<Obj> {
+  options: {
+    /** Lot P9 : façades recopiées dans `charge.site` (contrat photo-rue §2) ; sinon seulement pour poser le volume. */ facadesDansSite?: boolean;
+    /** VIS-04 : champs du brief projet (même passage que FilmVisitePanel : construireProjetChat) ; absent → fiche inchangée. */
+    briefProjet?: ChampsContratBrief | null;
+  } = {}): Validation<Obj> {
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
   const v0 = p.volume as VolumePropose;
   const parcelle = lireParcelle(entree.parcelle, p.idu);
@@ -1127,6 +1229,7 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
     brief: texteBrief, commandeArchitecture: composition ? null : commandeAvecBrief(studioCommand(draft), brief),
     compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(draft),
     batiments: vb?.batiments ?? null, programmeVolume: vb,
+    briefProjet: options.briefProjet ?? null,
   });
   if (!construit.ok) return { ok: false, erreur: `Projet Studio refusé par le contrat v2 : ${construit.erreur}` };
   // E1-rendu : plusieurs bâtiments → la commande est retirée par le worker ; l'habillage voyage à part.
@@ -1598,13 +1701,20 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     } else {
       const prep = await env.depot.preparation(uid, { id: j.s.preparation_id });
       if (!prep) return erreur('La 3D préparée du devis n’existe plus. RIEN N’A ÉTÉ LANCÉ.', 'not_found');
+      // VIS-04 — le brief projet du devis (empreinte signée) est relu dans le fil ; introuvable → rien n'est lancé
+      // (jamais un rendu sans la vision que le devis annonçait).
+      let briefProjet: ChampsContratBrief | null = null;
+      if (j.bp) {
+        briefProjet = (await projetDuFil(env.depot, uid, j.c, j.bp))?.projet ?? null;
+        if (!briefProjet) return erreur('Le brief du projet de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer pour établir un nouveau devis, présente-le et attends l’accord.');
+      }
       // LOT P2 : façades sur voie (contrat §2) dans le site pour toute image ; LOT P9 : lues pour tout rendu, pour poser
       // le volume au recul sur voie (film et visite compris), recopiées dans le site seulement pour l'image.
       const facades = (await facadesVoiePreparation(env, uid, prep)).facades;
       // LOT X4 site : un projet d'extension a besoin de la limite sur rue pour TOUT rendu (moteur d'extension du worker,
       // qui la lit dans `charge.site.facadesVoie`), film et visite compris.
       const avecExtension = ext !== null;
-      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension });
+      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension, briefProjet });
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }
@@ -1615,7 +1725,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     if (j.ps) fiche.plans_seuls = true;
     let t: TravailLu;
     try {
-      t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: j.t, fiche, options: j.o });
+      // VIS-10 : image en qualité finale ⇒ livraison commerciale demandée (drapeau VUES_VIS_INT2_ACTIVES ; aperçu, plans seuls : rien).
+      t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: j.t, fiche, options: avecLivraisonParDefaut(j.t, j.o, { plansSeuls: !!j.ps }) });
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       if (/déjà 2 films ou visites|studio_jobs_plafond/.test(m)) return erreur(`Vous avez déjà ${NOMBRE_MAX_TRAVAUX_ACTIFS} rendus en préparation : attendez qu’un se termine. RIEN N’A ÉTÉ LANCÉ.`);
@@ -1645,6 +1756,22 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   let optionsDemandees: unknown = type === 'image' && carte?.ok && carte.valeur.fond
     ? { ...Object.fromEntries(Object.entries(estObj(input.options) ? input.options : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), ...carte.valeur.fond }
     : input.options;
+  // VIS-04 — brief projet : bloc du message reçu, sinon le dernier envoyé dans la conversation (jamais du modèle).
+  let briefProjet: ChampsContratBrief | null = carte?.ok && carte.valeur.projet ? carte.valeur.projet : null;
+  if (!briefProjet && env.conversationId) briefProjet = (await projetDuFil(env.depot, uid, env.conversationId))?.projet ?? null;
+  // VIS-04 — vues de l'image : cochées dans la carte (message reçu), sinon celles du brief projet ; seules les vues
+  // DISPONIBLES partent, les vues « bientôt » demandées sont DITES dans le devis (jamais retirées en silence).
+  const notesVues: string[] = [];
+  if (type === 'image') {
+    const voulues = carte?.ok && carte.valeur.vues ? carte.valeur.vues
+      : !(estObj(optionsDemandees) && optionsDemandees.vues !== undefined) && briefProjet?.rendu?.vues?.length ? briefProjet.rendu.vues : null;
+    if (voulues) {
+      const r = vuesARendre(voulues);
+      if (r.nonProduites.length) notesVues.push(`Vues pas encore produites par la machine de rendu (bientôt) : ${r.nonProduites.map(libelleCourtVue).join(', ')} — non incluses dans ce rendu.`);
+      if (r.vues.length > MAX_VUES_PAR_IMAGE) notesVues.push(`Au plus ${String(MAX_VUES_PAR_IMAGE)} vues par image : ${r.vues.slice(MAX_VUES_PAR_IMAGE).map(libelleCourtVue).join(', ')} — non incluses (à demander dans une seconde image).`);
+      if (r.vues.length) optionsDemandees = { ...(estObj(optionsDemandees) ? optionsDemandees : {}), vues: r.vues.slice(0, MAX_VUES_PAR_IMAGE) };
+    }
+  }
   const opts0 = validerOptionsRendu(type, optionsDemandees, uid);
   if (!opts0.ok) return erreur(`${opts0.erreur} RIEN N’A ÉTÉ LANCÉ.`);
   if (type === 'image') {
@@ -1759,7 +1886,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     if (type === 'image' && brief.ambiance === 'nuit' && !brief.defauts.includes('ambiance') && origineBrief === 'fourni') {
       return erreur('L’image se rend de jour ou en fin de journée (pas de nuit) : demande lequel des deux, ou propose un film / une visite 360° de nuit. RIEN N’A ÉTÉ LANCÉ.');
     }
-    if (!(type === 'image' && brief.ambiance === 'nuit')) optsEntree = { ...(estObj(optionsDemandees) ? optionsDemandees : {}), ambiance: brief.ambiance };
+    // VIS-14 (I2) : image — l'ambiance du brief d'habillage n'est transmise que si l'utilisateur l'a CHOISIE (pas une
+    // valeur par défaut) ; sinon rien : le worker applique l'ambiance du brief projet, ou « jour ».
+    const ambianceParDefaut = type === 'image' && brief.defauts.includes('ambiance');
+    if (!(type === 'image' && brief.ambiance === 'nuit') && !ambianceParDefaut) optsEntree = { ...(estObj(optionsDemandees) ? optionsDemandees : {}), ambiance: brief.ambiance };
   }
   const opts0b = validerOptionsRendu(type, optsEntree, uid);
   if (!opts0b.ok) return erreur(opts0b.erreur);
@@ -1767,12 +1897,12 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   const avecExistant = extension && type === 'image' ? optionsAvecExistant(opts0b.valeur, extension.existant) : null;
   if (avecExistant && 'erreur' in avecExistant) return erreur(`${avecExistant.erreur} RIEN N’A ÉTÉ LANCÉ.`);
   const opts: { ok: true; valeur: Obj } = avecExistant && 'valeur' in avecExistant ? { ok: true, valeur: avecExistant.valeur } : { ok: true, valeur: opts0b.valeur };
-  if (brief && brief.ambiance !== opts.valeur.ambiance) {
+  if (brief && opts.valeur.ambiance !== undefined && brief.ambiance !== opts.valeur.ambiance) {
     brief = { ...brief, ambiance: opts.valeur.ambiance as BriefRendu['ambiance'], defauts: ambianceExplicite ? brief.defauts.filter((c) => c !== 'ambiance') : brief.defauts };
   }
   // LOT X4 site : l'ambiance est dans les options ; le reste du brief (façade, balcons, toiture…) ne vaut que pour un
   // bâtiment neuf : il n'est ni chiffré ni présenté pour une extension.
-  if (extension) { brief = null; origineBrief = null; }
+  if (extension) { brief = null; origineBrief = null; briefProjet = null; }
 
   // Composition de bâtiments nommés (A à H) : balcons et style ne sont pas transmis (voir clausesBrief).
   // Bâtiments du contrat v2 (≥ 2) : l'habillage est appliqué à chacun (habillageBatiments, E1-rendu).
@@ -1780,8 +1910,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   let nbBatiments = 0;
   let aAiles = false;
   if (src.source.genre === 'preparation') {
-    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief);
-    if (!f.ok) return erreur(f.erreur);
+    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet });
+    if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
     plusieurs = ((f.valeur.charge as { compositionArchitecture?: unknown[] }).compositionArchitecture?.length ?? 0) >= 2;
     nbBatiments = (f.valeur.charge as { batiments?: unknown[] }).batiments?.length ?? 0;
     aAiles = batimentsAAiles(f.valeur.charge);
@@ -1794,6 +1924,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   }
   const actifs = await env.depot.travauxActifs(uid);
   if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
+  // VIS-10 — vues « sous condition » (privatifs, intérieurs) : pronostic d'après l'habillage connu, sinon « selon le projet ».
+  const pronostic = type === 'image' && Array.isArray(opts.valeur.vues)
+    ? pronosticVues(opts.valeur.vues as unknown[], brief ? { balcons: brief.balcons, attique: brief.attique, toiture: brief.toiture, rdc: brief.rdc } : null)
+    : [];
   // LOT P2 — fond de l'image : couverture Panoramax et façade sur voie, dites dans le devis (rien n'est promis).
   const fondImage = type === 'image' && src.source.genre === 'preparation' ? await fondDuDevis(env, uid, src.source.preparation, opts.valeur, !!extension) : null;
   const stats = await env.depot.statsFile();
@@ -1801,19 +1935,23 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   const sourceJeton: ChargeJeton['s'] = src.source.genre === 'version' ? src.source : { genre: 'preparation', preparation_id: src.source.preparation.id };
   // Un devis encore valable, aux mêmes paramètres (brief compris), a-t-il déjà été présenté dans un message précédent ?
   // Alors on le renvoie tel quel (même jeton) : l'accord donné après l'avoir lu reste confirmable.
+  // VIS-04 : une version enregistrée est rendue telle quelle (le brief projet ne s'y applique pas : dit plus bas).
+  const bp = briefProjet && src.source.genre === 'preparation' ? empreinteChamps(briefProjet) : null;
   const memeDevis = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete && c.t === type
     && jsonCanonique(c.o) === jsonCanonique(opts.valeur) && jsonCanonique(c.s) === jsonCanonique(sourceJeton)
-    && (c.b ?? null) === (brief ? encoderBrief(brief) : null);
+    && (c.b ?? null) === (brief ? encoderBrief(brief) : null) && (c.bp ?? null) === bp;
   const existant = await devisDeLaConversation(env, uid, memeDevis, true);
   const charge: ChargeJeton = existant?.charge ?? {
     v: 1, id: crypto.randomUUID(), u: uid, t: type, o: opts.valeur, s: sourceJeton,
     c: env.conversationId, iat: maintenant, exp: maintenant + DEVIS_VALIDITE_MS, rq: env.requete,
     ...(brief ? { b: encoderBrief(brief) } : {}),
+    ...(bp ? { bp } : {}),
   };
   const devis = {
     rendu: `${LIBELLE_TYPE[type]} — ${resumeOptions(type, opts.valeur)}`,
     source: libelleSource(src.source),
     ...(brief ? { habillage: libelleBrief(brief) } : {}),
+    ...(briefProjet && bp ? { brief_projet: resumeBriefProjetDevis(briefProjet) } : {}),
     jetons: 0,
     cout_jetons: 'Aucun jeton débité pour ce rendu : les rendus ne sont pas facturés aujourd’hui (seul ce message du chat est compté, comme d’habitude).',
     calcul_gpu: 'Calcul sur la machine de rendu Mimmoza (carte graphique, Unreal), un rendu à la fois ; aucun service payant externe.',
@@ -1821,7 +1959,11 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     ...(type === 'image' ? { fond: LIBELLES_FOND[fondDe(opts.valeur)] } : {}),
-    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments) : []), ...(fondImage?.avertissements ?? [])],
+    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(fondImage?.avertissements ?? []),
+      ...notesVues,
+      ...phrasesPronosticVues(pronostic),
+      ...(briefProjet && bp ? ['Brief du projet (Style & tendances, programme, habillage) : transmis au Studio, qui l’applique avec ses matières de catalogue et liste dans le résultat ce qu’il n’applique pas.'] : []),
+      ...(briefProjet && src.source.genre === 'version' ? ['Brief du projet : NON appliqué — la version enregistrée dans l’Atelier 3D est rendue telle quelle.'] : [])],
     valable_jusqu_a: `${heureParis(charge.exp)} (heure de Paris)`,
   };
   const noteFond = type !== 'image' ? ''
@@ -1849,7 +1991,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (existant) {
     return {
       status: 'confirmation_requise', source: SOURCE_STUDIO,
-      data: { jeton_devis: jeton, confirmation_requise: true, deja_presente: true, type, options: opts.valeur, devis, ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}) },
+      data: { jeton_devis: jeton, confirmation_requise: true, deja_presente: true, type, options: opts.valeur, devis, ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}), ...(pronostic.length ? { pronostic_vues: pronostic } : {}) },
       message:
         "RIEN N'A ÉTÉ LANCÉ. Ce devis a DÉJÀ été présenté à l'utilisateur dans un message précédent et reste valable " +
         `jusqu'à ${heureParis(charge.exp)} (heure de Paris). Si le DERNIER message de l'utilisateur donne son accord (« go », « oui », « vas-y », « confirme »…), ` +
@@ -1860,7 +2002,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   return {
     status: 'confirmation_requise', source: SOURCE_STUDIO,
     // jeton_devis EN PREMIER : le rappel des résultats précédents (index.ts) ne garde que les 900 premiers caractères.
-    data: { jeton_devis: jeton, confirmation_requise: true, type, options: opts.valeur, devis, ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}) },
+    data: { jeton_devis: jeton, confirmation_requise: true, type, options: opts.valeur, devis, ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}), ...(pronostic.length ? { pronostic_vues: pronostic } : {}) },
     message:
       "RIEN N'A ÉTÉ LANCÉ. Ceci est un DEVIS. Présente-le (rendu, source, habillage, jetons, temps de calcul, file, état de la machine de rendu, avertissements, " +
       "heure limite en heure de Paris) et demande l'accord. Si l'utilisateur répond OUI dans son PROCHAIN message, rappelle studio_lancer_rendu avec " +

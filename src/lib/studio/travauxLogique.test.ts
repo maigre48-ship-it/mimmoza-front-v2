@@ -193,13 +193,17 @@ describe('image photoréaliste (3e type de rendu)', () => {
       { vues: ['face', 'trois_quarts_gauche', 'trois_quarts_droite', 'face'] }, { duree_s: 30 }]) {
       assert.equal(validerOptions('image', o).ok, false, JSON.stringify(o));
     }
-    assert.match((() => { const r = validerOptions('image', { ambiance: 'nuit' }); return r.ok ? '' : r.erreur; })(), /journée ou fin de journée/);
+    // VIS-14 (M6) : message aligné sur les trois ambiances proposées.
+    assert.match((() => { const r = validerOptions('image', { ambiance: 'nuit' }); return r.ok ? '' : r.erreur; })(), /journée, fin de journée ou crépuscule/);
+    // VIS-14 (I2) : ambiance absente = non choisie → NON ajoutée (le worker applique celle du brief projet, sinon jour).
+    assert.deepEqual(validerOptions('image', { vues: ['face'] }).ok && (validerOptions('image', { vues: ['face'] }) as { valeur: object }).valeur, { vues: ['face'], qualite: 'finale' });
   });
   it('construit le travail comme pour le film (même fiche « Voir en 3D »)', () => {
     const t = construireTravail('image', draft, 'conv-1', charge, { vues: ['face'] });
     assert.ok(t.ok);
     assert.equal(t.ok && t.valeur.type, 'image');
-    assert.deepEqual(t.ok && t.valeur.options, { vues: ['face'], ambiance: 'jour', qualite: 'finale' });
+    // VIS-14 (I2) : aucune ambiance forcée.
+    assert.deepEqual(t.ok && t.valeur.options, { vues: ['face'], qualite: 'finale' });
     assert.equal(t.ok && t.valeur.fiche.charge, charge);
   });
   it('durée estimée affichée selon le nombre de vues', () => {
@@ -208,15 +212,20 @@ describe('image photoréaliste (3e type de rendu)', () => {
     assert.equal(dureeEstimeeImage(Number.NaN), dureeEstimeeImage(1));
     assert.equal(dureeEstimeeImage(1, 'apercu'), 'environ 15 min à 20 min');
     assert.equal(dureeEstimeeImage(3, 'apercu'), 'environ 25 min à 40 min');
+    // VIS-14 (I1 a) : vues décentrées rendues plus grandes en finale (définition livrée ≥ 2880 px) — durée à l'échelle.
+    assert.equal(dureeEstimeeImage(1, 'finale', undefined, ['sejour']), 'environ 37 min à 1 h 17');
+    assert.equal(dureeEstimeeImage(1, 'finale', undefined, ['trois_quarts_gauche']), 'environ 37 min à 1 h 53');
+    assert.equal(dureeEstimeeImage(1, 'finale', undefined, ['aerienne']), 'environ 49 min à 2 h 35');
+    assert.equal(dureeEstimeeImage(1, 'apercu', undefined, ['aerienne']), dureeEstimeeImage(1, 'apercu'));
   });
   it('LOT E0 — définition : haute définition par défaut, aperçu rapide possible, rien d’autre', () => {
     const v = validerOptions('image', { qualite: 'apercu' });
-    assert.deepEqual(v.ok && v.valeur, { vues: ['trois_quarts_gauche'], ambiance: 'jour', qualite: 'apercu' });
+    assert.deepEqual(v.ok && v.valeur, { vues: ['trois_quarts_gauche'], qualite: 'apercu' });
     for (const q of ['8k', '4k', 1, true]) assert.equal(validerOptions('image', { qualite: q }).ok, false, String(q));
     assert.match((() => { const r = validerOptions('image', { qualite: '8k' }); return r.ok ? '' : r.erreur; })(), /haute définition ou aperçu rapide/);
     assert.equal(validerOptions('film', { qualite: 'apercu' }).ok, false, 'pas de qualité sur le film');
-    assert.equal(resumeOptions('image', { vues: ['face'], qualite: 'apercu' }), 'Face · en journée · aperçu rapide');
-    assert.equal(resumeOptions('image', { vues: ['face'] }), 'Face · en journée');
+    assert.equal(resumeOptions('image', { vues: ['face'], qualite: 'apercu' }), 'Face · lumière du brief projet · aperçu rapide');
+    assert.equal(resumeOptions('image', { vues: ['face'], ambiance: 'jour' }), 'Face · en journée');
   });
   it('LOT E0 — base pas encore migrée : l’image est « bientôt disponible », le plafond (ancien et nouveau message) est relayé', () => {
     const options = { code: '22023', message: 'Options du travail invalides.' };

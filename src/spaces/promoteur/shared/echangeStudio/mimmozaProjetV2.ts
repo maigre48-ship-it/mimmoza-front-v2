@@ -143,6 +143,77 @@ export interface ProgrammeV2 {
   readonly surfacePlancherM2: ValeurNature | null;
   readonly brief: string | null;
   readonly commandeArchitecture: string | null;
+  /**
+   * VIS-04 (18/11/2026) — typologies VISÉES du programme (store Programmation du promoteur). FACULTATIF :
+   * absent d'une charge antérieure, et alors absent de la copie validée (sortie identique octet pour octet).
+   */
+  readonly typologies?: readonly TypologieV2[];
+  /** VIS-04 — mix du programme (bâtiments, niveaux, SHAB totale) ; facultatif, même règle. */
+  readonly mix?: MixV2;
+}
+
+/** VIS-04 — types de logement transportés (T1 à T5 : ceux du store Programmation). */
+export type TypeLogementV2 = 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
+export const TYPES_LOGEMENT_V2: readonly TypeLogementV2[] = ['T1', 'T2', 'T3', 'T4', 'T5'];
+
+/** VIS-04 — une typologie : nombre de logements visés et SHAB unitaire (m²) si connue. */
+export interface TypologieV2 {
+  readonly type: TypeLogementV2;
+  readonly nombre: number;
+  readonly shabM2: number | null;
+}
+
+/** VIS-04 — mix du programme ; `nature` : « vise » pour un objectif de Programmation. */
+export interface MixV2 {
+  readonly batiments: number | null;
+  readonly niveaux: number | null;
+  readonly shabTotaleM2: number | null;
+  readonly nature: Nature;
+}
+
+/** VIS-04 — gamme du projet (positionnement commercial). */
+export type GammeV2 = 'entree' | 'standard' | 'premium' | 'luxe';
+export const GAMMES_V2: readonly GammeV2[] = ['entree', 'standard', 'premium', 'luxe'];
+
+/** VIS-04 — rôle d'un matériau du brief (le Studio le traduit avec son lexique ; « autre » : rôle lu dans le libellé). */
+export type RoleMateriauV2 = 'facade' | 'menuiseries' | 'garde_corps' | 'soubassement' | 'toiture' | 'interieur' | 'autre';
+export const ROLES_MATERIAU_V2: readonly RoleMateriauV2[] = ['facade', 'menuiseries', 'garde_corps', 'soubassement', 'toiture', 'interieur', 'autre'];
+
+/**
+ * VIS-04 — brief du projet (vision du promoteur : Style & tendances, habillage choisi). Ce sont des INTENTIONS :
+ * le Studio les traduit (src/core/brief/depuisProjetMimmoza.ts) et dit ce qu'il n'applique pas.
+ */
+export interface BriefV2 {
+  readonly cible: string | null;
+  readonly gamme: GammeV2 | null;
+  readonly directionStyle: { readonly famille: string | null; readonly titre: string | null; readonly intention: string | null } | null;
+  readonly palette: readonly { readonly nom: string; readonly hex: string; readonly usage: string | null }[];
+  readonly materiaux: readonly { readonly role: RoleMateriauV2; readonly libelle: string }[];
+  readonly references: readonly { readonly titre: string; readonly url: string | null; readonly note: string | null }[];
+  /** Précisions libres de l'utilisateur (interprétées au mieux, le reste rendu « non appliqué »). */
+  readonly precisions: string | null;
+}
+
+/**
+ * VIS-04 — catalogue commun des vues (docs/vis/COORDINATION.md, identifiants NE PAS renommer). Le contrat transporte
+ * le CHOIX du promoteur ; ce que la machine de rendu sait produire est décidé ailleurs (options du travail).
+ */
+export const VUES_CATALOGUE_V2 = [
+  'trois_quarts_gauche', 'trois_quarts_droite', 'face', 'angle_rue', 'aerienne', 'entree', 'coeur_ilot',
+  'terrasse', 'balcon', 'jardin_prive', 'rooftop',
+  'sejour', 'chambre', 'vue_baie', 'hall',
+] as const;
+export type VueV2 = (typeof VUES_CATALOGUE_V2)[number];
+export type AmbianceV2 = 'jour' | 'fin_de_journee' | 'crepuscule';
+export const AMBIANCES_V2: readonly AmbianceV2[] = ['jour', 'fin_de_journee', 'crepuscule'];
+export type SaisonV2 = 'printemps' | 'ete' | 'automne' | 'hiver';
+export const SAISONS_V2: readonly SaisonV2[] = ['printemps', 'ete', 'automne', 'hiver'];
+
+/** VIS-04 — rendu souhaité : vues choisies, ambiance, saison. */
+export interface RenduV2 {
+  readonly vues: readonly VueV2[];
+  readonly ambiance: AmbianceV2 | null;
+  readonly saison: SaisonV2 | null;
 }
 
 export interface PhotoV2 {
@@ -247,6 +318,10 @@ export interface ProjetMimmozaV2 {
    * liens signés) : le destinataire le reprend de sa base (`completerDepuisBase`).
    */
   readonly omissions: { readonly validations: boolean; readonly liensPhotos: boolean };
+  /** VIS-04 — brief du projet ; FACULTATIF (absent : copie validée identique à celle d'avant le lot). */
+  readonly brief?: BriefV2;
+  /** VIS-04 — rendu souhaité (vues, ambiance, saison) ; FACULTATIF, même règle. */
+  readonly rendu?: RenduV2;
 }
 
 export type LectureProjet =
@@ -514,6 +589,101 @@ function programme(v: unknown): ProgrammeV2 {
     surfacePlancherM2: valeurNature(o['surfacePlancherM2'], 'programme.surfacePlancherM2'),
     brief: texteOuNull(o['brief'], 'programme.brief', 2000),
     commandeArchitecture: texteOuNull(o['commandeArchitecture'], 'programme.commandeArchitecture', 1000),
+    // VIS-04 : clés posées SEULEMENT si présentes (une charge antérieure garde exactement la même copie).
+    ...(o['typologies'] === null || o['typologies'] === undefined ? {} : { typologies: typologies(o['typologies']) }),
+    ...(o['mix'] === null || o['mix'] === undefined ? {} : { mix: mix(o['mix']) }),
+  };
+}
+
+/** VIS-04 — typologies : au plus une ligne par type, nombres entiers, SHAB unitaire bornée. */
+function typologies(v: unknown): readonly TypologieV2[] {
+  const liste = tableau(v, 'programme.typologies', TYPES_LOGEMENT_V2.length).map((x, i) => {
+    const c = `programme.typologies[${String(i)}]`;
+    const o = objet(x, c);
+    return {
+      type: parmi(o['type'], `${c}.type`, TYPES_LOGEMENT_V2),
+      nombre: entier(o['nombre'], `${c}.nombre`, 0, 20_000),
+      shabM2: nombreOuNull(o['shabM2'], `${c}.shabM2`, 5, 1000),
+    };
+  });
+  if (new Set(liste.map((t) => t.type)).size !== liste.length) echec('programme.typologies', 'type de logement en double');
+  return liste;
+}
+
+function mix(v: unknown): MixV2 {
+  const o = objet(v, 'programme.mix');
+  const b = o['batiments'];
+  const n = o['niveaux'];
+  return {
+    batiments: b === null || b === undefined ? null : entier(b, 'programme.mix.batiments', 1, 40),
+    niveaux: n === null || n === undefined ? null : entier(n, 'programme.mix.niveaux', 1, 100),
+    shabTotaleM2: nombreOuNull(o['shabTotaleM2'], 'programme.mix.shabTotaleM2', 0, 1e7),
+    nature: parmi(o['nature'], 'programme.mix.nature', NATURES),
+  };
+}
+
+const RE_HEX = /^#[0-9a-fA-F]{6}$/;
+
+/** VIS-04 — lien de référence : https seulement (sinon refusé, jamais réécrit). */
+function lienReference(v: unknown, chemin: string): string | null {
+  if (v === null || v === undefined) return null;
+  const t = texte(v, chemin, 500);
+  let u: URL;
+  try { u = new URL(t); } catch { echec(chemin, 'adresse https attendue'); }
+  if (u.protocol !== 'https:') echec(chemin, 'adresse https attendue');
+  return t;
+}
+
+/** VIS-04 — brief du projet (textes bornés, listes fermées, liens https). */
+function briefProjet(v: unknown): BriefV2 {
+  const o = objet(v, 'brief');
+  const ds = o['directionStyle'];
+  let directionStyle: BriefV2['directionStyle'] = null;
+  if (ds !== null && ds !== undefined) {
+    const d = objet(ds, 'brief.directionStyle');
+    directionStyle = {
+      famille: texteOuNull(d['famille'], 'brief.directionStyle.famille', 40),
+      titre: texteOuNull(d['titre'], 'brief.directionStyle.titre', 120),
+      intention: texteOuNull(d['intention'], 'brief.directionStyle.intention', 600),
+    };
+  }
+  const g = o['gamme'];
+  return {
+    cible: texteOuNull(o['cible'], 'brief.cible', 300),
+    gamme: g === null || g === undefined ? null : parmi(g, 'brief.gamme', GAMMES_V2),
+    directionStyle,
+    palette: tableau(o['palette'] ?? [], 'brief.palette', 12).map((x, i) => {
+      const c = `brief.palette[${String(i)}]`;
+      const r = objet(x, c);
+      const hex = texte(r['hex'], `${c}.hex`, 7);
+      if (!RE_HEX.test(hex)) echec(`${c}.hex`, 'couleur #rrggbb attendue');
+      return { nom: texteNonVide(r['nom'], `${c}.nom`, 80), hex: hex.toLowerCase(), usage: texteOuNull(r['usage'], `${c}.usage`, 160) };
+    }),
+    materiaux: tableau(o['materiaux'] ?? [], 'brief.materiaux', 24).map((x, i) => {
+      const c = `brief.materiaux[${String(i)}]`;
+      const r = objet(x, c);
+      return { role: parmi(r['role'], `${c}.role`, ROLES_MATERIAU_V2), libelle: texteNonVide(r['libelle'], `${c}.libelle`, 160) };
+    }),
+    references: tableau(o['references'] ?? [], 'brief.references', 12).map((x, i) => {
+      const c = `brief.references[${String(i)}]`;
+      const r = objet(x, c);
+      return { titre: texteNonVide(r['titre'], `${c}.titre`, 160), url: lienReference(r['url'], `${c}.url`), note: texteOuNull(r['note'], `${c}.note`, 400) };
+    }),
+    precisions: texteOuNull(o['precisions'], 'brief.precisions', 600),
+  };
+}
+
+/** VIS-04 — rendu souhaité : vues du catalogue commun, sans doublon (ordre du catalogue). */
+function renduProjet(v: unknown): RenduV2 {
+  const o = objet(v, 'rendu');
+  const vues = tableau(o['vues'] ?? [], 'rendu.vues', VUES_CATALOGUE_V2.length).map((x, i) => parmi(x, `rendu.vues[${String(i)}]`, VUES_CATALOGUE_V2));
+  if (new Set(vues).size !== vues.length) echec('rendu.vues', 'vue en double');
+  const a = o['ambiance'];
+  const s = o['saison'];
+  return {
+    vues: VUES_CATALOGUE_V2.filter((x) => vues.includes(x)),
+    ambiance: a === null || a === undefined ? null : parmi(a, 'rendu.ambiance', AMBIANCES_V2),
+    saison: s === null || s === undefined ? null : parmi(s, 'rendu.saison', SAISONS_V2),
   };
 }
 
@@ -712,11 +882,13 @@ function omissions(v: unknown): ProjetMimmozaV2['omissions'] {
 }
 
 const CLES: Readonly<Record<string, readonly string[]>> = {
-  projet: ['format', 'version', 'projetId', 'etudeId', 'revision', 'parentEmpreinte', 'horodatage', 'origine', 'session', 'site', 'repere', 'batiments', 'acces', 'programme', 'photos', 'regles', 'controle', 'extensionsV1', 'omissions'],
+  projet: ['format', 'version', 'projetId', 'etudeId', 'revision', 'parentEmpreinte', 'horodatage', 'origine', 'session', 'site', 'repere', 'batiments', 'acces', 'programme', 'photos', 'regles', 'controle', 'extensionsV1', 'omissions', 'brief', 'rendu'],
   site: ['communeInsee', 'adresse', 'pointAdresse', 'parcelles', 'relief', 'reliefOmis'],
   batiments: ['id', 'nom', 'nature', 'centre', 'rotationDeg', 'largeurM', 'profondeurM', 'niveaux', 'hauteurM', 'niveauEntree', 'ailes', 'emprise', 'refs'],
   acces: ['id', 'type', 'position', 'largeurM', 'nature'],
-  programme: ['logementsVises', 'logementsModelises', 'surfacePlancherM2', 'brief', 'commandeArchitecture'],
+  programme: ['logementsVises', 'logementsModelises', 'surfacePlancherM2', 'brief', 'commandeArchitecture', 'typologies', 'mix'],
+  brief: ['cible', 'gamme', 'directionStyle', 'palette', 'materiaux', 'references', 'precisions'],
+  rendu: ['vues', 'ambiance', 'saison'],
   photos: ['id', 'nom', 'type', 'url', 'priseLe', 'position', 'directionDeg'],
   regles: ['id', 'champ', 'categorie', 'valeur', 'unite', 'zone', 'source', 'provenance', 'validation', 'etat'],
 };
@@ -731,6 +903,8 @@ function champsInconnus(o: Record<string, unknown>): string[] {
   verifier(o, CLES['projet']!, '');
   verifier(o['site'], CLES['site']!, 'site.');
   verifier(o['programme'], CLES['programme']!, 'programme.');
+  verifier(o['brief'], CLES['brief']!, 'brief.');
+  verifier(o['rendu'], CLES['rendu']!, 'rendu.');
   for (const liste of ['batiments', 'acces', 'photos', 'regles'] as const) {
     const t = o[liste];
     if (Array.isArray(t)) t.forEach((x, i) => verifier(x, CLES[liste]!, `${liste}[${String(i)}].`));
@@ -769,6 +943,9 @@ export function validerProjet(v: unknown): LectureProjet {
       controle: controle(o['controle']),
       extensionsV1: extensionsV1(o['extensionsV1']),
       omissions: omissions(o['omissions']),
+      // VIS-04 : facultatifs, posés SEULEMENT s'ils sont présents (rétrocompatibilité octet pour octet).
+      ...(o['brief'] === null || o['brief'] === undefined ? {} : { brief: briefProjet(o['brief']) }),
+      ...(o['rendu'] === null || o['rendu'] === undefined ? {} : { rendu: renduProjet(o['rendu']) }),
     };
     return { ok: true, projet, migreDepuisV1: false, avertissements: champsInconnus(o) };
   } catch (e) {
@@ -1097,6 +1274,9 @@ export function comparerProjets(avant: ProjetMimmozaV2, apres: ProjetMimmozaV2):
   if (json(pa.surfacePlancherM2) !== json(pb.surfacePlancherM2)) ch.push({ type: 'programme', cible: 'surfacePlancherM2', libelle: `surface de plancher : ${pa.surfacePlancherM2 ? `${String(pa.surfacePlancherM2.valeur)} m² (${pa.surfacePlancherM2.nature})` : '?'} → ${pb.surfacePlancherM2 ? `${String(pb.surfacePlancherM2.valeur)} m² (${pb.surfacePlancherM2.nature})` : '?'}` });
   if (pa.brief !== pb.brief) ch.push({ type: 'programme', cible: 'brief', libelle: 'description du projet modifiée' });
   if (pa.commandeArchitecture !== pb.commandeArchitecture) ch.push({ type: 'programme', cible: 'commandeArchitecture', libelle: 'commande d’architecture modifiée' });
+  // VIS-04 : typologies et mix font partie du programme (donc de l'empreinte de contenu).
+  if (json(pa.typologies ?? null) !== json(pb.typologies ?? null)) ch.push({ type: 'programme', cible: 'typologies', libelle: 'typologies du programme modifiées' });
+  if (json(pa.mix ?? null) !== json(pb.mix ?? null)) ch.push({ type: 'programme', cible: 'mix', libelle: 'mix du programme modifié' });
 
   const rAvant = new Map(avant.regles.map((r) => [r.id, r] as const));
   for (const r of apres.regles) {

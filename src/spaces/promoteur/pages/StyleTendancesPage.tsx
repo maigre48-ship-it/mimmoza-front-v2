@@ -8,6 +8,8 @@ import { usePromoteurStudyId } from '../shared/usePromoteurStudyId';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
 import { buildDesignBrief, designBriefText, DESIGN_CRITERIA, EDITORIAL_SOURCES, emptyDesignReview, type DesignBrief, type DesignCriterion, type DesignReview, type DesignSource, type DesignVerdict, type StyleFamily } from './designDirections';
 import { DesignConceptBoard } from './DesignConceptBoard';
+// VIS-04 : brief projet relié au rendu (persisté par étude, repris par le chat et FilmVisitePanel).
+import { BriefProjetRenduSection } from './BriefProjetRenduSection';
 import { buildStudioHandoff, CRITERION_LABELS, criterionReading, designDossierHtml, documentedCriteria, VERDICT_LABELS } from './designDecisionDossier';
 import type { DecisionRecord } from './decisionDossier';
 import { buildDesignStrategyContext, strategyPrefill, type DesignStrategyScenario } from './designStrategyContext';
@@ -346,6 +348,7 @@ export default function StyleTendancesPage() {
         {studyId && <Link to={`/promoteur/generateur-facades${suffix}`} className="mt-3 inline-block text-sm font-semibold text-indigo-800 underline">Ouvrir Façades IA pour tester un visuel (génération facturée séparément)</Link>}
       </div>}
     </section>}
+    <BriefProjetRenduSection studyId={studyId} source={`${draft.brief?.generatedAt ?? ''}|${draft.brief?.selectedFamily ?? ''}|${draft.brief?.adjustments ?? ''}|${draft.customSources.length}`} />
     <p className="text-xs text-slate-500">Les références et le brief sont enregistrés dans ce navigateur pour ce compte. Lors d’une analyse IA, le projet, les éléments de Stratégie de projet et les observations sélectionnées sont transmis à Anthropic. Cette page ne collecte aucune image depuis Instagram ou les magazines et n’ajoute aucune donnée DVF.</p>
   </div>;
 }

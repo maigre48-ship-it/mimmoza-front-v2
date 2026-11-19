@@ -21,6 +21,10 @@ import { signerTransferts } from './transfertStudio';
 import { adressesSignees, televerserPanorama } from '@/spaces/promoteur/shared/environnement360';
 import type { ParcelleStudio, TerrainStudio } from '@/spaces/promoteur/shared/ouvrirStudio3D';
 import type { ProjetMimmozaV2 } from '@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2';
+// VIS-04 : brief projet de l'étude rattachée (Style & tendances, programme, habillage, vues) — même charge pour
+// « Voir en 3D », le film / la visite / l'image de FilmVisitePanel et le chat (construireProjetChat).
+import { facadeDesChamps, type ChampsContratBrief } from '@/lib/studio/briefProjet';
+import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
 
 /** Terrain retenu pour la conversation, ou celui qui vient d'être confirmé. */
 export type TerrainCharge = Pick<ConfirmedTerrain, 'parcel' | 'point' | 'implantation' | 'accesses'> & {
@@ -52,7 +56,11 @@ export async function preparerChargeVoirEn3D(
   conversationId: string,
   retenue: TerrainCharge,
   terrainArg?: ConfirmedTerrain & { adresse?: string | null },
-  options: { autoriserEtudeActive?: boolean } = {},
+  options: {
+    autoriserEtudeActive?: boolean;
+    /** VIS-04 : champs du brief projet ; absent → ceux de l'étude de la conversation ; null → aucun brief. */
+    briefProjet?: ChampsContratBrief | null;
+  } = {},
 ): Promise<PreparationChargeStudio> {
   // Également utilisé par le film et les rappels photo : contrôle avant stockage, signature ou upload.
   exigerPreparation3D(fiche);
@@ -67,7 +75,11 @@ export async function preparerChargeVoirEn3D(
   const panoramas = terrainArg?.panorama
     ? await televerserPanorama(`chat-${crypto.randomUUID()}`, terrainArg.panorama).then(p => adressesSignees([p])).catch(() => [])
     : [];
-  const composition = studioComposition(fiche);
+  // VIS-04 — brief projet : la matière de façade du brief passe AVANT celle tirée du texte de la fiche (repli).
+  const briefProjet = options.briefProjet !== undefined ? options.briefProjet
+    : options.autoriserEtudeActive === false ? null : champsBriefDeLaConversation(conversationId)?.champs ?? null;
+  const facadeBrief = facadeDesChamps(briefProjet);
+  const composition = studioComposition(fiche, facadeBrief);
   // Volume multi-bâtiments du Dossier 3D : seulement pour la fiche tirée de ce volume (sinon bâtiment unique historique).
   // Lot formes-batiment : un seul bâtiment à ailes (L, U, cour, redans) part aussi par `batiments`.
   const volume = retenue.volumeBatiments && transportParBatiments(retenue.volumeBatiments.batiments)
@@ -84,9 +96,10 @@ export async function preparerChargeVoirEn3D(
     parcelles, communeInsee: insee, adresse: retenue.adresse ?? fiche.localisation,
     pointAdresse: retenue.point, relief: reliefConnu,
     implantation: volume ? null : retenue.implantation ?? null, accesses: volume ? undefined : retenue.accesses,
-    brief: draftBrief(fiche), commandeArchitecture: composition ? null : studioCommand(fiche),
+    brief: draftBrief(fiche), commandeArchitecture: composition ? null : studioCommand(fiche, facadeBrief),
     compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(fiche), plans, panoramas,
     batiments: volume?.batiments ?? null, programmeVolume: volume,
+    briefProjet,
   });
   return { construit, parcelles, insee, reliefConnu, conserves, sessionId, etudeId };
 }

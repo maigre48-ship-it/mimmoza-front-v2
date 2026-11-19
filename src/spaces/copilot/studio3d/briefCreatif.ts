@@ -495,11 +495,28 @@ export function choixAppliques(etat: EtatBrief, mimmoChoisit = false): ChoixBrie
 const LIB_TYPE: Record<TypeRenduBrief, string> = { film: 'le film', visite360: 'la visite 360°', image: 'l’image' };
 
 /**
+ * VIS-04 — ce que le bloc ```mimmoza-brief``` peut porter EN PLUS de l'habillage : les champs du contrat issus du
+ * brief projet de l'étude (`projet` : programme.typologies/mix, brief, rendu) et les vues choisies (`vues`, image
+ * seulement). Relus et revalidés par le serveur (studio.ts briefDuMessage, puis contrat v2). Absents : bloc
+ * identique à celui d'avant le lot.
+ */
+export interface BlocProjet {
+  projet?: Record<string, unknown> | null;
+  vues?: readonly string[] | null;
+}
+export function champsBloc(extra: BlocProjet, image: boolean): Record<string, unknown> {
+  const projet = extra.projet && Object.keys(extra.projet).length ? { projet: extra.projet } : {};
+  const vues = image && extra.vues && extra.vues.length ? { vues: [...extra.vues] } : {};
+  return { ...projet, ...vues };
+}
+
+/**
  * Message envoyé au chat : une ligne lisible, puis le bloc relu par le serveur. Sans type (fiche « Espace 3D ») :
  * bloc sans `type` — le serveur l'enregistre comme habillage du projet, sans lancer de devis.
  */
-export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'limites'>, mimmoChoisit = false): string {
-  const bloc = d.type ? { v: BRIEF_BLOC_VERSION, type: d.type, brief: briefAEnvoyer(etat, mimmoChoisit) } : { v: BRIEF_BLOC_VERSION, brief: briefAEnvoyer(etat, mimmoChoisit) };
+export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'limites'>, mimmoChoisit = false, extra: BlocProjet = {}): string {
+  const bloc0 = d.type ? { v: BRIEF_BLOC_VERSION, type: d.type, brief: briefAEnvoyer(etat, mimmoChoisit) } : { v: BRIEF_BLOC_VERSION, brief: briefAEnvoyer(etat, mimmoChoisit) };
+  const bloc = { ...bloc0, ...champsBloc(extra, d.type === 'image') };
   const recap = recapitulatif(choixAppliques(etat, mimmoChoisit), d);
   const mimmo = mimmoChoisit && etat.touches.length < CHAMPS_CARTE.length;
   const tete = !d.type

@@ -31,6 +31,30 @@ import './FilmVisitePanel.css';
 // LOT X9 — image d'extension : jamais montrée sans vraie photo de la maison.
 import { extensionSansPhotoReelle } from './suiviRenduChat';
 import { photoRequiseDuResultat } from '@/lib/studio/photoReelle';
+// VIS-04 — vues du catalogue (pack plaquette pré-coché, vues à venir grisées « bientôt ») et brief projet de l'étude.
+import { catalogueVues, LIBELLES_GROUPE_VUE, MAX_VUES_PAR_IMAGE, vueCochable, vuesPreCochees, type GroupeVue } from '@/lib/studio/catalogueVues';
+// VIS-10 — badge étude / photoréaliste et livraison commerciale dans la visionneuse du Dossier 3D.
+import { BadgeRealisme, BlocLivraisonImage, DefinitionLivree } from './BlocLivraisonImage';
+import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
+
+/**
+ * VIS-14 (I1 e) — vues de départ : celles du brief projet si l'utilisateur en a ENREGISTRÉ (et qu'elles sont
+ * produisibles), sinon UNE vue (3/4 gauche) comme avant le chantier. Le pack plaquette reste à un clic.
+ */
+function vuesInitiales(conversationId: string): VueImage[] {
+  let duBrief: readonly VueImage[] = [];
+  try { duBrief = champsBriefDeLaConversation(conversationId)?.brief.rendu.vues ?? []; } catch { duBrief = []; }
+  const dispo = VUES_IMAGE.filter(v => duBrief.includes(v));
+  return dispo.length ? dispo.slice(0, MAX_VUES_PAR_IMAGE) : [...optionsParDefaut('image').vues];
+}
+
+/** VIS-14 (I2) — ambiance du brief projet de l'étude (null : non renseignée ou nuit, non proposée pour l'image). */
+function ambianceDuBrief(conversationId: string): AmbianceImage | null {
+  try {
+    const a = champsBriefDeLaConversation(conversationId)?.brief.rendu.ambiance ?? null;
+    return a && (AMBIANCES_IMAGE as readonly string[]).includes(a) ? a as AmbianceImage : null;
+  } catch { return null; }
+}
 
 const AMBIANCES: Ambiance[] = ['jour', 'fin_de_journee', 'nuit'];
 
@@ -45,8 +69,10 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
   const [feuille, setFeuille] = useState<TypeTravail | null>(null);
   const [film, setFilm] = useState<OptionsFilm>(() => optionsParDefaut('film'));
   const [visite, setVisite] = useState<OptionsVisite>(() => optionsParDefaut('visite360'));
-  const [image, setImage] = useState<OptionsImage>(() => optionsParDefaut('image'));
-  const [visionneuse, setVisionneuse] = useState<{ id: string; images: { libelle: string; url: string; jpeg: string; png: string | null }[]; avertissements: string[] } | null>(null);
+  const [image, setImage] = useState<OptionsImage>(() => ({ ...optionsParDefaut('image'), vues: vuesInitiales(conversationId), ambiance: ambianceDuBrief(conversationId) ?? 'jour' }));
+  // VIS-14 (I2) : l'ambiance n'est envoyée que si l'utilisateur l'a CHOISIE ; sinon le worker applique celle du brief.
+  const [ambianceChoisie, setAmbianceChoisie] = useState(false);
+  const [visionneuse, setVisionneuse] = useState<{ id: string; images: { libelle: string; url: string; jpeg: string; png: string | null; vue: VueImage }[]; avertissements: string[]; resultat: ResultatImage } | null>(null);
   const [terrainManquant, setTerrainManquant] = useState(false);
   const [lancement, setLancement] = useState(false);
   const [message, setMessage] = useState('');
@@ -101,7 +127,9 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
       const { construit } = await preparerChargeVoirEn3D(draft, conversationId, terrain);
       if (!construit.ok) { setMessage(`Le projet n’a pas pu être préparé : ${construit.erreur}.`); return; }
       const charge = avecProchaineRevision(construit.projet, conversationId);
-      const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? film : feuille === 'image' ? image : visite);
+      // VIS-14 (I2) : image — `ambiance` retirée si elle n'a pas été choisie (brief projet, sinon journée, côté worker).
+      const optionsImage: OptionsImage = ambianceChoisie ? image : (({ ambiance: _a, ...reste }) => reste)(image);
+      const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? film : feuille === 'image' ? optionsImage : visite);
       if (!travail.ok) { setMessage(travail.erreur); return; }
       const r = await creerTravail(travail.valeur);
       if (!r.disponible) { setDisponible(false); setFeuille(null); return; }
@@ -152,20 +180,30 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
           urlSigneeRendu(i.jpeg_path, 3600, `${nom}.jpg`),
           i.png_path ? urlSigneeRendu(i.png_path, 3600, `${nom}.png`).catch(() => null) : Promise.resolve(null),
         ]);
-        return { libelle: i.libelle, url, jpeg, png };
+        return { libelle: i.libelle, url, jpeg, png, vue: i.vue };
       }));
-      setVisionneuse({ id: t.id, images, avertissements: r.avertissements ?? [] });
+      setVisionneuse({ id: t.id, images, avertissements: r.avertissements ?? [], resultat: r });
       setAnnonce(null);
     } catch (erreur) {
       setMessage(erreur instanceof Error ? erreur.message : 'L’image n’est pas accessible.');
     }
   };
 
-  const basculerVue = (v: VueImage) => setImage(o => {
-    const avec = o.vues.includes(v);
-    if (avec && o.vues.length === 1) return o; // au moins une vue
-    return { ...o, vues: VUES_IMAGE.filter(x => (x === v ? !avec : o.vues.includes(x))) };
-  });
+  // VIS-14 (M5) : le calcul se fait sur l'état courant, l'écriture du brief (store) HORS de l'updater de setState
+  // (un updater doit rester pur : React peut le rejouer en mode strict).
+  const choisirVues = (vues: VueImage[]) => {
+    setImage(o => ({ ...o, vues }));
+    // VIS-04 : le choix des vues est enregistré dans le brief projet de l'étude (repris par le chat et les relances).
+    try { champsBriefDeLaConversation(conversationId, { reglages: { vues } }); } catch { /* sans étude : choix local */ }
+  };
+  const basculerVue = (v: VueImage) => {
+    const avec = image.vues.includes(v);
+    if (avec && image.vues.length === 1) return; // au moins une vue
+    if (!avec && image.vues.length >= MAX_VUES_PAR_IMAGE) return; // au plus 6 vues par image (machine de rendu)
+    choisirVues(VUES_IMAGE.filter(x => (x === v ? !avec : image.vues.includes(x))));
+  };
+  /** VIS-14 (I1 e) — pack plaquette (produisible) en un clic, durée totale affichée avant lancement. */
+  const packPlaquette = vuesPreCochees();
 
   const copierLien = async (visiteId: string) => {
     const lien = lienVisite(visiteId, window.location.origin);
@@ -233,15 +271,24 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
         <div className="mzia-rendu__feuille-corps">
           {feuille === 'film' && <Choix titre="Durée" valeur={film.duree_s} options={[[30, '30 s'], [60, '1 min'], [90, '1 min 30']]}
             onChange={v => setFilm(o => ({ ...o, duree_s: v }))} />}
-          {feuille === 'image' && <fieldset className="mzia-rendu__groupe">
-            <legend>Vues (1 à 3)</legend>
-            <div>{VUES_IMAGE.map(v => <button key={v} type="button" aria-pressed={image.vues.includes(v)}
-              className={image.vues.includes(v) ? 'is-actif' : ''} onClick={() => basculerVue(v)}>{LIBELLES_VUE[v]}</button>)}</div>
-          </fieldset>}
+          {feuille === 'image' && (['exterieur', 'privatif', 'interieur'] as GroupeVue[]).map(groupe => (
+            <fieldset key={groupe} className="mzia-rendu__groupe">
+              <legend>{groupe === 'exterieur' ? `Vues · ${LIBELLES_GROUPE_VUE[groupe]} (1 à ${String(Math.min(MAX_VUES_PAR_IMAGE, VUES_IMAGE.length))})` : LIBELLES_GROUPE_VUE[groupe]}</legend>
+              <div>{catalogueVues().filter(c => c.groupe === groupe).map(c => vueCochable(c)
+                ? <button key={c.id} type="button" aria-pressed={image.vues.includes(c.id)} title={c.condition ? `Produite ${c.condition} ; sinon refusée avec sa raison.` : undefined}
+                  className={image.vues.includes(c.id) ? 'is-actif' : ''} onClick={() => basculerVue(c.id)}>{LIBELLES_VUE[c.id]}{c.statut === 'sous_condition' ? ' · selon projet' : ''}</button>
+                : <button key={c.id} type="button" disabled aria-disabled="true" title="Vue prévue, pas encore produite par la machine de rendu"
+                  style={{ opacity: 0.5, cursor: 'not-allowed' }}>{c.libelle} · bientôt</button>)}</div>
+            </fieldset>))}
+          {feuille === 'image' && <p className="mzia-rendu__estimation">
+            <button type="button" aria-pressed={packPlaquette.length === image.vues.length && packPlaquette.every(v => image.vues.includes(v))}
+              onClick={() => choisirVues(packPlaquette)}>Pack plaquette</button>{' '}
+            {packPlaquette.map(v => LIBELLES_VUE[v]).join(', ')} — {String(packPlaquette.length)} vue{packPlaquette.length > 1 ? 's' : ''}, durée totale {dureeEstimeeImage(packPlaquette.length, image.qualite, undefined, packPlaquette)}.
+          </p>}
           {feuille === 'image'
-            ? <Choix titre="Lumière" valeur={image.ambiance}
+            ? <Choix titre="Lumière" valeur={image.ambiance ?? 'jour'}
               options={AMBIANCES_IMAGE.map(a => [a, LIBELLES_AMBIANCE[a]] as [AmbianceImage, string])}
-              onChange={v => setImage(o => ({ ...o, ambiance: v }))} />
+              onChange={v => { setAmbianceChoisie(true); setImage(o => ({ ...o, ambiance: v })); }} />
             : <Choix titre="Lumière" valeur={feuille === 'film' ? film.ambiance : visite.ambiance}
               options={AMBIANCES.map(a => [a, LIBELLES_AMBIANCE[a]] as [Ambiance, string])}
               onChange={v => (feuille === 'film' ? setFilm(o => ({ ...o, ambiance: v })) : setVisite(o => ({ ...o, ambiance: v })))} />}
@@ -253,7 +300,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
             options={QUALITES_IMAGE.map(q => [q, LIBELLES_QUALITE_IMAGE[q]] as [QualiteImage, string])}
             onChange={v => setImage(o => ({ ...o, qualite: v }))} />}
           {feuille === 'image' && <p className="mzia-rendu__estimation" role="note">
-            Durée estimée : {dureeEstimeeImage(image.vues.length, image.qualite)}. {MENTION_MACHINE_RENDU} Seuls les éléments disposant d’un modèle photoréaliste figurent sur l’image ; les autres sont omis et listés.
+            Durée estimée : {dureeEstimeeImage(image.vues.length, image.qualite, undefined, image.vues)}. {!ambianceChoisie && ambianceDuBrief(conversationId) ? 'Lumière du brief projet. ' : ''}{MENTION_MACHINE_RENDU} Seuls les éléments disposant d’un modèle photoréaliste figurent sur l’image ; les autres sont omis et listés.
           </p>}
           {feuille !== 'image' && <label className="mzia-rendu__case">
             <input type="checkbox" checked={feuille === 'film' ? film.interieurs : visite.interieurs}
@@ -296,9 +343,12 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
 
       {visionneuse && <div className="mzia-rendu__lecteur mzia-rendu__images">
         {visionneuse.images.map(i => <figure key={i.url}>
-          <img src={i.url} alt={`Image photoréaliste du projet — vue ${i.libelle}`} loading="lazy" />
-          <figcaption>{i.libelle} — <a href={i.jpeg} download>JPEG</a>{i.png && <> · <a href={i.png} download>PNG</a></>}</figcaption>
+          <img src={i.url} alt={`Image du projet — vue ${i.libelle}`} loading="lazy" />
+          {/* VIS-14 : badge PAR VUE et définition réellement livrée. */}
+          <figcaption>{i.libelle} <BadgeRealisme resultat={visionneuse.resultat} image={visionneuse.resultat.images.find(x => x.vue === i.vue)} /><DefinitionLivree image={visionneuse.resultat.images.find(x => x.vue === i.vue)} /> — <a href={i.jpeg} download>JPEG</a>{i.png && <> · <a href={i.png} download>PNG</a></>}</figcaption>
         </figure>)}
+        {/* VIS-10 : brief appliqué, vues non produites, livraison commerciale (liens signés au clic). */}
+        <BlocLivraisonImage resultat={visionneuse.resultat} avecVuesNonProduites />
         {visionneuse.avertissements.length > 0 && <ul className="mzia-rendu__avertissements">
           {visionneuse.avertissements.map(a => <li key={a}>{a}</li>)}
         </ul>}

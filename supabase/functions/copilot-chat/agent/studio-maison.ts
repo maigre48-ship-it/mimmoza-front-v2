@@ -18,6 +18,8 @@ import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeSt
 import { optionPhotoClient, photoProjetDesSorties, photoProjetUtilisableCommeFond, type PhotoProjet } from './photo-projet.ts';
 import { projetMaisonDesSorties } from './maison-neuve.ts';
 import type { ResultatOutil } from './types.ts';
+// VIS-10 — livraison commerciale demandée d'office pour l'image en qualité finale (drapeau VUES_VIS_INT2_ACTIVES).
+import { avecLivraisonParDefaut } from '../../../../src/lib/studio/livraisonCommerciale.ts';
 import type { BriefCarte, ChargeJeton, EnvStudio, TravailLu, Validation } from './studio.ts';
 
 type Obj = Record<string, unknown>;
@@ -233,7 +235,7 @@ export async function confirmerRenduMaison(j: ChargeJeton, env: EnvStudio, o: Ou
   const fiche: Obj = { ...f.valeur, devis_id: j.id, ...(j.ps ? { plans_seuls: true } : {}) };
   let t: TravailLu;
   try {
-    t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: 'image', fiche, options: j.o });
+    t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: 'image', fiche, options: avecLivraisonParDefaut('image', j.o, { plansSeuls: !!j.ps }) });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (/studio_jobs_plafond/.test(msg)) return erreur(`Vous avez déjà ${o.nombreMaxTravauxActifs} rendus en préparation : attendez qu’un se termine. RIEN N’A ÉTÉ LANCÉ.`);

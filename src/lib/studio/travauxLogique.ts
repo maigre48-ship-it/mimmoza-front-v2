@@ -11,6 +11,10 @@
 import { parseJarvisDraft, type JarvisDraft } from '../../spaces/copilot/studio3d/jarvisDraft.ts';
 import type { ProjetMimmozaV2 } from '../../spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { lireElementsOmis, type ElementOmis } from './manifesteVisite.ts';
+// VIS-04 : catalogue commun des vues (identifiants de COORDINATION.md), statut disponible / bientôt.
+import { estVueCatalogue, libelleVue, MAX_VUES_PAR_IMAGE, phraseVuesDisponibles, VUES_CATALOGUE, VUES_DISPONIBLES, type VueCatalogue } from './catalogueVues.ts';
+// VIS-10 — livraison commerciale (option + résultat), brief appliqué, niveau de réalisme.
+import { lireLivraisonCommerciale, lireNiveauRealisme, lireRenduMimmoza, validerOptionLivraison, type LivraisonCommerciale, type NiveauRealisme, type OptionLivraison, type RenduMimmoza } from './livraisonCommerciale.ts';
 // LOT P2 (11/11/2026) — image dans sa rue : options de fond (mêmes règles que la base et le serveur).
 import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from './fondImage.ts';
 // LOT G8 — durée d'une image dans une photo.
@@ -41,10 +45,13 @@ export interface OptionsVisite {
   resolution: '6k' | '8k';
 }
 
-/** IMAGE (02/11/2026) — vues proposées par la machine de rendu (caméra automatique depuis la rue). */
-export type VueImage = 'trois_quarts_gauche' | 'trois_quarts_droite' | 'face';
-/** Ambiances VALIDÉES en image fixe : pas de nuit. */
-export type AmbianceImage = 'jour' | 'fin_de_journee';
+/**
+ * IMAGE (02/11/2026) — vues proposées par la machine de rendu (caméra automatique depuis la rue).
+ * VIS-04 : toute vue du catalogue commun ; seules les vues DISPONIBLES (VUES_IMAGE) se lancent.
+ */
+export type VueImage = VueCatalogue;
+/** Ambiances VALIDÉES en image fixe : pas de nuit. VIS-03/VIS-04 : + crépuscule (preset crepuscule-bleu du worker). */
+export type AmbianceImage = 'jour' | 'fin_de_journee' | 'crepuscule';
 /**
  * LOT E0 (05/11/2026) — définition : 'finale' (rendu 4K, image livrée 2880 × 1620) ou 'apercu' (rendu 1600 px,
  * image livrée 1200 × 676, bien plus rapide). Mêmes qualités que la machine de rendu (presets du look Unreal).
@@ -57,12 +64,18 @@ export type QualiteImage = 'finale' | 'apercu';
  */
 export interface OptionsImage extends OptionsFond {
   vues: VueImage[];
-  ambiance: AmbianceImage;
+  /**
+   * VIS-14 (I2) : ABSENTE = non choisie → le worker applique l'ambiance du brief projet (sinon « jour »). Ne l'envoyer
+   * que si l'utilisateur l'a choisie : un « jour » forcé masquait l'ambiance du brief (jamais appliquée).
+   */
+  ambiance?: AmbianceImage;
   qualite: QualiteImage;
   /** LOT P5-SITE — zone à effacer corrigée dans l'atelier (`studio-transfert`) ; seulement avec `calage_client`. */
   masque_existant?: MasqueExistantOption;
   /** LOT X3 — projet d'extension : bâtiment existant CONSERVÉ (aucun effacement) ou effacé. Absent : effacé. */
   existant?: 'conserver' | 'effacer';
+  /** VIS-10 — livraison commerciale (formats, mention, ZIP, plan de vente) ; absente : défaut du worker (pack en finale). */
+  livraison?: OptionLivraison;
 }
 
 export type OptionsTravail = OptionsFilm | OptionsVisite | OptionsImage;
@@ -105,6 +118,9 @@ export interface ImageLivree {
   png_path: string | null;
   largeur: number | null;
   hauteur: number | null;
+  /** VIS-14 (I5) — niveau de réalisme de CETTE vue (badge par vue) ; absent : celui de l'image entière. */
+  niveau_realisme?: NiveauRealisme | null;
+  manques_realisme?: string[];
 }
 
 /**
@@ -137,6 +153,30 @@ export interface ResultatImage {
   photomontage: PhotomontageResultat | null;
   /** LOT X9 — image d'extension sans vraie photo : aucune image, une photo de la maison est demandée. */
   photo_requise?: PhotoRequise | null;
+  /** VIS-03/VIS-04 — vues demandées mais non produites par la machine de rendu, avec leur raison. */
+  vues_non_produites?: { id: string; libelle: string; raison: string }[];
+  /** VIS-10 — Lot R2 : « photorealiste » | « etude » | null (inconnu : rien n'est affirmé). */
+  niveau_realisme?: NiveauRealisme | null;
+  manques_realisme?: string[];
+  /** VIS-10 — brief du projet : appliqué / non appliqué (VIS-INT-2). */
+  rendu_mimmoza?: RenduMimmoza | null;
+  /** VIS-10 — livraison commerciale (VIS-07) : formats, ZIP, plan de vente. */
+  livraison_commerciale?: LivraisonCommerciale | null;
+  /** VIS-14 (M3/M4) — livraison demandée mais non produite : la raison donnée par la machine de rendu. */
+  livraison_non_produite?: string | null;
+}
+
+/** VIS-04 — `resultat.vues_non_produites` (worker VIS-03) → lignes lisibles ; [] si absent ou illisible. */
+export function lireVuesNonProduites(brut: unknown): { id: string; libelle: string; raison: string }[] {
+  if (!Array.isArray(brut)) return [];
+  return brut.filter(estObjet).flatMap(v => {
+    const id = texte(v.id);
+    if (!id) return [];
+    return [{ id, libelle: estVueCatalogue(id) ? libelleVue(id) : id, raison: texte(v.raison) ?? 'raison non précisée par la machine de rendu' }];
+  }).slice(0, 15);
+}
+export function phrasesVuesNonProduites(r: { vues_non_produites?: { libelle: string; raison: string }[] } | null | undefined): string[] {
+  return (r?.vues_non_produites ?? []).map(v => `Vue « ${v.libelle} » non produite : ${v.raison.replace(/\.$/, '')}.`);
 }
 
 /** Ligne `studio_jobs` lue depuis la base (normalisée). */
@@ -184,11 +224,10 @@ export const OPTIONS_IMAGE_DEFAUT: Readonly<OptionsImage> = Object.freeze({
   vues: ['trois_quarts_gauche'] as VueImage[], ambiance: 'jour', qualite: 'finale',
 });
 
-export const VUES_IMAGE: readonly VueImage[] = ['trois_quarts_gauche', 'trois_quarts_droite', 'face'];
-export const LIBELLES_VUE: Record<VueImage, string> = {
-  trois_quarts_gauche: '3/4 gauche', trois_quarts_droite: '3/4 droite', face: 'Face',
-};
-export const AMBIANCES_IMAGE: readonly AmbianceImage[] = ['jour', 'fin_de_journee'];
+/** VIS-04 : vues que la machine de rendu produit (catalogue, statut « disponible ») ; avant le lot : 3/4 gauche, 3/4 droite, face. */
+export const VUES_IMAGE: readonly VueImage[] = VUES_DISPONIBLES;
+export const LIBELLES_VUE: Record<VueImage, string> = Object.fromEntries(VUES_CATALOGUE.map(v => [v, libelleVue(v)])) as Record<VueImage, string>;
+export const AMBIANCES_IMAGE: readonly AmbianceImage[] = ['jour', 'fin_de_journee', 'crepuscule'];
 export const QUALITES_IMAGE: readonly QualiteImage[] = ['finale', 'apercu'];
 export const LIBELLES_QUALITE_IMAGE: Record<QualiteImage, string> = {
   finale: 'Haute définition (2880 × 1620)', apercu: 'Aperçu rapide (1200 × 676)',
@@ -202,20 +241,34 @@ export const MENTION_MACHINE_RENDU = 'Le rendu démarre dès que la machine de r
  * finale (path tracer, mesures de l'image vitrine), plus la préparation du modèle 3D (≈ 10 min).
  * En aperçu : pas d'aperçu de contrôle séparé, ≈ 7 min par vue (estimation du worker), affichée 5 à 10 min.
  */
-export function dureeEstimeeImage(nombreVues: number, qualite: QualiteImage = 'finale', fond?: unknown): string {
+export function dureeEstimeeImage(nombreVues: number, qualite: QualiteImage = 'finale', fond?: unknown, vues?: readonly VueImage[]): string {
   // LOT G8 — image dans une photo : durée de la voie express (estimée), pas la formule de l'image d'étude.
   if (estFondPhoto(fond)) return dureeImagePhotoCourte();
-  const n = Math.max(1, Math.min(3, Math.round(Number.isFinite(nombreVues) ? nombreVues : 1)));
-  const min = qualite === 'apercu' ? 10 + 5 * n : 10 + 7 + 20 * n;
-  const max = qualite === 'apercu' ? 10 + 10 * n : 10 + 7 + 60 * n;
+  const n = Math.max(1, Math.min(MAX_VUES_PAR_IMAGE, Math.round(Number.isFinite(nombreVues) ? nombreVues : 1)));
+  // VIS-14 (I1 a) : en finale, une vue décentrée est rendue plus grande (image livrée ≥ 2880 px) — durée × (largeur
+  // de rendu / 3840)² : piéton décentré jusqu'à × 1,56, aérienne jusqu'à × 2,25 (worker : facteurDureeRendu).
+  const f = qualite === 'finale' && vues?.length ? vues.slice(0, n).map(facteurDureeVue) : null;
+  const min = Math.round(qualite === 'apercu' ? 10 + 5 * n : 10 + 7 + (f ? f.reduce((s, x) => s + 20 * x[0], 0) : 20 * n));
+  const max = Math.round(qualite === 'apercu' ? 10 + 10 * n : 10 + 7 + (f ? f.reduce((s, x) => s + 60 * x[1], 0) : 60 * n));
   const h = (m: number) => (m < 60 ? `${String(m)} min` : `${String(Math.floor(m / 60))} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
   return `environ ${h(min)} à ${h(max)}`;
 }
 
+/**
+ * VIS-14 (I1 a) — facteur [min, max] de durée d'une vue en finale (rendu agrandi selon le recadrage) : aérienne
+ * (recadrage 0,60 → 0,50) × 1,56 à 2,25 ; vues de rue piéton (0,75 → 0,60) × 1 à 1,56 ; intérieures (cadre plein)
+ * et extérieurs privatifs : × 1. Arrondi au dixième supérieur.
+ */
+export function facteurDureeVue(v: VueImage): [number, number] {
+  if (v === 'aerienne') return [1.6, 2.3];
+  if (v === 'trois_quarts_gauche' || v === 'trois_quarts_droite' || v === 'face' || v === 'angle_rue' || v === 'entree' || v === 'coeur_ilot') return [1, 1.6];
+  return [1, 1];
+}
+
 export const NOMBRE_MAX_TRAVAUX_ACTIFS = 2;
 
-export const LIBELLES_AMBIANCE: Record<Ambiance, string> = {
-  jour: 'En journée', fin_de_journee: 'Fin de journée', nuit: 'De nuit',
+export const LIBELLES_AMBIANCE: Record<Ambiance | 'crepuscule', string> = {
+  jour: 'En journée', fin_de_journee: 'Fin de journée', nuit: 'De nuit', crepuscule: 'Crépuscule',
 };
 
 // LOT P2 : « Image du projet » — le résultat peut être une image d'étude (décor de synthèse) ou une image insérée
@@ -266,14 +319,21 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
 }
 
 function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImage> {
-  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite' && k !== 'masque_existant' && k !== 'existant' && !(CLES_FOND as readonly string[]).includes(k));
+  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite' && k !== 'masque_existant' && k !== 'existant' && k !== 'livraison' && !(CLES_FOND as readonly string[]).includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
+  // VIS-10 — livraison commerciale (mêmes règles que le worker et la base, migration 20261119120000).
+  let livraison: OptionLivraison | null = null;
+  if (o.livraison !== undefined) {
+    const l = validerOptionLivraison(o.livraison);
+    if ('erreur' in l) return { ok: false, erreur: l.erreur };
+    livraison = l.valeur;
+  }
   // LOT X3 : maison existante conservée (extension) — jamais avec une zone à effacer (mêmes règles que la base et le worker).
   const existant = o.existant;
   if (existant !== undefined && existant !== 'conserver' && existant !== 'effacer') return { ok: false, erreur: 'Bâtiment existant : « conserver » ou « effacer ».' };
   if (existant === 'conserver' && o.masque_existant !== undefined) return { ok: false, erreur: 'La maison existante est conservée (projet d’extension) : aucune zone à effacer.' };
   // LOT P2 : fond (étude par défaut, non recopié), photo Panoramax, photo du client, calage validé.
-  const { masque_existant: masqueBrut, existant: _existant, ...sansMasque } = o;
+  const { masque_existant: masqueBrut, existant: _existant, livraison: _livraison, ...sansMasque } = o;
   const fond = validerFond(sansMasque);
   if (!fond.ok) return fond;
   // LOT P5-SITE : zone à effacer corrigée dans l'atelier — n'a de sens qu'avec un calage validé (relance depuis l'atelier).
@@ -285,15 +345,20 @@ function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImag
     masque = m.valeur;
   }
   const vues = o.vues ?? OPTIONS_IMAGE_DEFAUT.vues;
-  if (!Array.isArray(vues) || vues.length < 1 || vues.length > 3 || new Set(vues).size !== vues.length
+  const maxVues = Math.min(MAX_VUES_PAR_IMAGE, VUES_IMAGE.length);
+  if (!Array.isArray(vues) || vues.length < 1 || vues.length > maxVues || new Set(vues).size !== vues.length
     || vues.some(v => !VUES_IMAGE.includes(v as VueImage))) {
-    return { ok: false, erreur: 'Choisissez de 1 à 3 vues : 3/4 gauche, 3/4 droite ou face.' };
+    return { ok: false, erreur: `Choisissez de 1 à ${String(maxVues)} vues : ${phraseVuesDisponibles(VUES_IMAGE)}.` };
   }
-  const ambiance = o.ambiance ?? OPTIONS_IMAGE_DEFAUT.ambiance;
-  if (!AMBIANCES_IMAGE.includes(ambiance as AmbianceImage)) return { ok: false, erreur: 'Choisissez une lumière : journée ou fin de journée.' };
+  // VIS-14 (I2) : ambiance gardée SEULEMENT si donnée (absente : brief projet, sinon journée — décidé par le worker).
+  const ambiance = o.ambiance;
+  // VIS-14 (M6) : message aligné sur les trois ambiances proposées (crépuscule compris).
+  if (ambiance !== undefined && !AMBIANCES_IMAGE.includes(ambiance as AmbianceImage)) return { ok: false, erreur: 'Choisissez une lumière : journée, fin de journée ou crépuscule.' };
   const qualite = o.qualite ?? OPTIONS_IMAGE_DEFAUT.qualite;
   if (!QUALITES_IMAGE.includes(qualite as QualiteImage)) return { ok: false, erreur: 'Choisissez une définition : haute définition ou aperçu rapide.' };
-  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage, ...fond.valeur, ...(masque ? { masque_existant: masque } : {}), ...(existant !== undefined ? { existant } : {}) } };
+  // VIS-14 (I2) : image dans une PHOTO — « jour » gardé par défaut comme avant (lumière de la photo, pas du brief).
+  const ambianceFinale = ambiance ?? (fond.valeur.fond === 'photo_rue' || fond.valeur.fond === 'photo_client' ? 'jour' : undefined);
+  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ...(ambianceFinale !== undefined ? { ambiance: ambianceFinale as AmbianceImage } : {}), qualite: qualite as QualiteImage, ...fond.valeur, ...(masque ? { masque_existant: masque } : {}), ...(existant !== undefined ? { existant } : {}), ...(livraison ? { livraison } : {}) } };
 }
 
 /** Titre lisible du film ou de la visite, tiré de la fiche (« 12 logements — 12 rue des Lilas, Lyon »). */
@@ -371,7 +436,7 @@ export function resumeOptions(type: TypeTravail, options: unknown): string {
   const parts: string[] = [];
   if (type === 'image') {
     const im = o as OptionsImage;
-    parts.push(im.vues.map(v => LIBELLES_VUE[v]).join(', '), LIBELLES_AMBIANCE[im.ambiance].toLowerCase());
+    parts.push(im.vues.map(v => LIBELLES_VUE[v]).join(', '), im.ambiance ? LIBELLES_AMBIANCE[im.ambiance].toLowerCase() : 'lumière du brief projet');
     if (im.qualite === 'apercu') parts.push('aperçu rapide');
     if (fondDe(im) !== 'etude') parts.push(LIBELLES_FOND[fondDe(im)].toLowerCase());
     if (im.calage_client) parts.push('placement ajusté');
@@ -399,10 +464,15 @@ function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | Resultat
   if (type === 'image') {
     const images: ImageLivree[] = (Array.isArray(brut.images) ? brut.images : []).filter(estObjet).flatMap(i => {
       const jpeg = texte(i.jpeg_path);
-      const vue = VUES_IMAGE.includes(i.vue as VueImage) ? i.vue as VueImage : null;
+      // VIS-04 : toute vue du catalogue rendue par la machine est montrée (pas seulement les 3 historiques).
+      const vue = estVueCatalogue(i.vue) ? i.vue : null;
       if (!jpeg || !vue) return [];
+      // VIS-14 (I5) : badge par vue, seulement s'il est lisible.
+      const nv = lireNiveauRealisme(i.niveau_realisme);
+      const mq = Array.isArray(i.manques_realisme) ? i.manques_realisme.filter((m): m is string => typeof m === 'string' && m.trim() !== '').slice(0, 6) : [];
       return [{ vue, libelle: texte(i.libelle) ?? LIBELLES_VUE[vue], jpeg_path: jpeg, png_path: texte(i.png_path),
-        largeur: typeof i.largeur === 'number' ? i.largeur : null, hauteur: typeof i.hauteur === 'number' ? i.hauteur : null }];
+        largeur: typeof i.largeur === 'number' ? i.largeur : null, hauteur: typeof i.hauteur === 'number' ? i.hauteur : null,
+        ...(nv ? { niveau_realisme: nv } : {}), ...(mq.length ? { manques_realisme: mq } : {}) }];
     });
     const principale = texte(brut.image_path) ?? images[0]?.jpeg_path ?? null;
     const qualite = brut.qualite === 'finale' || brut.qualite === 'apercu' ? brut.qualite : null;
@@ -410,7 +480,20 @@ function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | Resultat
     if (!principale && estObjet(brut.photo_requise)) {
       return { image_path: '', images: [], qualite, avertissements, photomontage: lirePhotomontage(brut.photomontage), photo_requise: photoRequiseDuResultat(brut) };
     }
-    return principale ? { image_path: principale, images, qualite, avertissements, photomontage: lirePhotomontage(brut.photomontage), ...(estObjet(brut.photo_requise) ? { photo_requise: photoRequiseDuResultat(brut) } : {}) } : null;
+    const nonProduites = lireVuesNonProduites(brut.vues_non_produites);
+    // VIS-10 — champs du worker VIS-INT-2 : présents seulement s'ils sont lisibles (jamais complétés).
+    const niveau = lireNiveauRealisme(brut.niveau_realisme);
+    const manques = Array.isArray(brut.manques_realisme) ? brut.manques_realisme.filter((m): m is string => typeof m === 'string' && m.trim() !== '').slice(0, 10) : [];
+    const renduMimmoza = lireRenduMimmoza(brut.rendu_mimmoza);
+    const livraison = lireLivraisonCommerciale(brut.livraison_commerciale);
+    const vis10 = {
+      ...(niveau ? { niveau_realisme: niveau } : {}),
+      ...(manques.length ? { manques_realisme: manques } : {}),
+      ...(renduMimmoza ? { rendu_mimmoza: renduMimmoza } : {}),
+      ...(livraison ? { livraison_commerciale: livraison } : {}),
+      ...(!livraison && texte(brut.livraison_non_produite) ? { livraison_non_produite: texte(brut.livraison_non_produite)! } : {}),
+    };
+    return principale ? { image_path: principale, images, qualite, avertissements, photomontage: lirePhotomontage(brut.photomontage), ...(estObjet(brut.photo_requise) ? { photo_requise: photoRequiseDuResultat(brut) } : {}), ...(nonProduites.length ? { vues_non_produites: nonProduites } : {}), ...vis10 } : null;
   }
   if (type === 'film') {
     const video = texte(brut.video_path);

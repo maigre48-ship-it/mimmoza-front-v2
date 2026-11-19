@@ -30,7 +30,8 @@ const CALAGE = {
 // ── Options de fond ─────────────────────────────────────────────────────────────────────────────────
 
 test('options : une image d’étude garde EXACTEMENT ses options d’avant ; les nouvelles clés suivent le contrat', () => {
-  assert.deepEqual(validerOptions('image', { vues: ['face'], fond: 'etude' }), { ok: true, valeur: { vues: ['face'], ambiance: 'jour', qualite: 'finale' } });
+  // VIS-14 (I2) : ambiance non choisie → non transmise pour une image d'étude (brief projet, sinon jour, côté worker).
+  assert.deepEqual(validerOptions('image', { vues: ['face'], fond: 'etude' }), { ok: true, valeur: { vues: ['face'], qualite: 'finale' } });
   const rue = validerOptions('image', { fond: 'photo_rue', qualite: 'apercu' });
   assert.deepEqual(rue, { ok: true, valeur: { vues: ['trois_quarts_gauche'], ambiance: 'jour', qualite: 'apercu', fond: 'photo_rue' } });
   assert.equal(validerOptions('image', { fond: 'photo_client', photo_client: { chemin: PHOTO, octets: 3456789 } }).ok, true);

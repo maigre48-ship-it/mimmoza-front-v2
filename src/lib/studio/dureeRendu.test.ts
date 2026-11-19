@@ -13,8 +13,10 @@ describe('LOT G8 — durée d’une image dans une photo', () => {
     const projet = dureeAnnoncee('image', { fond: 'photo_rue', vues: ['trois_quarts_gauche', 'face'] });
     assert.match(projet, /^environ 4 à 6 min/);
     assert.match(projet, /l’image d’étude demande 57 min à 2 h 17 de plus$/);
-    // Image d'étude : formule inchangée.
-    assert.equal(dureeAnnoncee('image', { vues: ['face'] }), 'environ 37 min à 1 h 17 une fois le rendu démarré (préparation, aperçu de contrôle, puis 20 à 60 min par vue)');
+    // Image d'étude : VIS-14 (I1 a) — une vue de rue piéton peut être rendue plus grande (décentrement, image livrée
+    // ≥ 2880 px) : jusqu'à × 1,6 ; une vue sans décentrement (intérieure) garde la formule d'avant.
+    assert.equal(dureeAnnoncee('image', { vues: ['face'] }), 'environ 37 min à 1 h 53 une fois le rendu démarré (préparation, aperçu de contrôle, puis 20 à 60 min par vue, jusqu’au double pour une vue décentrée ou aérienne rendue plus grande)');
+    assert.match(dureeAnnoncee('image', { vues: ['sejour'] }), /^environ 37 min à 1 h 17 /);
     assert.match(dureeAnnoncee('film', {}), /12 h/);
   });
   it('carte du site et atelier', () => {

@@ -94,8 +94,9 @@ async function depotPrepare(): Promise<Depot> {
 // ═══ Options ════════════════════════════════════════════════════════════════════════════════════════
 
 Deno.test('P2-1 : options de fond — étude par défaut (options d’avant inchangées), photo de la rue, photo du client dans SON dossier', () => {
-  na.deepEqual(validerOptionsRendu('image', {}), { ok: true, valeur: { vues: ['trois_quarts_gauche'], ambiance: 'jour' } });
-  na.deepEqual(validerOptionsRendu('image', { fond: 'etude' }), { ok: true, valeur: { vues: ['trois_quarts_gauche'], ambiance: 'jour' } }, 'étude : rien de recopié');
+  // VIS-14 (I2) : image d'étude sans ambiance choisie → non transmise (brief projet, sinon jour, côté worker).
+  na.deepEqual(validerOptionsRendu('image', {}), { ok: true, valeur: { vues: ['trois_quarts_gauche'] } });
+  na.deepEqual(validerOptionsRendu('image', { fond: 'etude' }), { ok: true, valeur: { vues: ['trois_quarts_gauche'] } }, 'étude : rien de recopié');
   na.deepEqual(validerOptionsRendu('image', { fond: 'photo_rue', photo_rue: { id: 'D36C2217-F0A8-4C56-88BB-5092CBE40B93' } }),
     { ok: true, valeur: { vues: ['trois_quarts_gauche'], ambiance: 'jour', fond: 'photo_rue', photo_rue: { id: 'd36c2217-f0a8-4c56-88bb-5092cbe40b93' } } });
   const pc = { fond: 'photo_client', photo_client: { chemin: PHOTO, octets: 3456789, point_de_vue: { lon: 2.4286, lat: 48.8567, cap_deg: 185 } } };

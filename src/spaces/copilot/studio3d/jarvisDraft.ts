@@ -407,8 +407,13 @@ export function draftBrief(draft: JarvisDraft): string {
   return lines.join('\n').slice(0, 2000);
 }
 
-/** Instruction courte pour le moteur architectural ; le brief lisible reste séparé. */
-export function studioCommand(draft: JarvisDraft): string | null {
+/**
+ * Instruction courte pour le moteur architectural ; le brief lisible reste séparé.
+ * VIS-04 : `facadeBrief` (matière de façade du brief projet, libellé du lexique du Studio : « pierre claire »,
+ * « brique rouge »…) est PRIORITAIRE ; la matière tirée du texte de la fiche (expressions régulières) n'est plus
+ * qu'un repli quand le brief n'en donne pas. Absent : commande identique à celle d'avant le lot.
+ */
+export function studioCommand(draft: JarvisDraft, facadeBrief: string | null = null): string | null {
   const buildings = explicitBuildings(draft);
   if (buildings) {
     const first = buildings[0];
@@ -416,7 +421,7 @@ export function studioCommand(draft: JarvisDraft): string | null {
       objectif: `Crée un bâtiment R+${first.niveaux - 1}`,
       dimensions: `${first.largeurM} m sur ${first.profondeurM} m`,
       style: appearanceStyle(first.appearance),
-    });
+    }, facadeBrief);
   }
   const source = [draft.objectif, draft.programme].filter(Boolean).join(' ');
   const type = /\bimmeuble\s+(?:de\s+)?bureaux\b/i.test(source) ? 'un immeuble de bureaux'
@@ -437,7 +442,8 @@ export function studioCommand(draft: JarvisDraft): string | null {
   const niveaux = /\bR\s*\+\s*(\d{1,2})\b/i.exec(source);
   const dimensions = /\b(\d{1,3}(?:[,.]\d{1,2})?)\s*(?:m|m[eè]tres?)\s*(?:sur|x|×)\s*(\d{1,3}(?:[,.]\d{1,2})?)\s*(?:m|m[eè]tres?)?\b/i.exec(draft.dimensions ?? '');
   const appearance = jarvisAppearance(draft);
-  const material = appearance.facade === 'brique' ? ' en brique'
+  const material = facadeBrief && /^[\p{L} '’-]{3,40}$/u.test(facadeBrief) ? ` en ${facadeBrief}`
+    : appearance.facade === 'brique' ? ' en brique'
     : appearance.facade === 'bois' ? ' en bardage bois'
     : appearance.facade === 'beton-blanc' ? ' en béton blanc'
     : appearance.facade === 'beton-brut' ? ' en béton brut'
@@ -488,7 +494,7 @@ export function studioSegmentedVolume(draft: JarvisDraft): JarvisSegment[] | nul
  * séparés de `separationM` (8 m par défaut), l'ensemble centré sur 0 — comme
  * l'aperçu du tchat. Pour 2 bâtiments, les centres sont identiques à l'ancien calcul.
  */
-export function studioComposition(draft: JarvisDraft): JarvisStudioBuilding[] | null {
+export function studioComposition(draft: JarvisDraft, facadeBrief: string | null = null): JarvisStudioBuilding[] | null {
   const massing = jarvisMassing(draft);
   if (!massing?.buildings || massing.buildings.length < 2 || massing.buildings.length > COMPOSITION_MAX) return null;
   const separation = massing.separationM ?? 8;
@@ -500,7 +506,7 @@ export function studioComposition(draft: JarvisDraft): JarvisStudioBuilding[] | 
       objectif: `Crée un bâtiment R+${building.niveaux - 1}`,
       dimensions: `${building.largeurM} m sur ${building.profondeurM} m`,
       style: appearanceStyle(building.appearance),
-    });
+    }, facadeBrief);
     const centreZ = front + building.profondeurM / 2;
     front += building.profondeurM + separation;
     return { name: building.name, commande: commande ?? '', centreZ };

@@ -9,7 +9,8 @@
 // le modèle ne recopie jamais un chemin de photo. Rien n'est lancé sans l'accord donné après ce nouveau devis.
 // =============================================================================
 
-import { BRIEF_BLOC_LANGUE, BRIEF_BLOC_VERSION, briefAEnvoyer, etatInitial, OUTIL_LANCER_RENDU, type DemandeBrief } from './briefCreatif.ts';
+import { BRIEF_BLOC_LANGUE, BRIEF_BLOC_VERSION, briefAEnvoyer, champsBloc, etatInitial, OUTIL_LANCER_RENDU, type BlocProjet, type DemandeBrief } from './briefCreatif.ts';
+import { estVueCatalogue, libelleCourtVue, libelleVue, type PronosticVue, type VueCatalogue } from '../../../lib/studio/catalogueVues.ts';
 import { LIBELLES_FOND, fondDe, type FondImage, type OptionsFond } from '../../../lib/studio/fondImage.ts';
 import { lireContour, lireCouvertureTransmise, type CouverturePhotoRue, type LonLat } from '../../../lib/studio/couverturePhotoRue.ts';
 
@@ -66,11 +67,11 @@ export function tuilesFond(d: DevisFond): TuileFond[] {
  * Message du chat pour un fond choisi : une ligne lisible, puis le bloc relu par le serveur (même brief que le
  * devis, champ `fond` en plus). null si le devis n'a pas de brief connu (la carte propose alors d'écrire à Mimmo).
  */
-export function messageFond(demande: Pick<DemandeBrief, 'actuel'> | null, fond: Omit<OptionsFond, 'fond'> & { fond: FondImage }): string | null {
+export function messageFond(demande: Pick<DemandeBrief, 'actuel'> | null, fond: Omit<OptionsFond, 'fond'> & { fond: FondImage }, extra: BlocProjet = {}): string | null {
   if (!demande?.actuel) return null;
   const etat = etatInitial({ actuel: demande.actuel, ambiances: ['jour', 'fin_de_journee'] });
   const f = fondDe(fond);
-  const bloc = { v: BRIEF_BLOC_VERSION, type: 'image', brief: briefAEnvoyer(etat, false), fond: f === 'etude' ? { fond: 'etude' } : { ...fond, fond: f } };
+  const bloc = { v: BRIEF_BLOC_VERSION, type: 'image', brief: briefAEnvoyer(etat, false), fond: f === 'etude' ? { fond: 'etude' } : { ...fond, fond: f }, ...champsBloc(extra, true) };
   const tete = f === 'photo_client'
     ? `Fond de l’image : ${LIBELLES_FOND.photo_client} (photo envoyée avec mon accord).`
     : `Fond de l’image : ${LIBELLES_FOND[f]}.`;
@@ -86,4 +87,35 @@ export function messageFond(demande: Pick<DemandeBrief, 'actuel'> | null, fond: 
 export function messagePhotoMaison(photo: NonNullable<OptionsFond['photo_client']>): string {
   const bloc = { v: BRIEF_BLOC_VERSION, type: 'image', fond: { fond: 'photo_client', photo_client: photo } };
   return `Voici une photo de ma maison prise depuis la rue (envoyée avec mon accord) : utilisez-la pour l’image de l’extension.\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
+}
+
+/**
+ * VIS-04 — vues cochées sous le devis d'une image : message du chat portant le bloc relu par le serveur (même brief
+ * et même fond que le devis, `vues` en plus, et les champs du brief projet). Mimmo établit le NOUVEAU devis ;
+ * rien n'est lancé sans l'accord donné ensuite. null si le devis n'a pas de brief connu.
+ */
+export function messageVues(demande: Pick<DemandeBrief, 'actuel'> | null, vues: readonly VueCatalogue[], fondActuel: (Omit<OptionsFond, 'fond'> & { fond: FondImage }) | null, extra: BlocProjet = {}): string | null {
+  if (!demande?.actuel || !vues.length) return null;
+  const etat = etatInitial({ actuel: demande.actuel, ambiances: ['jour', 'fin_de_journee'] });
+  const f = fondActuel ? fondDe(fondActuel) : 'etude';
+  const bloc = {
+    v: BRIEF_BLOC_VERSION, type: 'image', brief: briefAEnvoyer(etat, false),
+    ...(fondActuel && f !== 'etude' ? { fond: { ...fondActuel, fond: f } } : {}),
+    ...champsBloc({ ...extra, vues }, true),
+  };
+  return `Vues de l’image : ${vues.map(libelleCourtVue).join(', ')}.\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
+}
+
+/**
+ * VIS-10 — pronostic des vues « sous condition » du devis d'une image (`data.pronostic_vues`, serveur) ; [] si absent
+ * ou illisible (jamais complété). Pur.
+ */
+export function lirePronosticDevis(call: { name: string; status?: string; output?: unknown }): PronosticVue[] {
+  if (call.name !== OUTIL_LANCER_RENDU || !estObj(call.output)) return [];
+  const d = estObj(call.output.data) ? call.output.data : null;
+  if (!d || d.type !== 'image' || !Array.isArray(d.pronostic_vues)) return [];
+  return d.pronostic_vues.filter(estObj).flatMap((p): PronosticVue[] => {
+    if (!estVueCatalogue(p.vue) || (p.pronostic !== 'probablement_refusee' && p.pronostic !== 'selon_projet') || typeof p.raison !== 'string' || !p.raison.trim()) return [];
+    return [{ vue: p.vue, libelle: libelleVue(p.vue), pronostic: p.pronostic, raison: p.raison }];
+  }).slice(0, 15);
 }

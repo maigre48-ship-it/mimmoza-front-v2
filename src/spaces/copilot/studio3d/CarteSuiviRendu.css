@@ -38,3 +38,20 @@
 .mz-suivi-rendu__devis { padding: 8px 10px; border: 1px solid #c7d2fe; border-radius: 10px; background: #ffffff; }
 .mz-suivi-rendu__devis ul { margin: 4px 0 6px 18px; padding: 0; color: #334155; font-size: 12px; }
 .mz-suivi-rendu__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* VIS-10 (19/11/2026) — résultat enrichi de l'image : badge de réalisme, brief appliqué, livraison commerciale (BlocLivraisonImage.tsx). */
+.mz-livraison { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+.mz-livraison__ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
+.mz-livraison__badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+.mz-livraison__badge.is-photo { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+.mz-livraison__badge.is-etude { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+.mz-livraison__badge.is-inconnu { background: #ffffff; color: #64748b; border-color: #e2e8f0; }
+.mz-livraison__brief { padding: 6px 9px; border-left: 3px solid #6d5dfc; background: #ffffff; border-radius: 0 8px 8px 0; }
+.mz-livraison__paquet { padding: 8px 10px; border: 1px solid #c7d2fe; border-radius: 10px; background: #ffffff; display: flex; flex-direction: column; gap: 6px; }
+.mz-livraison__vue { display: flex; flex-direction: column; gap: 3px; }
+.mz-livraison__vue-titre { display: inline-flex; align-items: center; gap: 4px; color: #334155; font-size: 12px; font-weight: 600; }
+.mz-livraison__liens { display: flex; flex-wrap: wrap; gap: 5px; }
+.mz-livraison__lien { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 7px; border: 1px solid #e2e8f0; background: #ffffff; color: #4f46e5; cursor: pointer; }
+.mz-livraison__lien:hover { border-color: #c7d2fe; background: #eef2ff; }
+.mz-livraison__lien:disabled { opacity: .6; cursor: default; }
+.mz-livraison__lien.is-principal { font-weight: 600; border-color: #c7d2fe; background: #eef2ff; }
+.mz-livraison__details summary { cursor: pointer; color: #475569; font-size: 12px; }

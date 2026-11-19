@@ -18,6 +18,8 @@ import { cheminPhotoClient } from './photoClientLogique';
 // LOT P5-SITE (12/11/2026) — zone à effacer corrigée dans l'atelier : même seau privé que la photo du client.
 import { cheminMasqueExistant, OCTETS_MAX_MASQUE, type MasqueExistantOption } from './masqueExistant';
 import { deposerDansBucket } from '@/spaces/copilot/pieces-jointes/televersement';
+// VIS-10 — livraison commerciale demandée d'office pour toute image en qualité finale (drapeau VUES_VIS_INT2_ACTIVES).
+import { avecLivraisonParDefaut } from './livraisonCommerciale';
 
 export * from './travauxLogique';
 export * from './manifesteVisite';
@@ -61,8 +63,10 @@ export async function creerTravail(travail: NouveauTravail): Promise<Reponse<Tra
   const { data: session } = await supabase.auth.getUser();
   const userId = session.user?.id;
   if (!userId) throw new ErreurTravail('Connectez-vous pour lancer un rendu.');
+  // VIS-10 : point d'insertion UNIQUE du front (FilmVisitePanel, atelier, conception) — image finale ⇒ livraison: {active: true}.
+  const options = avecLivraisonParDefaut(travail.type, travail.options as unknown as Record<string, unknown>) as unknown as NouveauTravail['options'];
   const { data, error } = await supabase.from('studio_jobs')
-    .insert({ ...travail, user_id: userId })
+    .insert({ ...travail, options, user_id: userId })
     .select(COLONNES).single();
   if (error) {
     if (fileIndisponible(error)) return { disponible: false };

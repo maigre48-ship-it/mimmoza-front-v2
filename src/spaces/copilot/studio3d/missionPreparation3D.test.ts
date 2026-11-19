@@ -104,6 +104,9 @@ test('charge réelle mission : ne consulte pas étude active et conserve le lien
     if(nom==='./transfertStudio')return {signerTransferts:async()=>[]};
     if(nom.includes('promoteurSnapshot.store'))return {getActiveStudyId:()=>{lecturesActives++;throw Error('Étude active interdite');}};
     if(nom.includes('environnement360'))return {};
+    // VIS-04 : brief projet — en mission (autoriserEtudeActive:false), le brief de l'étude active n'est JAMAIS lu.
+    if(nom==='@/lib/studio/briefProjet')return {facadeDesChamps:(c:unknown)=>(c===null?null:(()=>{throw Error('brief inattendu');})())};
+    if(nom.includes('briefProjet.store'))return {champsBriefDeLaConversation:()=>{lecturesActives++;throw Error('Brief de l’étude active interdit en mission');}};
     throw Error('Dépendance non prévue '+nom);
   };
   try{
