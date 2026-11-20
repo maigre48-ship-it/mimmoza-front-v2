@@ -27,6 +27,10 @@ import type { DemandeOuvertureProjet3D } from './agent/BoutonProjet3D';
 import { dernierePreparation, lirePreparationStockee, ouverturePreparation } from './studio3d/preparationStudio';
 // VIS-17 : une étape du parcours ouvre le Studio intégré sur la bonne étape (Bâtiment, Aménagement → Intérieur).
 import { EVENEMENT_PARCOURS_STUDIO, preparerEtapeStudio, type DemandeParcoursStudio } from './studio3d/parcours.store';
+// VIS-18a : Studio DÉJÀ ouvert (cadre ou autre onglet) → il passe sur l'étape cliquée (accusé) ; témoin personnalisé reçu.
+import { EVENEMENT_OUVRIR_ETAPE_STUDIO, ouvrirEtapeStudio, type CadreStudio, type DetailOuvrirEtape } from './studio3d/pontParcoursSite';
+import { recevoirTemoinStudio, type ClientTemoins } from './studio3d/temoinStudio';
+import { CANAL_DIFFUSION_PARCOURS, creerMessagePont, examinerMessagePont } from '@/spaces/promoteur/shared/echangeStudio/pontParcoursStudio';
 import { AtelierConception } from './agent/conception/AtelierConception';
 import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
 import { usePlanAccess } from '@/lib/billing/usePlanAccess';
@@ -395,6 +399,20 @@ export default function MimmozIAPage() {
   const mission3dRef = useRef(mission3d); mission3dRef.current = mission3d;
   const studio3dRef = useRef(studio3d);
   studio3dRef.current = studio3d;
+  // VIS-18a — fenêtre et origine EXACTES du Studio intégré (données par StudioIntegre à chaque « prêt »).
+  const cadreStudioRef = useRef<(CadreStudio & { conversationId: string | null }) | null>(null);
+  const surCadreStudioPret = useCallback((fenetre: Window, origine: string) => {
+    const conversationId = studio3dRef.current.conversationId;
+    cadreStudioRef.current = { fenetre, origine, conversationId };
+    const id = `req-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    try { fenetre.postMessage(creerMessagePont('temoin.demander', { requeteId: id, ...(conversationId ? { projetId: projetIdChat(conversationId) } : {}) }), origine); } catch { /* cadre fermé */ }
+  }, []);
+  /** VIS-18a — cadre du Studio utilisable pour la conversation courante (sinon null : autre onglet ou repli). */
+  const cadreCourant = useCallback((conversationId: string | null): CadreStudio | null => {
+    const c = cadreStudioRef.current;
+    const s = studio3dRef.current;
+    return c && s.demande && conversationId && s.conversationId === conversationId && c.conversationId === conversationId ? { fenetre: c.fenetre, origine: c.origine } : null;
+  }, []);
   const voirEn3D = useCallback(async (fiche: JarvisDraft, conversationId: string, terrainArg?: ConfirmedTerrain & { adresse?: string | null }, options?: { mission?: boolean; estCourante?: () => boolean; remplacerMaquette?: boolean; complements?: Readonly<Record<string, unknown>> }): Promise<IssueOuvertureStudio> => {
     const verifierContexteMission = () => { if (options?.mission && (useCopilotStore.getState().currentConversationId !== conversationId || !options.estCourante?.())) throw new Error('La préparation de mission ou la conversation a changé. Aucun projet ne sera ouvert.'); };
     verifierContexteMission();
@@ -596,6 +614,54 @@ export default function MimmozIAPage() {
     window.addEventListener(EVENEMENT_OUVRIR_PROJET_3D, surProjet3D);
     return () => window.removeEventListener(EVENEMENT_OUVRIR_PROJET_3D, surProjet3D);
   }, [voirEn3D]);
+  // VIS-18a — logement témoin personnalisé envoyé par le Studio (cadre : sa fenêtre et son origine ; autre onglet :
+  // BroadcastChannel, même origine, projet de la conversation courante) → copie locale, studio_temoins, événement.
+  useEffect(() => {
+    const recevoir = (data: unknown, origine: string, autorisees: string[]) => {
+      const d = examinerMessagePont({ origin: origine, data }, autorisees, window.location.origin, false);
+      if (d.type !== 'message' || d.message.canal !== 'temoin.etat') return;
+      const charge = d.message.charge;
+      const conversationId = useCopilotStore.getState().currentConversationId;
+      if (!conversationId) return;
+      const projetId = projetIdChat(conversationId);
+      if (charge.projetId !== null && charge.projetId !== projetId) return;
+      void (async () => {
+        const { data: auth } = await supabase.auth.getUser();
+        const userId = auth.user?.id;
+        if (!userId) return;
+        const r = await recevoirTemoinStudio(supabase as unknown as ClientTemoins, userId, conversationId, projetId, charge.temoin);
+        if (r.base && !r.base.ok) console.warn('[VIS-18a] témoin personnalisé non enregistré en base (gardé dans le navigateur) :', r.base.erreur);
+      })();
+    };
+    const surFenetre = (e: MessageEvent) => {
+      const c = cadreStudioRef.current;
+      if (!c || e.source !== c.fenetre || e.origin !== c.origine) return;
+      recevoir(e.data, e.origin, [c.origine]);
+    };
+    window.addEventListener('message', surFenetre);
+    let canal: BroadcastChannel | null = null;
+    try { canal = typeof BroadcastChannel === 'function' ? new BroadcastChannel(CANAL_DIFFUSION_PARCOURS) : null; } catch { canal = null; }
+    const surCanal = (e: MessageEvent) => recevoir(e.data, window.location.origin, []);
+    canal?.addEventListener('message', surCanal);
+    return () => { window.removeEventListener('message', surFenetre); canal?.removeEventListener('message', surCanal); canal?.close(); };
+  }, []);
+  // VIS-18a — n'importe quelle étape du parcours (Style & façades, Vues & ambiance…) : Studio déjà ouvert → il y passe.
+  // Aucun Studio ouvert : `absent`, le parcours garde son action habituelle (rien n'est ouvert ici).
+  useEffect(() => {
+    const surEtape = (e: Event) => {
+      const d = (e as CustomEvent<DetailOuvrirEtape>).detail;
+      if (!d || typeof d.repondre !== 'function') return;
+      d.prise = true;
+      const conversationId = useCopilotStore.getState().currentConversationId;
+      const cadre = cadreCourant(conversationId);
+      void ouvrirEtapeStudio(d, { cadre, projetId: conversationId ? projetIdChat(conversationId) : null }).then((issue) => {
+        if (issue.ou === 'cadre' && issue.etat === 'ok') setStudio3d({ ...studio3dRef.current, ouvert: true });
+        d.repondre(issue);
+      });
+    };
+    window.addEventListener(EVENEMENT_OUVRIR_ETAPE_STUDIO, surEtape);
+    return () => window.removeEventListener(EVENEMENT_OUVRIR_ETAPE_STUDIO, surEtape);
+  }, [cadreCourant]);
   // VIS-17 : étape du parcours → Studio intégré ouvert sur l'étape voulue (mémoire des colonnes du Studio, même origine),
   // par les parcours existants : 3D préparée par Mimmo (comme « Ouvrir la 3D préparée »), sinon fiche du projet.
   useEffect(() => {
@@ -609,14 +675,19 @@ export default function MimmozIAPage() {
       const conversationId = state.currentConversationId;
       const avant = studio3dRef.current;
       if (conversationId && avant.demande && avant.conversationId === conversationId) {
-        // Studio déjà chargé : il garde son étape (rien n'est rechargé, aucune modification perdue).
+        // Studio déjà chargé : rien n'est rechargé (aucune modification perdue). VIS-18a : il passe sur l'étape (accusé) ;
+        // sans accusé (Studio d'avant VIS-18a, encore en chargement), le message VIS-17 d'origine.
         setStudio3d({ ...avant, ouvert: true });
-        d.repondre(`Le Studio était déjà ouvert : dans sa colonne de gauche, choisissez l’étape ${libelle}.`);
+        void ouvrirEtapeStudio({ etapeStudio: d.etape, sousOnglet: d.sous }, { cadre: cadreCourant(conversationId), projetId: projetIdChat(conversationId), canal: null })
+          .then((issue) => d.repondre(issue.etat === 'ok' ? null : issue.etat === 'refus' ? issue.message : `Le Studio était déjà ouvert : dans sa colonne de gauche, choisissez l’étape ${libelle}.`));
         return;
       }
       void (async () => {
         try {
           if (!conversationId) throw new Error('Ouvrez d’abord la conversation du projet.');
+          // VIS-18a — Studio ouvert dans un AUTRE onglet sur ce projet : il passe sur l'étape, rien n'est ouvert ici.
+          const ailleurs = await ouvrirEtapeStudio({ etapeStudio: d.etape, sousOnglet: d.sous }, { cadre: null, projetId: projetIdChat(conversationId), delaiMs: 600 });
+          if (ailleurs.etat === 'ok') { d.repondre(ailleurs.message); return; }
           const ref = dernierePreparation(state.messages as never);
           if (ref) {
             const lu = await supabase.from('studio_preparations').select('id,idu,entree,volume').eq('id', ref.preparationId).maybeSingle();
@@ -642,7 +713,7 @@ export default function MimmozIAPage() {
     };
     window.addEventListener(EVENEMENT_PARCOURS_STUDIO, surStudio);
     return () => window.removeEventListener(EVENEMENT_PARCOURS_STUDIO, surStudio);
-  }, [voirEn3D]);
+  }, [voirEn3D, cadreCourant]);
   const preparerMission3D = useCallback((mission: Mission) => {
     const state = useCopilotStore.getState();
     if (!missionVisualisable(mission, state.currentConversationId)) throw new Error('Ouvrez la conversation de cette mission pour préparer son projet.');
@@ -847,7 +918,7 @@ export default function MimmozIAPage() {
 
   return (
     <div className={pageClass}>
-      <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} onReleve={surReleveStudio} />
+      <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} onReleve={surReleveStudio} onCadrePret={surCadreStudioPret} />
       {noticePlan && <div role="status" style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 900, maxWidth: 'min(720px, 92vw)', background: '#f5f3ff', border: '1px solid #c4b5fd', color: '#312e81', borderRadius: 10, padding: '8px 12px', fontSize: 13, lineHeight: 1.4, boxShadow: '0 6px 20px rgba(15,23,42,.12)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
         <span style={{ flex: 1 }}>{noticePlan}</span>
         <button type="button" onClick={() => setNoticePlan(null)} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#312e81' }}><X size={14} /></button>
