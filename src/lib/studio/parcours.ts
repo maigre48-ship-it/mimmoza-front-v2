@@ -17,6 +17,8 @@
 // Code PUR, sans accès au navigateur : partagé par le front (node --test) et l'Edge Function (Deno).
 // =============================================================================
 import { libelleCourtVue, PACK_PLAQUETTE, VUES_CATALOGUE, type VueCatalogue } from './catalogueVues.ts';
+// VIS-18b : fond de l'image choisi dans l'étape 6 (mêmes règles que la base et le serveur).
+import { fondDe, validerFond, type OptionsFond } from './fondImage.ts';
 
 export type TypeParcours = 'image' | 'film' | 'visite';
 export const TYPES_PARCOURS: readonly TypeParcours[] = ['image', 'film', 'visite'];
@@ -60,6 +62,11 @@ export interface EtapeParcours {
   action: ActionParcours;
   /** Second accès utile (ex. gamme du logement témoin), facultatif. */
   actionSecondaire?: ActionParcours;
+  /**
+   * VIS-18b — petit réglage affiché DANS l'étape (pas de nouvel écran) : `cible` (étape 4) et `gamme` (étape 5) quand
+   * aucune étude Style & tendances n'est rattachée ; `fond` (étape 6 du parcours Images : étude / photo de rue / photo).
+   */
+  reglage?: 'cible' | 'gamme' | 'fond';
 }
 
 export interface Parcours {
@@ -75,6 +82,7 @@ export interface TravailParcours {
   id: string;
   type: 'image' | 'film' | 'visite360';
   statut: string;
+  /** VIS-18b : lue pour les trois types (film / visite : `options.qualite`, absente = finale). */
   qualite: 'apercu' | 'finale' | null;
   cree_le: string;
   vues: VueCatalogue[];
@@ -93,7 +101,19 @@ export interface SourcesParcours {
   conception: { statut: string; resume: string | null } | null;
   volume: { pret: boolean; resume: string | null };
   habillage: { resume: string | null; attenduParMimmo: boolean };
-  interieurs: { gamme: string | null; typologie: string | null };
+  /**
+   * `gamme` : valeur du contrat (entree | standard | premium | luxe) ; `cible` : texte du brief (VIS-04).
+   * VIS-18b — `origine` : « conversation » quand gamme / cible viennent du petit réglage du parcours (sans étude).
+   */
+  interieurs: {
+    gamme: string | null; typologie: string | null; cible?: string | null; origine?: 'etude' | 'conversation' | null;
+  };
+  /**
+   * VIS-18a / VIS-18b — logement témoin PERSONNALISÉ dans le Studio (src/spaces/copilot/studio3d/temoinStudio.ts :
+   * lireTemoinPersonnalise / etatTemoinConversation ; serveur : ligne studio_temoins). `fait` : l'étape « Intérieurs »
+   * est FAITE avec ce résumé, même sans gamme. Absent / null : règle d'avant (gamme).
+   */
+  temoinStudio?: { fait: boolean; resume: string | null } | null;
   rendu: { vues: VueCatalogue[]; vuesChoisies: boolean; ambiance: string | null; saison: string | null; fond: string | null; etudeRattachee: boolean };
   film: ReglagesFilm | null;
   visite: ReglagesVisite | null;
@@ -105,9 +125,9 @@ export interface SourcesParcours {
 export function sourcesVides(type: TypeParcours = 'image'): SourcesParcours {
   return {
     type, terrain: null, conception: null, volume: { pret: false, resume: null },
-    habillage: { resume: null, attenduParMimmo: false }, interieurs: { gamme: null, typologie: null },
+    habillage: { resume: null, attenduParMimmo: false }, interieurs: { gamme: null, typologie: null, cible: null, origine: null },
     rendu: { vues: [], vuesChoisies: false, ambiance: null, saison: null, fond: null, etudeRattachee: false },
-    film: null, visite: null, travaux: [], apercuValide: null,
+    film: null, visite: null, travaux: [], apercuValide: null, temoinStudio: null,
   };
 }
 
@@ -117,6 +137,28 @@ const AMBIANCES: Readonly<Record<string, string>> = { jour: 'en journée', fin_d
 const SAISONS: Readonly<Record<string, string>> = { printemps: 'printemps', ete: 'été', automne: 'automne', hiver: 'hiver' };
 const FONDS: Readonly<Record<string, string>> = { etude: 'fond d’étude', photo_rue: 'photo de la rue', photo_client: 'votre photo' };
 const GAMMES: Readonly<Record<string, string>> = { entree: 'entrée de gamme', standard: 'gamme standard', premium: 'gamme premium', luxe: 'gamme luxe' };
+
+/**
+ * VIS-18b — petit réglage du parcours SANS étude rattachée (étapes 4 / 5) : trois gammes et quatre cibles, transmises
+ * comme le brief projet (contrat v2 : `brief.gamme`, `brief.cible`, VIS-04). Les trois gammes sont les trois niveaux que
+ * le moteur d'aménagement distingue (worker interieursImage.ts gammeDuBrief : économique / standard / premium) :
+ * « Standard » = entree, « Confort » = standard, « Premium » = premium (« luxe » n'ajoute rien au moteur).
+ * Les cibles sont des textes reconnus par le worker (cibleDuBrief : primo, famil, invest, senior).
+ */
+export const GAMMES_PARCOURS: readonly { valeur: 'entree' | 'standard' | 'premium'; libelle: string }[] = [
+  { valeur: 'entree', libelle: 'Standard' }, { valeur: 'standard', libelle: 'Confort' }, { valeur: 'premium', libelle: 'Premium' },
+];
+export const CIBLES_PARCOURS: readonly string[] = ['Primo-accédants', 'Familles', 'Investisseurs', 'Seniors'];
+const libelleGamme = (gamme: string, origine: string | null | undefined): string => (origine === 'conversation'
+  ? `gamme ${(GAMMES_PARCOURS.find((g) => g.valeur === gamme)?.libelle ?? gamme).toLowerCase()}` : GAMMES[gamme] ?? gamme);
+/** Gamme / cible du petit réglage, lues défensivement (stockage navigateur) ; valeurs hors liste écartées. */
+export function lireReglageProjet(brut: unknown): { gamme: 'entree' | 'standard' | 'premium' | null; cible: string | null } {
+  const o = typeof brut === 'object' && brut !== null && !Array.isArray(brut) ? brut as Record<string, unknown> : {};
+  return {
+    gamme: GAMMES_PARCOURS.some((g) => g.valeur === o.gamme) ? o.gamme as 'entree' | 'standard' | 'premium' : null,
+    cible: CIBLES_PARCOURS.includes(o.cible as string) ? o.cible as string : null,
+  };
+}
 
 /** « 3/4 gauche, aérienne et séjour ». */
 export function phraseVuesCourte(vues: readonly string[]): string {
@@ -205,29 +247,37 @@ export function calculerParcours(s: SourcesParcours): Parcours {
   {
     const h = s.habillage;
     const statut: StatutEtape = h.attenduParMimmo ? 'en_cours' : h.resume ? 'fait' : 'a_faire';
+    // VIS-18b : cible du petit réglage (sans étude) rappelée dans le résumé ; celle d'une étude reste dans l'étude.
+    const cible = s.interieurs.origine === 'conversation' && s.interieurs.cible ? ` · pour : ${s.interieurs.cible.toLowerCase()}` : '';
     ajouter({
       cle: 'style', titre: 'Style & façades', statut,
-      resume: h.resume ?? 'Façade, teinte, menuiseries, balcons, toiture — ou laissez Mimmo proposer.',
+      resume: `${h.resume ?? 'Façade, teinte, menuiseries, balcons, toiture — ou laissez Mimmo proposer.'}${cible}`,
       raison: h.attenduParMimmo ? 'Mimmo attend votre habillage pour chiffrer le rendu.' : null, debloquePar: null,
       action: { cible: 'habillage', libelle: h.resume ? 'Modifier' : 'Choisir' },
+      // VIS-18b : sans étude Style & tendances, la cible se règle ici (sinon : dans l'étude).
+      ...(s.rendu.etudeRattachee ? {} : { reglage: 'cible' as const }),
     });
   }
 
   // 5 — Intérieurs (facultative sauf vue intérieure)
   {
     const requis = interieurRequis(s);
-    const gamme = s.interieurs.gamme ? GAMMES[s.interieurs.gamme] ?? s.interieurs.gamme : null;
+    const gamme = s.interieurs.gamme ? libelleGamme(s.interieurs.gamme, s.interieurs.origine) : null;
     const typo = s.interieurs.typologie ? `${s.interieurs.typologie}, ` : '';
-    const statut: StatutEtape = gamme ? 'fait' : requis ? 'a_faire' : 'facultative';
+    const perso = s.temoinStudio?.fait ? s.temoinStudio : null;
+    const statut: StatutEtape = gamme || perso ? 'fait' : requis ? 'a_faire' : 'facultative';
     ajouter({
       cle: 'interieurs', titre: 'Intérieurs', statut,
-      resume: gamme
+      resume: perso
+        ? `Logement témoin personnalisé dans le Studio${perso.resume ? ` : ${perso.resume}` : ''}${gamme ? ` (${gamme})` : ''}.`
+        : gamme
         ? `Logement témoin ${typo}${gamme}, meublé par Mimmo — plan, meubles, sols et murs modifiables dans le Studio.`
         : requis ? 'Vos choix montrent l’intérieur d’un logement : choisissez la gamme du logement témoin (ou ajustez-le dans le Studio).'
         : 'Facultatif : utile seulement pour une vue intérieure (séjour, chambre…).',
-      raison: requis && !gamme ? 'Vue intérieure prévue : le logement témoin doit être défini.' : null, debloquePar: null,
-      action: { cible: 'studio-interieur', libelle: gamme ? 'Modifier' : 'Ouvrir' },
-      actionSecondaire: { cible: 'reglages-rendu', libelle: 'Gamme' },
+      raison: requis && !gamme && !perso ? 'Vue intérieure prévue : le logement témoin doit être défini.' : null, debloquePar: null,
+      action: { cible: 'studio-interieur', libelle: gamme || perso ? 'Modifier' : 'Ouvrir' },
+      // VIS-18b : « Gamme » mène au brief de l'étude quand il y en a une ; sinon petit réglage dans l'étape.
+      ...(s.rendu.etudeRattachee ? { actionSecondaire: { cible: 'reglages-rendu' as const, libelle: 'Gamme' } } : { reglage: 'gamme' as const }),
     });
   }
 
@@ -244,6 +294,8 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       resume: `${s.rendu.vuesChoisies ? '' : 'Proposé : '}${pluriel(vues.length, 'vue')} (${phraseVuesCourte(vues)})${detail ? ` · ${detail}` : ''}.`,
       raison: null, debloquePar: null,
       action: { cible: s.rendu.etudeRattachee ? 'reglages-rendu' : 'feuille-image', libelle: s.rendu.vuesChoisies ? 'Modifier' : 'Choisir' },
+      // VIS-18b : fond de l'image (étude / photo de la rue / votre photo) choisi DANS l'étape, repris par le devis du chat.
+      reglage: 'fond',
     });
   } else if (s.type === 'film') {
     const f = s.film;
@@ -273,20 +325,23 @@ export function calculerParcours(s: SourcesParcours): Parcours {
     });
   }
 
-  // 7 — Aperçu (rendu rapide, vue par vue)
-  const apercus = recents(s.travaux.filter((t) => t.type === 'image' && t.qualite === 'apercu'));
+  // 7 — Aperçu (rendu rapide) — VIS-18b : aperçu du MÊME type (image, film court ou panoramas basse définition).
+  const apercus = recents(s.travaux.filter((t) => t.type === TYPE_TRAVAIL[s.type] && t.qualite === 'apercu'));
   const apercuValide = s.apercuValide ? apercus.find((t) => t.id === s.apercuValide && t.statut === 'termine') ?? null : null;
   {
     const enCours = apercus.find((t) => estActifStatut(t.statut));
     const pret = apercus.find((t) => t.statut === 'termine');
     const statut: StatutEtape = apercuValide && !enCours ? 'fait' : !s.volume.pret ? 'bloquee' : enCours || pret ? 'en_cours' : 'a_faire';
     const nb = apercuValide ? apercuValide.nbImages || apercuValide.vues.length : 0;
+    const resumeValide = s.type === 'image' ? `Aperçu validé (${pluriel(nb, 'vue')}).` : s.type === 'film' ? 'Aperçu du film validé.' : 'Aperçu de la visite validé.';
     ajouter({
       cle: 'apercu', titre: 'Aperçu', statut,
-      resume: statut === 'fait' ? `Aperçu validé (${pluriel(nb, 'vue')}).`
+      resume: statut === 'fait' ? resumeValide
         : enCours ? 'Aperçu rapide en calcul…'
         : pret ? 'Aperçu prêt : regardez-le, puis validez-le (ou corrigez une étape).'
-        : `Rendu rapide pour vérifier le cadrage et l’habillage avant le rendu final${s.type === 'image' ? '' : ' (images d’essai de la même maquette)'}.`,
+        : s.type === 'image' ? 'Rendu rapide pour vérifier le cadrage et l’habillage avant le rendu final.'
+        : s.type === 'film' ? 'Film court en basse définition (mêmes plans, 1,5 s par plan) pour vérifier le scénario avant le film final.'
+        : 'Panoramas en basse définition (mêmes points de vue) pour vérifier la visite avant la version finale.',
       raison: statut === 'bloquee' ? 'L’aperçu se calcule sur la 3D préparée.' : null,
       debloquePar: statut === 'bloquee' ? 'volume' : null,
       action: statut === 'fait' ? { cible: 'resultats', libelle: 'Revoir' }
@@ -297,7 +352,7 @@ export function calculerParcours(s: SourcesParcours): Parcours {
   // 8 — Final & livraison
   {
     const type = TYPE_TRAVAIL[s.type];
-    const finals = recents(s.travaux.filter((t) => t.type === type && (t.type !== 'image' || t.qualite !== 'apercu')));
+    const finals = recents(s.travaux.filter((t) => t.type === type && t.qualite !== 'apercu'));
     const termine = finals.find((t) => t.statut === 'termine');
     const enCours = finals.find((t) => estActifStatut(t.statut));
     const statut: StatutEtape = enCours ? 'en_cours' : termine ? 'fait' : !apercuValide ? 'bloquee' : 'a_faire';
@@ -370,7 +425,8 @@ export function travailParcours(brut: unknown): TravailParcours | null {
   if (!type || !id || typeof brut.statut !== 'string') return null;
   const o = estObj(brut.options) ? brut.options : {};
   const r = estObj(brut.resultat) ? brut.resultat : {};
-  const qualite = type !== 'image' ? null : o.qualite === 'apercu' ? 'apercu' : 'finale';
+  // VIS-18b : film et visite ont aussi un aperçu (`options.qualite`) ; absente = finale.
+  const qualite = o.qualite === 'apercu' ? 'apercu' : 'finale';
   const vues = (Array.isArray(o.vues) ? o.vues : []).filter((v): v is VueCatalogue => (VUES_CATALOGUE as readonly unknown[]).includes(v));
   return {
     id, type, statut: brut.statut, qualite, cree_le: typeof brut.cree_le === 'string' ? brut.cree_le : new Date(0).toISOString(),
@@ -428,8 +484,9 @@ export function typeParcoursDesMessages(textes: readonly string[]): TypeParcours
 export interface InstantaneParcours {
   type: TypeParcours | null;
   habillage: string | null;
-  interieurs: { gamme: string | null; typologie: string | null };
-  rendu: { vues: VueCatalogue[]; vuesChoisies: boolean; ambiance: string | null; saison: string | null; etudeRattachee: boolean };
+  interieurs: { gamme: string | null; typologie: string | null; cible?: string | null; origine?: 'etude' | 'conversation' | null };
+  /** VIS-18b — `fond` : fond de l'image choisi dans l'étape 6 (options normalisées, validées comme par la base). */
+  rendu: { vues: VueCatalogue[]; vuesChoisies: boolean; ambiance: string | null; saison: string | null; etudeRattachee: boolean; fond?: OptionsFond | null };
   film: ReglagesFilm | null;
   visite: ReglagesVisite | null;
 }
@@ -448,11 +505,34 @@ export function lireInstantaneParcours(brut: unknown): InstantaneParcours | null
   return {
     type: (TYPES_PARCOURS as readonly unknown[]).includes(brut.type) ? brut.type as TypeParcours : null,
     habillage: txt(brut.habillage, 300),
-    interieurs: { gamme: txt(i.gamme, 20), typologie: txt(i.typologie, 10) },
-    rendu: { vues, vuesChoisies: r.vuesChoisies === true && vues.length > 0, ambiance: txt(r.ambiance, 20), saison: txt(r.saison, 20), etudeRattachee: r.etudeRattachee === true },
+    // VIS-18b : cible / origine / fond ajoutés SEULEMENT s'ils sont présents (instantané d'avant : lecture identique).
+    interieurs: {
+      gamme: txt(i.gamme, 20), typologie: txt(i.typologie, 10),
+      ...(txt(i.cible, 60) ? { cible: txt(i.cible, 60) } : {}),
+      ...(i.origine === 'etude' || i.origine === 'conversation' ? { origine: i.origine } : {}),
+    },
+    rendu: {
+      vues, vuesChoisies: r.vuesChoisies === true && vues.length > 0, ambiance: txt(r.ambiance, 20), saison: txt(r.saison, 20), etudeRattachee: r.etudeRattachee === true,
+      ...(fondLu(r.fond) ? { fond: fondLu(r.fond) } : {}),
+    },
     film: f && duree !== null ? { duree_s: duree, format: f.format === '9:16' ? '9:16' : '16:9', musique: f.musique === true, interieurs: f.interieurs === true, ambiance: txt(f.ambiance, 20) } : null,
     visite: v ? { interieurs: v.interieurs === true, resolution: v.resolution === '8k' ? '8k' : '6k', ambiance: txt(v.ambiance, 20) } : null,
   };
+}
+
+/** VIS-18b — fond de l'instantané : mêmes règles que la base (validerFond) ; illisible ou hors format → null. */
+function fondLu(brut: unknown): OptionsFond | null {
+  if (!estObj(brut) || Object.keys(brut).some((k) => !['fond', 'photo_rue', 'photo_client'].includes(k))) return null;
+  const v = validerFond(brut);
+  return v.ok ? v.valeur : null; // étude seule : {} (fond par défaut, jamais recopié)
+}
+
+/**
+ * VIS-18b — fond choisi dans l'étape 6 du parcours (instantané envoyé par l'écran), pour le devis d'une image
+ * (studio_lancer_rendu) quand ni la carte ni la demande ne fixent de fond. null : rien de choisi.
+ */
+export function fondDuParcours(instantaneBrut: unknown): OptionsFond | null {
+  return lireInstantaneParcours(instantaneBrut)?.rendu.fond ?? null;
 }
 
 /** Instantané de l'écran → sources (le reste vient de la base, côté serveur). */
@@ -463,7 +543,7 @@ export function sourcesDeLInstantane(i: InstantaneParcours | null, type: TypePar
     ...s,
     habillage: { resume: i.habillage, attenduParMimmo: false },
     interieurs: { ...i.interieurs },
-    rendu: { ...s.rendu, ...i.rendu, fond: null },
+    rendu: { ...s.rendu, ...i.rendu, fond: i.rendu.fond ? fondDe(i.rendu.fond) : null },
     film: i.film, visite: i.visite,
   };
 }
@@ -488,7 +568,8 @@ export function blocParcoursSysteme(p: Parcours): string {
     '(qualité finale, film, visite) tant que l’étape « Aperçu » n’est pas FAITE (aperçu validé) : propose d’abord l’aperçu. Une demande directe',
     '(« lance le pack plaquette ») reste possible : fais-la, mais signale en une phrase les étapes NON FAITES qui comptent (vue intérieure sans',
     'logement témoin, habillage non choisi, aperçu non validé). Ne déclare jamais une étape faite toi-même : seul ce bloc fait foi.',
-    'L’aperçu d’images se lance avec studio_lancer_rendu, type « image », options.qualite = "apercu" (mêmes vues que le rendu final prévu) ;',
+    'L’aperçu se lance avec studio_lancer_rendu et options.qualite = "apercu" : type « image » (mêmes vues que le rendu final prévu), « film »',
+    '(film court basse définition, mêmes plans) ou « visite360 » (panoramas basse définition) — mêmes autres options que le rendu final prévu ;',
     'l’utilisateur le valide ensuite d’un clic sur l’écran. Pas de mots techniques (aucun nom d’outil) en parlant des étapes à l’utilisateur.',
     '---',
   ].join('\n');

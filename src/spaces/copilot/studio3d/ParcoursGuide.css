@@ -49,3 +49,11 @@
   .mz-parcours__puces button span:last-child { display: none; }
   .mz-parcours__actions { padding-left: 10px; }
 }
+/* VIS-18b — petits réglages DANS une étape (cible, gamme, fond de l'image). */
+.mz-parcours__reglage { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 0 10px 8px 41px; }
+.mz-parcours__reglage small { color: #64748b; font-size: 12px; margin-right: 2px; }
+.mz-parcours__reglage button { border: 1px solid #ddd6fe; border-radius: 999px; background: #ffffff; color: #4c1d95; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.mz-parcours__reglage button.is-actif { background: #6d5dfc; border-color: #6d5dfc; color: #ffffff; font-weight: 600; }
+.mz-parcours__fond { padding: 0 10px 8px 41px; font-size: 12px; }
+.mz-parcours__fond > small { color: #334155; }
+.mz-parcours__fond .mz-fond-image__tuiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin: 6px 0; }

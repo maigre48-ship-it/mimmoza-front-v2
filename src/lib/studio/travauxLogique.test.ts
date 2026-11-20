@@ -223,7 +223,9 @@ describe('image photoréaliste (3e type de rendu)', () => {
     assert.deepEqual(v.ok && v.valeur, { vues: ['trois_quarts_gauche'], qualite: 'apercu' });
     for (const q of ['8k', '4k', 1, true]) assert.equal(validerOptions('image', { qualite: q }).ok, false, String(q));
     assert.match((() => { const r = validerOptions('image', { qualite: '8k' }); return r.ok ? '' : r.erreur; })(), /haute définition ou aperçu rapide/);
-    assert.equal(validerOptions('film', { qualite: 'apercu' }).ok, false, 'pas de qualité sur le film');
+    // VIS-18b (20/11/2026) : le film et la visite ont désormais un aperçu (`qualite: "apercu"`) ; toute autre valeur reste refusée.
+    assert.equal(validerOptions('film', { qualite: 'apercu' }).ok, true, 'aperçu du film (VIS-18b)');
+    assert.equal(validerOptions('film', { qualite: '8k' }).ok, false, 'qualité inconnue sur le film');
     assert.equal(resumeOptions('image', { vues: ['face'], qualite: 'apercu' }), 'Face · lumière du brief projet · aperçu rapide');
     assert.equal(resumeOptions('image', { vues: ['face'], ambiance: 'jour' }), 'Face · en journée');
   });

@@ -8,6 +8,7 @@
 //     prochaine étape en bouton principal. Cliquer une étape = même action que dans le panneau.
 // Composants minces : statuts, résumés et actions viennent de src/lib/studio/parcours.ts (calculés, jamais déclarés).
 // =============================================================================
+import type { ReactNode } from 'react';
 import { Check, ChevronRight, Circle, Loader2, Lock, Minus } from 'lucide-react';
 import {
   avancement, etapeDuClic, LIBELLES_STATUT_ETAPE, LIBELLES_TYPE_PARCOURS, prochaineEtape, TYPES_PARCOURS,
@@ -40,7 +41,11 @@ function cliquer(p: Parcours, e: EtapeParcours, onAction: ActionnerParcours) {
   onAction(cible, cible.action);
 }
 
-export function ParcoursPanneau({ parcours, onAction, onType }: { parcours: Parcours; onAction: ActionnerParcours; onType?: (t: TypeParcours) => void }) {
+export function ParcoursPanneau({ parcours, onAction, onType, reglage }: {
+  parcours: Parcours; onAction: ActionnerParcours; onType?: (t: TypeParcours) => void;
+  /** VIS-18b — petit réglage affiché dans l'étape (cible, gamme, fond de l'image) ; null : aucun. */
+  reglage?: (e: EtapeParcours) => ReactNode;
+}) {
   const { faites, total } = avancement(parcours);
   const prochaine = prochaineEtape(parcours);
   return <section className="mz-parcours" aria-label="Votre parcours">
@@ -69,6 +74,7 @@ export function ParcoursPanneau({ parcours, onAction, onType }: { parcours: Parc
             <button type="button" className={courante ? 'is-primaire' : ''} onClick={() => onAction(e, e.action)}>{e.action.libelle}</button>
             {e.actionSecondaire && <button type="button" onClick={() => onAction(e, e.actionSecondaire!)}>{e.actionSecondaire.libelle}</button>}
           </div>}
+          {reglage?.(e)}
         </li>;
       })}
     </ol>

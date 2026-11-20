@@ -28,6 +28,22 @@ export interface EntreeParcoursServeur {
   textesUtilisateur: readonly string[];
   /** Message reçu (pas encore en base). */
   messageCourant: string;
+  /** VIS-18b — ligne studio_temoins de la conversation (colonne `temoin`), s'il y en a une (table absente : null). */
+  temoin?: unknown;
+}
+
+/**
+ * VIS-18b — témoin personnalisé de la base (studio_temoins.temoin, écrit par le site après validation complète par
+ * pontParcoursStudio.lireTemoin, VIS-18a) → étape « Intérieurs » ; null si rien de personnalisé. Lecture minimale ici
+ * (format, version, drapeau, résumé borné) : la ligne n'est écrite qu'après la validation complète, et le module du
+ * pont n'est pas importé dans la fonction (ses gardes de types ne passent pas `deno check`).
+ */
+export const FORMAT_TEMOIN_LU = 'mimmozia-temoin-personnalise';
+export function temoinDeLaBase(ligne: unknown): { fait: boolean; resume: string | null } | null {
+  const brut = estObj(ligne) && 'temoin' in ligne ? ligne.temoin : ligne;
+  if (!estObj(brut) || brut.format !== FORMAT_TEMOIN_LU || brut.version !== 1 || brut.personnalise !== true) return null;
+  const resume = typeof brut.resume === 'string' && brut.resume.trim() ? brut.resume.replace(/\s+/g, ' ').trim().slice(0, 300) : null;
+  return { fait: true, resume };
 }
 
 const estObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -68,6 +84,7 @@ export function sourcesServeur(e: EntreeParcoursServeur): SourcesParcours {
     habillage: { resume: s.habillage.resume ?? habillageFil, attenduParMimmo: false },
     travaux: e.travaux.map(travailParcours).filter((t): t is TravailParcours => t !== null),
     apercuValide: apercuValideDesMessages(textes),
+    temoinStudio: temoinDeLaBase(e.temoin ?? null),
   };
 }
 

@@ -313,7 +313,8 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
           "trois_quarts_droite, face, angle_rue, aerienne, entree, coeur_ilot, terrasse, balcon, jardin_prive, rooftop, sejour, chambre, vue_baie ; " +
           "OMETS `vues` sauf demande précise de l'utilisateur : le serveur prend celles du brief projet, sinon une vue 3/4 gauche ; " +
           "plaquette → `pack`), ambiance (jour|fin_de_journee|crepuscule), fond (etude|photo_rue ; photo_client seulement via la carte « Fond de l'image »), " +
-          "qualite ('apercu' = APERÇU RAPIDE de l'étape « Aperçu » du parcours, à proposer AVANT tout rendu final ; absente = finale). Absentes : valeurs par défaut.",
+          "qualite ('apercu' = APERÇU RAPIDE de l'étape « Aperçu » du parcours, à proposer AVANT tout rendu final ; absente = finale ; " +
+          "VAUT AUSSI pour film et visite360 : film court basse définition mêmes plans / panoramas 3K). Absentes : valeurs par défaut.",
       },
       source: { type: 'string', enum: ['auto', 'version', 'preparation'], description: '« auto » (défaut) : version enregistrée si elle existe, sinon 3D préparée.' },
       // VIS-16 : pack plaquette (catalogue commun des vues).

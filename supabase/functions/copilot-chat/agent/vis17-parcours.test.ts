@@ -97,7 +97,9 @@ Deno.test('VIS17-5 : studio_lancer_rendu — `qualite: "apercu"` acceptée (sans
   na.ok(ap.ok); na.deepEqual(ap.ok && ap.valeur, { vues: ['aerienne', 'sejour'], qualite: 'apercu' });
   const ko = validerOptionsRendu('image', { qualite: 'brouillon' });
   na.equal(ko.ok, false);
-  na.equal(validerOptionsRendu('film', { qualite: 'apercu' }).ok, false); // film : option inconnue, comme avant
+  // VIS-18b : le film a désormais son aperçu (migration 20261120080000) ; une valeur inconnue reste refusée.
+  na.equal(validerOptionsRendu('film', { qualite: 'apercu' }).ok, true);
+  na.equal(validerOptionsRendu('film', { qualite: 'brouillon' }).ok, false);
   na.equal(dureeAnnoncee('image', { vues: ['aerienne', 'sejour'], qualite: 'apercu' }), 'environ 20 min à 30 min une fois le rendu démarré (aperçu rapide en 1200 px, pour valider le cadrage et l’habillage avant le rendu final)');
   na.match(dureeAnnoncee('image', { vues: ['aerienne'] }), /20 à 60 min par vue/);
   na.match(resumeOptions('image', { vues: ['aerienne'], qualite: 'apercu' }), /aperçu rapide$/);

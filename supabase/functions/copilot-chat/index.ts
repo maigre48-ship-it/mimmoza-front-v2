@@ -71,6 +71,8 @@ import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
 // VIS-17 : parcours guidé (image / film / visite) — bloc « PARCOURS — FAIT FOI » relu à chaque message.
 import { blocParcoursServeur } from './agent/parcours-chat.ts';
+// VIS-18b : fond de l'image choisi dans l'étape 6 du parcours (instantané de l'écran), repris par le devis d'image.
+import { fondDuParcours } from '../../../src/lib/studio/parcours.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
   CONSIGNE_EXTENSION, DELAI_PATRIMOINE_MS, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
@@ -4792,6 +4794,8 @@ function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
     briefCarte: (brut.brief_carte ?? null) as EnvStudio['briefCarte'],
     // Lot formes-batiment : forme choisie dans la fiche « Espace 3D », relue dans le message REÇU (jamais par le modèle).
     formeCarte: (brut.forme_carte ?? null) as EnvStudio['formeCarte'],
+    // VIS-18b : fond choisi dans le parcours (instantané de l'écran du tour, relu défensivement ; jamais persisté).
+    fondParcours: (brut.fond_parcours ?? null) as EnvStudio['fondParcours'],
   };
 }
 
@@ -10499,7 +10503,7 @@ async function buildEtatMissionsBlock(conversationId: string, userId: string): P
 async function buildParcoursBlock(conversationId: string, userId: string, instantane: unknown, messageCourant: string): Promise<string> {
   try {
     const admin = getAdmin();
-    const [missions, preparations, travaux, messagesUtilisateur] = await Promise.all([
+    const [missions, preparations, travaux, messagesUtilisateur, temoins] = await Promise.all([
       admin.from('agent_missions').select('type, statut, criteres').eq('conversation_id', conversationId).eq('user_id', userId)
         .eq('type', 'conception').order('cree_le', { ascending: false }).limit(1),
       admin.from('studio_preparations').select('idu, resume').eq('conversation_id', conversationId).eq('user_id', userId)
@@ -10508,6 +10512,8 @@ async function buildParcoursBlock(conversationId: string, userId: string, instan
         .order('cree_le', { ascending: false }).limit(12),
       admin.from('copilot_messages').select('content').eq('conversation_id', conversationId).eq('role', 'user')
         .order('created_at', { ascending: false }).limit(60),
+      // VIS-18b : logement témoin personnalisé dans le Studio (VIS-18a) ; table absente (migration non appliquée) : ignorée.
+      admin.from('studio_temoins').select('temoin').eq('conversation_id', conversationId).eq('user_id', userId).maybeSingle(),
     ]);
     const { bloc } = blocParcoursServeur({
       instantane,
@@ -10517,6 +10523,7 @@ async function buildParcoursBlock(conversationId: string, userId: string, instan
       textesUtilisateur: !messagesUtilisateur.error && Array.isArray(messagesUtilisateur.data)
         ? (messagesUtilisateur.data as { content: unknown }[]).map((m) => extractText(m.content)).reverse() : [],
       messageCourant,
+      temoin: !temoins.error && temoins.data ? temoins.data : null,
     });
     return bloc;
   } catch (e) {
@@ -11900,6 +11907,8 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).brief_carte = briefDuMessage(payload.message);
     // Lot formes-batiment : même principe pour la forme choisie dans la fiche (bloc ```mimmoza-forme```).
     (effectiveContext as unknown as Record<string,unknown>).forme_carte = formeDuMessage(payload.message);
+    // VIS-18b : fond de l'image choisi dans le parcours (même principe : posé après l'instantané, jamais persisté).
+    (effectiveContext as unknown as Record<string,unknown>).fond_parcours = fondDuParcours(instantaneParcours);
     // LOT X3 : le parcours d'extension lit les réponses dans le message REÇU (même principe : jamais persisté).
     (effectiveContext as unknown as Record<string,unknown>).message_utilisateur = typeof payload.message === 'string' ? payload.message : '';
     // LOT G3 : première photo JPEG / PNG jointe à CE message (base64 du tour, ou référence de stockage du compte).

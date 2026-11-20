@@ -491,7 +491,8 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
   if (brut !== undefined && brut !== null && !estObj(brut)) return { ok: false, erreur: 'Options illisibles.' };
   const o = (brut ?? {}) as Obj;
   // VIS-17 : `qualite` (image) — « apercu » = rendu rapide de l'étape Aperçu du parcours ; absente ou « finale » : comme avant.
-  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique'] : type === 'visite360' ? ['ambiance', 'interieurs', 'resolution'] : ['vues', 'ambiance', 'livraison', 'qualite', ...CLES_FOND];
+  // VIS-18b : `qualite` aussi pour le film et la visite (aperçu = essai court / panoramas 3K ; migration 20261120080000).
+  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique', 'qualite'] : type === 'visite360' ? ['ambiance', 'interieurs', 'resolution', 'qualite'] : ['vues', 'ambiance', 'livraison', 'qualite', ...CLES_FOND];
   const inconnue = Object.keys(o).find((k) => !permises.includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
   if (type === 'image') {
@@ -525,6 +526,9 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
     const ambianceFinale = ambiance ?? (fondPhoto ? 'jour' : undefined);
     return { ok: true, valeur: { vues: VUES.filter((v) => (vues as unknown[]).includes(v)), ...(ambianceFinale !== undefined ? { ambiance: ambianceFinale } : {}), ...fond.valeur, ...(livraison && !apercu ? { livraison } : {}), ...(apercu ? { qualite: 'apercu' } : {}) } };
   }
+  // VIS-18b : aperçu du film / de la visite ; « finale » (ou absente) n'est pas recopiée : sortie IDENTIQUE à avant.
+  if (o.qualite !== undefined && o.qualite !== null && o.qualite !== 'finale' && o.qualite !== 'apercu') return { ok: false, erreur: 'Choisissez une définition : finale ou aperçu.' };
+  const apercuFV = o.qualite === 'apercu' ? { qualite: 'apercu' } : {};
   const ambiance = o.ambiance ?? 'jour';
   if (!AMBIANCES.includes(ambiance as string)) return { ok: false, erreur: 'Choisissez une ambiance : journée, fin de journée ou nuit.' };
   const interieurs = o.interieurs ?? true;
@@ -536,11 +540,11 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
     if (format !== '16:9' && format !== '9:16') return { ok: false, erreur: 'Le format doit être paysage (16:9) ou vertical (9:16).' };
     const musique = o.musique ?? true;
     if (typeof musique !== 'boolean') return { ok: false, erreur: 'Indiquez si le film a une musique.' };
-    return { ok: true, valeur: { duree_s: duree, ambiance, format, interieurs, musique } };
+    return { ok: true, valeur: { duree_s: duree, ambiance, format, interieurs, musique, ...apercuFV } };
   }
   const resolution = o.resolution ?? '6k';
   if (resolution !== '6k' && resolution !== '8k') return { ok: false, erreur: 'La qualité doit être 6K ou 8K.' };
-  return { ok: true, valeur: { ambiance, interieurs, resolution } };
+  return { ok: true, valeur: { ambiance, interieurs, resolution, ...apercuFV } };
 }
 
 // LOT P2 : « Image du projet » — le résultat peut être une image d'étude ou une image insérée dans une photo de rue.
@@ -564,6 +568,12 @@ export function dureeAnnoncee(type: TypeRendu, options: Obj, extension = false):
     const max = vues.length ? Math.round(17 + vues.reduce((s, v) => s + 60 * f(v)[1], 0)) : 17 + 60 * n;
     return `environ ${h(min)} à ${h(max)} une fois le rendu démarré (préparation, aperçu de contrôle, puis 20 à 60 min par vue, jusqu’au double pour une vue décentrée ou aérienne rendue plus grande)`;
   }
+  // VIS-18b : aperçu du film (essai court du worker, délai d'essai 1 h 30) / de la visite (panoramas 3K, rendu rapide).
+  if (options.qualite === 'apercu') {
+    return type === 'film'
+      ? 'environ 30 min à 1 h 30 une fois le rendu démarré (préparation de la maquette, puis film court de contrôle en basse définition : 1,5 s par plan, sans musique)'
+      : 'environ 30 min à 2 h une fois le rendu démarré (préparation de la maquette, puis panoramas en basse définition 3K)';
+  }
   return type === 'film'
     ? 'plusieurs heures possibles une fois le rendu démarré (aucune estimation fiable ; arrêt automatique au-delà de 12 h de rendu, 18 h au total)'
     : 'plusieurs heures possibles une fois le rendu démarré (aucune estimation fiable ; arrêt automatique au-delà de 6 h de rendu, 18 h au total)';
@@ -577,8 +587,10 @@ export function resumeOptions(type: TypeRendu, o: Obj): string {
     return `${(o.vues as string[]).map((v) => (estVueCatalogue(v) ? libelleCourtVue(v) : v)).join(', ')} · ${o.ambiance !== undefined ? amb[String(o.ambiance)] : 'lumière du brief projet (sinon en journée)'}` +
       (fond !== 'etude' ? ` · fond : ${LIBELLES_FOND[fond].toLowerCase()}` : '') + (o.calage_client ? ' · placement ajusté' : '') + (o.qualite === 'apercu' ? ' · aperçu rapide' : '');
   }
-  if (type === 'film') return [`${String(o.duree_s)} s`, amb[String(o.ambiance)], o.format === '9:16' ? 'vertical' : 'paysage', o.interieurs ? 'intérieurs' : null, o.musique ? 'musique' : null].filter(Boolean).join(' · ');
-  return [amb[String(o.ambiance)], String(o.resolution).toUpperCase(), o.interieurs ? 'intérieurs' : null].filter(Boolean).join(' · ');
+  // VIS-18b : « · aperçu » en fin de résumé (film / visite) ; finale : résumé inchangé.
+  const ap = o.qualite === 'apercu';
+  if (type === 'film') return [`${String(o.duree_s)} s`, amb[String(o.ambiance)], o.format === '9:16' ? 'vertical' : 'paysage', o.interieurs ? 'intérieurs' : null, o.musique ? 'musique' : null, ap ? 'aperçu (film court basse définition, sans musique)' : null].filter(Boolean).join(' · ');
+  return [amb[String(o.ambiance)], ap ? 'aperçu 3K' : String(o.resolution).toUpperCase(), o.interieurs ? 'intérieurs' : null].filter(Boolean).join(' · ');
 }
 
 // ── Brief d'habillage (E1-brief) ───────────────────────────────────────────
@@ -1415,6 +1427,12 @@ export interface EnvStudio {
    */
   briefCarte?: Validation<BriefCarte> | null;
   /**
+   * VIS-18b — fond de l'image choisi dans l'étape 6 du parcours (instantané de l'écran, relu par index.ts avec
+   * `fondDuParcours`, jamais par le modèle) : repris par le devis d'une IMAGE quand ni la carte ni la demande ne fixent
+   * de fond ; revalidé avec le compte (dossier de la photo) par validerOptionsRendu, comme tout fond.
+   */
+  fondParcours?: OptionsFond | null;
+  /**
    * Lot formes-batiment : forme choisie dans la fiche « Espace 3D » (bloc ```mimmoza-forme``` du message REÇU,
    * relu par index.ts avec formeDuMessage), jamais fournie par le modèle. Prioritaire sur `input.forme`.
    */
@@ -1884,6 +1902,11 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   let optionsDemandees: unknown = type === 'image' && carte?.ok && carte.valeur.fond
     ? { ...Object.fromEntries(Object.entries(estObj(input.options) ? input.options : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), ...carte.valeur.fond }
     : input.options;
+  // VIS-18b : fond choisi dans le parcours (étape 6) — priorité : carte du devis > fond écrit dans la demande > parcours.
+  // Un fond « étude » écrit par le modèle (souvent recopié d'un devis précédent) ne masque pas le choix du parcours.
+  const fondDuParcoursRetenu = type === 'image' && !(carte?.ok && carte.valeur.fond) && (!fondExplicite(input.options) || fondDe(input.options as Obj) === 'etude') && env.fondParcours
+    && fondDe(env.fondParcours) !== 'etude' ? env.fondParcours : null;
+  if (fondDuParcoursRetenu) optionsDemandees = { ...(estObj(optionsDemandees) ? optionsDemandees : {}), ...fondDuParcoursRetenu };
   // VIS-04 — brief projet : bloc du message reçu, sinon le dernier envoyé dans la conversation (jamais du modèle).
   let briefProjet: ChampsContratBrief | null = carte?.ok && carte.valeur.projet ? carte.valeur.projet : null;
   if (!briefProjet && env.conversationId) briefProjet = (await projetDuFil(env.depot, uid, env.conversationId))?.projet ?? null;
@@ -1912,14 +1935,28 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       if (r.vues.length) optionsDemandees = { ...(estObj(optionsDemandees) ? optionsDemandees : {}), vues: r.vues.slice(0, MAX_VUES_PAR_IMAGE) };
     }
   }
-  const opts0 = validerOptionsRendu(type, optionsDemandees, uid);
-  if (!opts0.ok) return erreur(`${opts0.erreur} RIEN N’A ÉTÉ LANCÉ.`);
+  let opts0 = validerOptionsRendu(type, optionsDemandees, uid);
+  // VIS-18b : un fond du parcours illisible pour ce compte (photo d'un autre dossier…) n'empêche jamais le devis : étude.
+  const sansFondParcours = (raison: string): boolean => {
+    if (!fondDuParcoursRetenu) return false;
+    const o = Object.fromEntries(Object.entries(estObj(optionsDemandees) ? optionsDemandees : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k)));
+    const v = validerOptionsRendu(type, o, uid);
+    if (!v.ok) return false;
+    opts0 = v;
+    optionsDemandees = o; // la suite (ambiance du brief, lancement) part des options SANS ce fond
+    notesVues.push(`Fond choisi dans le parcours (${LIBELLES_FOND[fondDe(fondDuParcoursRetenu)].toLowerCase()}) non retenu : ${raison} — image d’étude.`);
+    return true;
+  };
+  if (!opts0.ok && !sansFondParcours('options du fond illisibles')) return erreur(`${'erreur' in opts0 ? opts0.erreur : ''} RIEN N’A ÉTÉ LANCÉ.`);
+  if (!opts0.ok) return erreur(`${'erreur' in opts0 ? opts0.erreur : ''} RIEN N’A ÉTÉ LANCÉ.`);
   // VIS-16 : ce qui sera chiffré une fois l'habillage choisi (dit dans la carte d'action du chat et au modèle).
   const prevu: PrevuRendu | null = type === 'image' && Array.isArray(opts0.valeur.vues)
     ? { vues: opts0.valeur.vues as string[], duree: dureeAnnoncee(type, opts0.valeur), pack: packPlaquette && !(briefProjet?.rendu?.vues?.length) }
     : null;
   if (type === 'image') {
-    const autorise = await env.depot.typeRenduAutorise('image', opts0.valeur);
+    let autorise = await env.depot.typeRenduAutorise('image', opts0.valeur);
+    if (autorise === false && fondPhoto(opts0.valeur) && sansFondParcours('image sur photo non ouverte pour ce compte') && opts0.ok) autorise = await env.depot.typeRenduAutorise('image', opts0.valeur);
+    if (!opts0.ok) return erreur(`${'erreur' in opts0 ? opts0.erreur : ''} RIEN N’A ÉTÉ LANCÉ.`);
     if (autorise === false) return fondPhoto(opts0.valeur) ? refusFondPhoto() : refusImage();
   }
   // LOT G10b — maison neuve placée dans le parcours (dernier parcours de la conversation) : devis de SON image.
@@ -1942,7 +1979,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   }
   const src = await resoudreSource(entreeSource, env);
   if (!src.ok) return src.res;
-  if (type === 'image' && fondPhoto(opts0.valeur) && src.source.genre !== 'preparation') {
+  if (type === 'image' && fondPhoto(opts0.valeur) && src.source.genre !== 'preparation' && !sansFondParcours('l’image sur photo part de la 3D préparée par Mimmo')) {
     return erreur('L’image sur une photo de rue ne se fait pour l’instant qu’à partir de la 3D préparée par Mimmo (la fiche d’une version enregistrée ne transmet pas la façade sur voie). RIEN N’A ÉTÉ LANCÉ. Propose l’image d’étude, ou la 3D préparée (source « preparation »).');
   }
   // LOT X9 — image d'EXTENSION : jamais d'image de synthèse. Photo de la rue si elle existe, photo de l'utilisateur

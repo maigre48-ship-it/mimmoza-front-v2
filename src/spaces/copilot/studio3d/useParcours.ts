@@ -16,6 +16,9 @@ import { parcelId } from './parcelFromGps';
 import { assemblerSourcesEcran, instantaneDepuisSources, type MissionEcran } from './parcoursEcran';
 import { lireMemoireParcours, majMemoireParcours, PARCOURS_EVENT, publierInstantaneParcours } from './parcours.store';
 import type { SourcesParcours } from '@/lib/studio/parcours';
+// VIS-18a / VIS-18b : logement témoin personnalisé dans le Studio (copie locale immédiate, puis base studio_temoins).
+import { supabase } from '@/lib/supabaseClient';
+import { etatTemoinConversation, EVENEMENT_TEMOIN_STUDIO, lireTemoinLocal, lireTemoinPersonnalise, type ClientTemoins, type EtatTemoinParcours } from './temoinStudio';
 
 export interface EtatParcoursEcran {
   parcours: Parcours;
@@ -28,12 +31,14 @@ export interface EtatParcoursEcran {
 
 function briefDe(conversationId: string | null): BriefProjet | null {
   if (!conversationId) return null;
-  try { return champsBriefDeLaConversation(conversationId)?.brief ?? null; } catch { return null; }
+  // VIS-18b : seul le brief d'une ÉTUDE compte ici (le petit réglage gamme / cible est lu dans la mémoire du parcours).
+  try { const r = champsBriefDeLaConversation(conversationId); return r && r.etude ? r.brief : null; } catch { return null; }
 }
 
 export function useParcours(messages: readonly ChatMessage[], conversationId: string | null, actif = true): EtatParcoursEcran {
   const [missions, setMissions] = useState<MissionEcran[]>([]);
   const [travaux, setTravaux] = useState<unknown[]>([]);
+  const [temoin, setTemoin] = useState<EtatTemoinParcours | null>(null);
   const [jeton, setJeton] = useState(0);
   const rafraichir = useCallback(() => setJeton((j) => j + 1), []);
   const enCours = messages.some((m) => m.status === 'streaming');
@@ -45,6 +50,15 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
     let vivant = true;
     void listerMissions(30).then((l) => { if (vivant) setMissions(l.filter((m) => m.conversation_id === conversationId) as MissionEcran[]); }).catch(() => undefined);
     void listerTravaux(conversationId, 12).then((r) => { if (vivant) setTravaux(r.disponible ? r.valeur : []); }).catch(() => undefined);
+    // VIS-18a : témoin du Studio — copie locale d'abord (immédiat), puis la base (la plus récente l'emporte).
+    void (async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data.user?.id;
+      if (!uid || !vivant) return;
+      setTemoin(lireTemoinPersonnalise({ local: lireTemoinLocal(uid, conversationId) }));
+      const etat = await etatTemoinConversation(supabase as unknown as ClientTemoins, uid, conversationId);
+      if (vivant) setTemoin(etat);
+    })().catch(() => undefined);
     return () => { vivant = false; };
   }, [actif, conversationId, enCours, nbTermines, jeton]);
 
@@ -61,7 +75,8 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
     const maj = () => rafraichir();
     window.addEventListener(BRIEF_PROJET_EVENT, maj);
     window.addEventListener(PARCOURS_EVENT, maj);
-    return () => { window.removeEventListener(BRIEF_PROJET_EVENT, maj); window.removeEventListener(PARCOURS_EVENT, maj); };
+    window.addEventListener(EVENEMENT_TEMOIN_STUDIO, maj);
+    return () => { window.removeEventListener(BRIEF_PROJET_EVENT, maj); window.removeEventListener(PARCOURS_EVENT, maj); window.removeEventListener(EVENEMENT_TEMOIN_STUDIO, maj); };
   }, [rafraichir]);
 
   const memoire = useMemo(() => lireMemoireParcours(conversationId), [conversationId, jeton]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -75,10 +90,11 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
 
   const sources = useMemo(() => assemblerSourcesEcran({
     messages: messages as never, conversationId, typeChoisi: memoire.type, missions, travaux, parcelle, brief, film: memoire.film, visite: memoire.visite,
-  }), [messages, conversationId, memoire, missions, travaux, parcelle, brief]);
+    fond: memoire.fond ?? null, projet: memoire.projet ?? null, temoinStudio: temoin,
+  }), [messages, conversationId, memoire, missions, travaux, parcelle, brief, temoin]);
   const parcours = useMemo(() => calculerParcours(sources), [sources]);
 
-  useEffect(() => { publierInstantaneParcours(conversationId, instantaneDepuisSources(sources, memoire.type)); }, [conversationId, sources, memoire.type]);
+  useEffect(() => { publierInstantaneParcours(conversationId, instantaneDepuisSources(sources, memoire.type, memoire.fond ?? null)); }, [conversationId, sources, memoire.type, memoire.fond]);
 
   const choisirType = useCallback((t: TypeParcours) => majMemoireParcours(conversationId, { type: t }), [conversationId]);
   return { parcours, sources, typeChoisi: memoire.type, choisirType, rafraichir };

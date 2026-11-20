@@ -16,6 +16,7 @@ import {
   apercuValideDesMessages, lireBlocParcours, sourcesVides, programmeDesCriteres, terrainDesCriteres, travailParcours, typeParcoursDesMessages,
   type InstantaneParcours, type ReglagesFilm, type ReglagesVisite, type SourcesParcours, type TravailParcours, type TypeParcours,
 } from '../../../lib/studio/parcours.ts';
+import { fondDe, type OptionsFond } from '../../../lib/studio/fondImage.ts';
 import { dernierePreparation, lignesCarte, type MessageOutils } from './preparationStudio.ts';
 import { briefCourant, demandeEnCours, recapitulatif } from './briefCreatif.ts';
 import { latestJarvisDraft } from './jarvisDraft.ts';
@@ -36,6 +37,12 @@ export interface EntreeEcran {
   brief: BriefProjet | null;
   film: ReglagesFilm | null;
   visite: ReglagesVisite | null;
+  /** VIS-18b — fond de l'image mémorisé (étape 6 / carte du devis) ; prime sur celui du dernier devis. */
+  fond?: OptionsFond | null;
+  /** VIS-18b — gamme / cible du petit réglage (utilisées seulement SANS étude rattachée). */
+  projet?: { gamme: string | null; cible: string | null } | null;
+  /** VIS-18a — logement témoin personnalisé dans le Studio (temoinStudio.ts : lireTemoinPersonnalise / etatTemoinConversation). */
+  temoinStudio?: { fait: boolean; resume: string | null } | null;
 }
 
 const ROLES_HABILLAGE = ['facade', 'menuiseries', 'garde_corps', 'soubassement', 'toiture'];
@@ -82,16 +89,29 @@ export function assemblerSourcesEcran(e: EntreeEcran): SourcesParcours {
       ? { pret: true, resume: lignes.length ? lignes.join(' · ') : '3D préparée par Mimmo.' }
       : ficheDimensionnee ? { pret: true, resume: `Projet décrit : ${fiche!.dimensions}` } : { pret: false, resume: null },
     habillage: { resume: habillage, attenduParMimmo: !!demandeEnCours(e.messages) },
-    interieurs: { gamme: e.brief?.gamme ?? null, typologie: typologieTemoin(e.brief) },
+    interieurs: interieursDe(e),
     rendu: {
       vues: [...vues], vuesChoisies: vues.length > 0,
       ambiance: e.brief?.rendu.ambiance ?? null, saison: e.brief?.rendu.saison ?? null,
-      fond: fondDuDernierDevis(e.messages), etudeRattachee: !!e.brief,
+      fond: e.fond ? fondDe(e.fond) : fondDuDernierDevis(e.messages), etudeRattachee: !!e.brief,
     },
     film: e.film, visite: e.visite,
+    temoinStudio: e.temoinStudio ? { fait: e.temoinStudio.fait, resume: e.temoinStudio.resume } : null,
     travaux,
     apercuValide: apercuValideDesMessages(textesUtilisateur),
   };
+}
+
+/** VIS-18b — gamme / cible : celles de l'étude rattachée, sinon celles du petit réglage du parcours (dit). */
+function interieursDe(e: EntreeEcran): SourcesParcours['interieurs'] {
+  const typologie = typologieTemoin(e.brief);
+  if (e.brief) {
+    // Étude : libellés de l'étude (origine non dite, comme avant) ; la cible s'ajoute seulement si elle existe.
+    return { gamme: e.brief.gamme ?? null, typologie, ...(e.brief.cible ? { cible: e.brief.cible } : {}) };
+  }
+  const p = e.projet;
+  if (!p || (!p.gamme && !p.cible)) return { gamme: null, typologie };
+  return { gamme: p.gamme, typologie, ...(p.cible ? { cible: p.cible } : {}), origine: 'conversation' };
 }
 
 /** Fond de l'image du dernier devis d'image du fil (« etude », « photo_rue », « photo_client »), lu, jamais deviné. */
@@ -107,12 +127,13 @@ function fondDuDernierDevis(messages: readonly MessageEcran[]): string | null {
 }
 
 /** Part de l'état que seul l'écran connaît, envoyée au serveur avec chaque message (context.parcours). */
-export function instantaneDepuisSources(s: SourcesParcours, typeChoisi: TypeParcours | null): InstantaneParcours {
+export function instantaneDepuisSources(s: SourcesParcours, typeChoisi: TypeParcours | null, fond: OptionsFond | null = null): InstantaneParcours {
   return {
     type: typeChoisi,
     habillage: s.habillage.resume,
     interieurs: { ...s.interieurs },
-    rendu: { vues: [...s.rendu.vues], vuesChoisies: s.rendu.vuesChoisies, ambiance: s.rendu.ambiance, saison: s.rendu.saison, etudeRattachee: s.rendu.etudeRattachee },
+    // VIS-18b : le fond mémorisé (options complètes) part avec le message : le devis d'image du chat le reprend.
+    rendu: { vues: [...s.rendu.vues], vuesChoisies: s.rendu.vuesChoisies, ambiance: s.rendu.ambiance, saison: s.rendu.saison, etudeRattachee: s.rendu.etudeRattachee, ...(fond ? { fond } : {}) },
     film: s.film, visite: s.visite,
   };
 }

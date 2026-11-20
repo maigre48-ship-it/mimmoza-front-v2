@@ -28,7 +28,11 @@ import { CarteParcours, type ActionnerParcours } from '../studio3d/ParcoursGuide
 import { ancreCarteParcours } from '../studio3d/parcoursEcran';
 import type { CommandeParcours } from '../studio3d/JarvisDraftPanel';
 import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from '../studio3d/parcours.store';
+// VIS-18a / VIS-18b : clic d'une étape → Studio déjà ouvert (pont « ouvrir-étape » avec accusé).
+import { EVENEMENT_OUVRIR_ETAPE_STUDIO, type DetailOuvrirEtape } from '../studio3d/pontParcoursSite';
 import { messageValidationApercu } from '@/lib/studio/parcours';
+// VIS-18b : étapes de personnalisation qu'un Studio déjà ouvert peut prendre en charge.
+const ETAPES_VERS_STUDIO: ReadonlySet<string> = new Set(['volume', 'style', 'interieurs', 'vues', 'scenario', 'pieces']);
 
 /** Fenêtre « Espace 3D » : ouverte, agrandie, réduite en bande sur le côté, ou fermée. */
 type EtatFenetre3D = 'ouvert' | 'large' | 'reduit' | 'ferme';
@@ -218,7 +222,7 @@ export function CopilotChat({
     montrerPanneau3D();
     setCommandeParcours((p) => ({ cible, type: parcoursEcran.parcours.type, jeton: (p?.jeton ?? 0) + 1, conversation: currentConversationId ?? null }));
   };
-  const actionnerParcours: ActionnerParcours = (_etape, action) => {
+  const actionHabituelle: ActionnerParcours = (_etape, action) => {
     setNoticeParcours(null);
     if (action.cible === 'chat') { if (action.message) handleSend(action.message); return; }
     if (action.cible === 'habillage') { ouvrirHabillage(null); return; }
@@ -232,6 +236,17 @@ export function CopilotChat({
       return;
     }
     commanderPanneau(action.cible);
+  };
+  // VIS-18a / VIS-18b : Studio déjà ouvert → il passe sur l'étape (accusé) ; aucun Studio (« absent ») → action habituelle.
+  // Seulement pour les étapes de PERSONNALISATION (volume, style, intérieurs, vues / scénario / pièces) : terrain et
+  // conception passent par Mimmo, aperçu et rendu final par le site (seul à lancer et valider les rendus).
+  const actionnerParcours: ActionnerParcours = (etape, action) => {
+    if (!ETAPES_VERS_STUDIO.has(etape.cle) || action.cible === 'studio-interieur' || action.cible === 'studio-batiment') { actionHabituelle(etape, action); return; }
+    const detail: DetailOuvrirEtape = { cle: etape.cle, type: parcoursEcran.parcours.type, repondre: (issue) => {
+      if (issue.etat === 'absent') actionHabituelle(etape, action); else setNoticeParcours(issue.message || null);
+    } };
+    window.dispatchEvent(new CustomEvent(EVENEMENT_OUVRIR_ETAPE_STUDIO, { detail }));
+    if (!detail.prise) actionHabituelle(etape, action); // page sans MimmozIAPage
   };
   const validerApercu = (travailId: string) => handleSend(messageValidationApercu(travailId, parcoursEcran.parcours.type));
   const commandeConversation = commandeParcours && commandeParcours.conversation === (currentConversationId ?? null) ? commandeParcours : null;

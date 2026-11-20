@@ -21,7 +21,7 @@ import type { ConfirmedTerrain } from './terrainCadastre';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
 import { avecProchaineRevision, preparerChargeVoirEn3D } from './chargeVoirEn3D';
 import {
-  AMBIANCES_IMAGE, annulerTravail, construireTravail, creerTravail, dateCourte, dureeEstimeeImage, estActif, LIBELLES_AMBIANCE, LIBELLES_TYPE,
+  AMBIANCES_IMAGE, annulerTravail, construireTravail, creerTravail, dateCourte, dureeEstimeeApercu, dureeEstimeeImage, estActif, LIBELLES_AMBIANCE, LIBELLES_TYPE,
   LIBELLES_QUALITE_IMAGE, LIBELLES_VUE, libelleStatut, lienVisite, listerTravaux, MENTION_MACHINE_RENDU, optionsParDefaut, phraseElementsOmis,
   phraseSuivi, QUALITES_IMAGE, resumeOptions, suivreTravail, urlSigneeRendu, VUES_IMAGE,
   type Ambiance, type AmbianceImage, type OptionsFilm, type OptionsImage, type OptionsVisite, type QualiteImage, type ResultatFilm,
@@ -42,6 +42,8 @@ import type { ReglagesFilm, ReglagesVisite } from '@/lib/studio/parcours';
 
 /** VIS-17 — commande d'une étape du parcours : ouvrir une feuille (et sa définition) ou montrer les rendus réalisés. */
 export interface CommandeRendu { feuille: TypeTravail | null; qualite?: QualiteImage; jeton: number }
+/** VIS-18b — rendu d'aperçu (image, film ou visite) : `options.qualite` (l'image le porte aussi dans son résultat). */
+const estApercu = (t: TravailStudio): boolean => (t.options as { qualite?: unknown } | null)?.qualite === 'apercu';
 const reglagesFilm = (f: OptionsFilm): ReglagesFilm => ({ duree_s: f.duree_s, format: f.format, musique: f.musique, interieurs: f.interieurs, ambiance: f.ambiance });
 const reglagesVisite = (v: OptionsVisite): ReglagesVisite => ({ interieurs: v.interieurs, resolution: v.resolution, ambiance: v.ambiance });
 
@@ -85,6 +87,9 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   // VIS-17 : réglages film / visite repris de la mémoire du parcours (personnalisation gardée d'une visite à l'autre).
   const [film, setFilm] = useState<OptionsFilm>(() => ({ ...optionsParDefaut('film'), ...(lireMemoireParcours(conversationId).film as Partial<OptionsFilm> | null ?? {}) }));
   const [visite, setVisite] = useState<OptionsVisite>(() => ({ ...optionsParDefaut('visite360'), ...(lireMemoireParcours(conversationId).visite as Partial<OptionsVisite> | null ?? {}) }));
+  // VIS-18b : définition du film / de la visite (aperçu court basse définition ou finale) — jamais mémorisée : chaque
+  // lancement la choisit (l'étape 7 ouvre la feuille en « aperçu », l'étape 8 en « finale »).
+  const [definitionFV, setDefinitionFV] = useState<QualiteImage>('finale');
   const changerFilm = (maj: Partial<OptionsFilm>) => { const n = { ...film, ...maj }; setFilm(n); majMemoireParcours(conversationId, { film: reglagesFilm(n) }); };
   const changerVisite = (maj: Partial<OptionsVisite>) => { const n = { ...visite, ...maj }; setVisite(n); majMemoireParcours(conversationId, { visite: reglagesVisite(n) }); };
   const racine = useRef<HTMLElement | null>(null);
@@ -96,7 +101,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   const [lancement, setLancement] = useState(false);
   const [message, setMessage] = useState('');
   const [annonce, setAnnonce] = useState<TravailStudio | null>(null);
-  const [lecteur, setLecteur] = useState<{ id: string; url: string; poster: string | null } | null>(null);
+  const [lecteur, setLecteur] = useState<{ id: string; url: string; poster: string | null; apercu?: boolean } | null>(null);
   const [copie, setCopie] = useState<string | null>(null);
   const suivis = useRef(new Map<string, () => void>());
 
@@ -144,6 +149,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
     if (commande.feuille) {
       ouvrirFeuille(commande.feuille);
       if (commande.feuille === 'image' && commande.qualite) setImage(o => ({ ...o, qualite: commande.qualite! }));
+      // VIS-18b : film / visite — l'étape 7 ouvre la feuille en aperçu, l'étape 8 en finale.
+      if (commande.feuille !== 'image') setDefinitionFV(commande.qualite ?? 'finale');
     } else setFeuille(null);
     racine.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,7 +172,9 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
       const optionsImage: OptionsImage = ambianceChoisie ? image : (({ ambiance: _a, ...reste }) => reste)(image);
       if (feuille === 'film') majMemoireParcours(conversationId, { film: reglagesFilm(film) });
       if (feuille === 'visite360') majMemoireParcours(conversationId, { visite: reglagesVisite(visite) });
-      const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? film : feuille === 'image' ? optionsImage : visite);
+      // VIS-18b : `qualite: "apercu"` seulement pour un aperçu (finale : options identiques à avant).
+      const apercuFV = definitionFV === 'apercu' ? { qualite: 'apercu' as const } : {};
+      const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? { ...film, ...apercuFV } : feuille === 'image' ? optionsImage : { ...visite, ...apercuFV });
       if (!travail.ok) { setMessage(travail.erreur); return; }
       const r = await creerTravail(travail.valeur);
       if (!r.disponible) { setDisponible(false); setFeuille(null); return; }
@@ -196,7 +205,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
         urlSigneeRendu(r.video_path),
         r.poster_path ? urlSigneeRendu(r.poster_path).catch(() => null) : Promise.resolve(null),
       ]);
-      setLecteur({ id: t.id, url, poster });
+      setLecteur({ id: t.id, url, poster, apercu: estApercu(t) });
       setAnnonce(null);
     } catch (erreur) {
       setMessage(erreur instanceof Error ? erreur.message : 'Le film n’est pas accessible.');
@@ -334,8 +343,15 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
               onChange={v => (feuille === 'film' ? changerFilm({ ambiance: v }) : changerVisite({ ambiance: v }))} />}
           {feuille === 'film' && <Choix titre="Format" valeur={film.format} options={[['16:9', 'Paysage'], ['9:16', 'Vertical (téléphone)']]}
             onChange={v => changerFilm({ format: v })} />}
-          {feuille === 'visite360' && <Choix titre="Qualité" valeur={visite.resolution} options={[['6k', 'Haute'], ['8k', 'Très haute (plus long)']]}
+          {feuille === 'visite360' && definitionFV === 'finale' && <Choix titre="Qualité" valeur={visite.resolution} options={[['6k', 'Haute'], ['8k', 'Très haute (plus long)']]}
             onChange={v => changerVisite({ resolution: v })} />}
+          {/* VIS-18b : aperçu du film (court, basse définition, mêmes plans) / de la visite (panoramas basse définition). */}
+          {feuille !== 'image' && <Choix titre="Définition" valeur={definitionFV}
+            options={[['apercu', feuille === 'film' ? 'Aperçu (film court, basse définition)' : 'Aperçu (panoramas basse définition)'], ['finale', feuille === 'film' ? 'Film final' : 'Visite finale']] as [QualiteImage, string][]}
+            onChange={setDefinitionFV} />}
+          {feuille !== 'image' && definitionFV === 'apercu' && <p className="mzia-rendu__estimation" role="note">
+            Durée estimée : {dureeEstimeeApercu(feuille)}. {feuille === 'film' ? 'Mêmes plans que le film final, 1,5 s par plan, sans musique ni format vertical' : 'Mêmes points de vue que la visite finale'} : de quoi vérifier avant le rendu final.
+          </p>}
           {feuille === 'image' && <Choix titre="Définition" valeur={image.qualite}
             options={QUALITES_IMAGE.map(q => [q, LIBELLES_QUALITE_IMAGE[q]] as [QualiteImage, string])}
             onChange={v => setImage(o => ({ ...o, qualite: v }))} />}
@@ -379,6 +395,10 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
         <video src={lecteur.url} poster={lecteur.poster ?? undefined} controls autoPlay playsInline preload="metadata" />
         <div><a className="mzia-rendu__bouton" href={lecteur.url} download target="_blank" rel="noreferrer">Télécharger</a>
           <button type="button" onClick={() => setLecteur(null)}>Fermer le lecteur</button></div>
+        {/* VIS-18b : étape 7 du parcours Film — l'aperçu regardé se valide ici (message dans la conversation). */}
+        {lecteur.apercu && onValiderApercu && (apercuValide === lecteur.id
+          ? <p className="mzia-rendu__estimation" role="status"><Check size={13} /> Aperçu validé : passez au film final.</p>
+          : <p className="mzia-rendu__estimation">C’est bon ? <button type="button" className="is-primaire" onClick={() => onValiderApercu(lecteur.id)}>Valider cet aperçu</button> — sinon, corrigez l’étape voulue (style, scénario…) et relancez un aperçu.</p>)}
       </div>}
 
       {visionneuse && <div className="mzia-rendu__lecteur mzia-rendu__images">
@@ -408,7 +428,10 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
             return <li key={t.id}>
               <div className="mzia-rendu__ligne">
                 <span><b>{LIBELLES_TYPE[t.type]}</b> · {resumeOptions(t.type, t.options)}<br /><small>{dateCourte(t.cree_le)} — {libelleStatut(t.statut)}</small></span>
-                {t.statut === 'termine' && t.type === 'film' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirFilm(t)}><Play size={13} /> Voir le film</button>}
+                {t.statut === 'termine' && t.type === 'film' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirFilm(t)}><Play size={13} /> {estApercu(t) ? 'Voir l’aperçu' : 'Voir le film'}</button>}
+                {/* VIS-18b : aperçu de film / de visite — validation (étape 7), comme l'aperçu d'image. */}
+                {t.statut === 'termine' && t.type !== 'image' && estApercu(t) && onValiderApercu && apercuValide !== t.id
+                  && <button type="button" onClick={() => onValiderApercu(t.id)}>Valider cet aperçu</button>}
                 {t.statut === 'termine' && t.type === 'image' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirImage(t)}><IconeImage size={13} /> {(t.resultat as ResultatImage).qualite === 'apercu' ? 'Voir l’aperçu' : 'Voir l’image'}</button>}
                 {t.statut === 'termine' && t.type === 'image' && (t.resultat as ResultatImage | null)?.qualite === 'apercu' && onValiderApercu && apercuValide !== t.id
                   && <button type="button" onClick={() => onValiderApercu(t.id)}>Valider l’aperçu</button>}

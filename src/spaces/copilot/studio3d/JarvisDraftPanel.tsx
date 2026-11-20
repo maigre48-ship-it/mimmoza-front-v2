@@ -30,6 +30,8 @@ import { limitesDossier } from './briefCreatif';
 // VIS-17 — parcours guidé en tête du panneau ; les étapes ouvrent les outils existants (fiche, habillage, brief relié
 // au rendu, feuille « Film, visite 360° ou image »).
 import { ParcoursPanneau, type ActionnerParcours } from './ParcoursGuide';
+// VIS-18b : petits réglages dans les étapes (cible, gamme sans étude ; fond de l'image).
+import { reglageDeLEtape } from './ReglagesParcours';
 import type { CibleParcours, Parcours, TypeParcours } from '@/lib/studio/parcours';
 import type { CommandeRendu } from './FilmVisitePanel';
 import { ouverturePreparation } from './preparationStudio';
@@ -191,15 +193,17 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
       case 'feuille-image': versRendu('image'); break;
       case 'feuille-film': versRendu('film'); break;
       case 'feuille-visite': versRendu('visite360'); break;
-      case 'apercu': versRendu('image', 'apercu'); break;
-      case 'final': versRendu(FEUILLE_DU_TYPE[c.type], c.type === 'image' ? 'finale' : undefined); break;
+      // VIS-18b : l'aperçu du MÊME type (image rapide, film court, panoramas basse définition).
+      case 'apercu': versRendu(FEUILLE_DU_TYPE[c.type], 'apercu'); break;
+      case 'final': versRendu(FEUILLE_DU_TYPE[c.type], 'finale'); break;
       case 'resultats': versRendu(null); break;
       default: break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jetonParcours]);
   const parcoursUi = parcours && onParcours ? <div ref={refParcours}>
-    <ParcoursPanneau parcours={parcours} onAction={onParcours} onType={onTypeParcours} />
+    <ParcoursPanneau parcours={parcours} onAction={onParcours} onType={onTypeParcours}
+      reglage={(e) => reglageDeLEtape(e, { conversationId, messages: messages as never, onSend })} />
     {(noteParcours || noticeParcours) && <p role="status" className="jarvis-dossier__proposal">{noteParcours ?? noticeParcours}</p>}
     {reglagesOuverts && etude && <div ref={refReglages} style={{ margin: '0 0 12px' }}>
       <BriefProjetRenduSection studyId={etude} source="parcours" />

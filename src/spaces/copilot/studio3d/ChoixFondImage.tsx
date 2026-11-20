@@ -20,6 +20,10 @@ import { catalogueVues, estVueCatalogue, LIBELLES_GROUPE_VUE, MAX_VUES_PAR_IMAGE
 import { lirePronosticDevis } from './choixFond';
 import { CLES_FOND } from '@/lib/studio/fondImage';
 import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
+// VIS-18b : le fond choisi ici est aussi MÉMORISÉ dans le parcours (étape 6 « Vues & ambiance »), et inversement.
+import { majMemoireParcours, patcherInstantaneFond } from './parcours.store';
+import { fondDuChoix } from './reglagesParcoursLogique';
+import type { OptionsFond } from '@/lib/studio/fondImage';
 
 /** Options du devis présenté (vues, fond) — lues dans la sortie de l'outil, jamais devinées. */
 function optionsDuDevis(call: { output?: unknown }): Record<string, unknown> | null {
@@ -90,10 +94,16 @@ export function ChoixFondImage({ call, demande, messageId, onSend }: {
     onSend(texte);
     setEnvoye(libelle);
   };
-  const choisirRue = () => envoyer(messageFond(demande, { fond: 'photo_rue' }), LIBELLES_FOND.photo_rue);
-  const choisirEtude = () => envoyer(messageFond(demande, { fond: 'etude' }), LIBELLES_FOND.etude);
+  const memoriser = (fond: OptionsFond) => {
+    if (!conversationId || !onSend) return;
+    majMemoireParcours(conversationId, { fond });
+    patcherInstantaneFond(conversationId, fond);
+  };
+  const choisirRue = () => { memoriser(fondDuChoix('photo_rue')); envoyer(messageFond(demande, { fond: 'photo_rue' }), LIBELLES_FOND.photo_rue); };
+  const choisirEtude = () => { memoriser(fondDuChoix('etude')); envoyer(messageFond(demande, { fond: 'etude' }), LIBELLES_FOND.etude); };
   const photoPrete = (photo: PhotoClientOption) => {
     setPhotoOuverte(false);
+    memoriser(fondDuChoix('photo_client', photo));
     envoyer(messageFond(demande, { fond: 'photo_client', photo_client: photo }), LIBELLES_FOND.photo_client);
   };
   const verifier = async () => {

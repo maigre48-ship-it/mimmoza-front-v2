@@ -15,13 +15,15 @@
 
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import {
-  assemblerBriefProjet, champsContrat, lireBriefProjet, type BriefProjet, type ChampsContratBrief, type ReglagesRendu,
+  assemblerBriefProjet, briefProjetVide, champsContrat, lireBriefProjet, type BriefProjet, type ChampsContratBrief, type ReglagesRendu,
   type SourceHabillage, type SourceProgramme, type SourceReference, type SourceStyle,
 } from '@/lib/studio/briefProjet';
 import { EDITORIAL_SOURCES } from '@/spaces/promoteur/pages/designDirections';
 import { programmeKey } from '@/spaces/promoteur/store/promoteurProgramme.store';
 import { getActiveStudyId } from '@/spaces/promoteur/shared/promoteurSnapshot.store';
 import { etudeDuChat } from '@/spaces/copilot/studio3d/projetChat';
+// VIS-18b : gamme / cible réglées dans le parcours quand aucune étude n'est rattachée.
+import { lireMemoireParcours } from '@/spaces/copilot/studio3d/parcours.store';
 
 export const BRIEF_PROJET_EVENT = 'mimmoza:brief-projet-updated';
 export const cleBriefProjet = (studyId: string | null) => `mimmoza.promoteur.brief-projet.${studyId ?? 'hors-etude'}`;
@@ -97,10 +99,20 @@ export function habillageDeLaConversation(conversationId: string | null | undefi
   try { return habillageMemorise(etudeDeLaConversation(conversationId)); } catch { return null; }
 }
 
-/** Champs du contrat pour une conversation (chat, FilmVisitePanel) ; null sans étude rattachée. */
-export function champsBriefDeLaConversation(conversationId: string, maj: { reglages?: ReglagesRendu; habillage?: SourceHabillage | null } = {}): { brief: BriefProjet; champs: ChampsContratBrief } | null {
+/**
+ * Champs du contrat pour une conversation (chat, FilmVisitePanel). `etude` : brief de l'étude rattachée.
+ * VIS-18b : SANS étude, la gamme / cible du petit réglage du parcours (mémoire par conversation) partent par le MÊME
+ * contrat (`brief.gamme`, `brief.cible`) — et rien d'autre (vues, lumière, habillage : comportement inchangé) ;
+ * null sans étude ni réglage (comme avant).
+ */
+export function champsBriefDeLaConversation(conversationId: string, maj: { reglages?: ReglagesRendu; habillage?: SourceHabillage | null } = {}): { brief: BriefProjet; champs: ChampsContratBrief; etude: boolean } | null {
   const etude = etudeDeLaConversation(conversationId);
-  if (!etude) return null;
+  if (!etude) {
+    const reglage = lireMemoireParcours(conversationId).projet;
+    if (!reglage || (!reglage.gamme && !reglage.cible)) return null;
+    const brief: BriefProjet = { ...briefProjetVide(null), gamme: reglage.gamme, cible: reglage.cible };
+    return { brief, champs: champsContrat(brief), etude: false };
+  }
   const brief = briefProjetDeLEtude(etude, maj);
-  return { brief, champs: champsContrat(brief) };
+  return { brief, champs: champsContrat(brief), etude: true };
 }

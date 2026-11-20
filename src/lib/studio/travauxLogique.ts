@@ -37,12 +37,16 @@ export interface OptionsFilm {
   format: '16:9' | '9:16';
   interieurs: boolean;
   musique: boolean;
+  /** VIS-18b — présent seulement pour un aperçu (film court basse définition, mêmes plans ; sans musique ni 9:16). */
+  qualite?: 'apercu';
 }
 
 export interface OptionsVisite {
   ambiance: Ambiance;
   interieurs: boolean;
   resolution: '6k' | '8k';
+  /** VIS-18b — présent seulement pour un aperçu (panoramas 3K, rendu rapide, mêmes points de vue). */
+  qualite?: 'apercu';
 }
 
 /**
@@ -295,7 +299,8 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
   if (brut !== undefined && !estObjet(brut)) return { ok: false, erreur: 'Options illisibles.' };
   const o = (brut ?? {}) as Record<string, unknown>;
   if (type === 'image') return validerOptionsImage(o);
-  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique'] : ['ambiance', 'interieurs', 'resolution'];
+  // VIS-18b : `qualite` (« apercu » | « finale ») aussi pour le film et la visite — « finale » n'est pas recopiée.
+  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique', 'qualite'] : ['ambiance', 'interieurs', 'resolution', 'qualite'];
   const inconnue = Object.keys(o).find(k => !permises.includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
   const defaut = optionsParDefaut(type) as OptionsFilm | OptionsVisite;
@@ -303,6 +308,8 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
   if (!AMBIANCES.includes(ambiance as Ambiance)) return { ok: false, erreur: 'Choisissez une ambiance : journée, fin de journée ou nuit.' };
   const interieurs = o.interieurs ?? defaut.interieurs;
   if (typeof interieurs !== 'boolean') return { ok: false, erreur: 'Indiquez si les intérieurs sont inclus.' };
+  if (o.qualite !== undefined && o.qualite !== null && o.qualite !== 'finale' && o.qualite !== 'apercu') return { ok: false, erreur: 'Choisissez une définition : finale ou aperçu.' };
+  const apercu = o.qualite === 'apercu' ? { qualite: 'apercu' as const } : {};
   if (type === 'film') {
     const d = defaut as OptionsFilm;
     const duree = o.duree_s ?? d.duree_s;
@@ -311,11 +318,21 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
     if (format !== '16:9' && format !== '9:16') return { ok: false, erreur: 'Le format doit être paysage (16:9) ou vertical (9:16).' };
     const musique = o.musique ?? d.musique;
     if (typeof musique !== 'boolean') return { ok: false, erreur: 'Indiquez si le film a une musique.' };
-    return { ok: true, valeur: { duree_s: duree, ambiance: ambiance as Ambiance, format, interieurs, musique } };
+    return { ok: true, valeur: { duree_s: duree, ambiance: ambiance as Ambiance, format, interieurs, musique, ...apercu } };
   }
   const resolution = o.resolution ?? (defaut as OptionsVisite).resolution;
   if (resolution !== '6k' && resolution !== '8k') return { ok: false, erreur: 'La qualité doit être 6K ou 8K.' };
-  return { ok: true, valeur: { ambiance: ambiance as Ambiance, interieurs, resolution } };
+  return { ok: true, valeur: { ambiance: ambiance as Ambiance, interieurs, resolution, ...apercu } };
+}
+
+/**
+ * VIS-18b — durée annoncée d'un APERÇU de film / de visite (même texte que copilot-chat studio.ts dureeAnnoncee) :
+ * film court de contrôle (délai d'essai du worker : 1 h 30 au plus), panoramas 3K.
+ */
+export function dureeEstimeeApercu(type: 'film' | 'visite360'): string {
+  return type === 'film'
+    ? 'environ 30 min à 1 h 30 une fois le rendu démarré (préparation de la maquette, puis film court de contrôle en basse définition : 1,5 s par plan, sans musique)'
+    : 'environ 30 min à 2 h une fois le rendu démarré (préparation de la maquette, puis panoramas en basse définition 3K)';
 }
 
 function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImage> {
@@ -446,10 +463,11 @@ export function resumeOptions(type: TypeTravail, options: unknown): string {
     const f = o as OptionsFilm;
     parts.push(`${String(f.duree_s)} s`, LIBELLES_AMBIANCE[f.ambiance].toLowerCase(), f.format === '16:9' ? 'paysage' : 'vertical');
     if (f.interieurs) parts.push('intérieurs');
-    if (f.musique) parts.push('musique');
+    if (f.musique && f.qualite !== 'apercu') parts.push('musique');
+    if (f.qualite === 'apercu') parts.push('aperçu');
   } else {
     const vi = o as OptionsVisite;
-    parts.push(LIBELLES_AMBIANCE[vi.ambiance].toLowerCase(), vi.resolution.toUpperCase());
+    parts.push(LIBELLES_AMBIANCE[vi.ambiance].toLowerCase(), vi.qualite === 'apercu' ? 'aperçu 3K' : vi.resolution.toUpperCase());
     if (vi.interieurs) parts.push('intérieurs');
   }
   return parts.join(' · ');

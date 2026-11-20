@@ -96,7 +96,12 @@ test('intérieurs : facultatifs sans vue intérieure, requis avec une vue intér
   assert.equal(gamme.statut, 'fait');
   assert.match(gamme.resume, /Logement témoin T3, gamme premium/);
   assert.equal(gamme.action.cible, 'studio-interieur');
-  assert.equal(gamme.actionSecondaire?.cible, 'reglages-rendu');
+  // VIS-18b : sans étude, plus d'accès « Gamme » vers un brief absent (impasse) : petit réglage dans l'étape.
+  assert.equal(gamme.actionSecondaire, undefined);
+  assert.equal(gamme.reglage, 'gamme');
+  const avecEtude = calculerParcours(ascain({ interieurs: { gamme: 'premium', typologie: 'T3' }, rendu: { ...sourcesVides().rendu, etudeRattachee: true } })).etapes[4];
+  assert.equal(avecEtude.actionSecondaire?.cible, 'reglages-rendu');
+  assert.equal(avecEtude.reglage, undefined);
   // Film : requis seulement si « Montrer aussi l'intérieur » est coché.
   const film = (interieurs: boolean) => calculerParcours({ ...ascain(), type: 'film', film: { duree_s: 60, format: '16:9', musique: true, interieurs, ambiance: null } }).etapes[4].statut;
   assert.equal(film(false), 'facultative'); assert.equal(film(true), 'a_faire');
@@ -180,7 +185,8 @@ test('rendus de la base (studio_jobs) lus défensivement', () => {
   assert.deepEqual(travailParcours({ id: FINAL, type: 'image', statut: 'termine', cree_le: 'x', options: { vues: ['aerienne', 'inconnue'], qualite: 'apercu' }, resultat: { images: [{}, {}], livraison_commerciale: { version: 1 } } }),
     { id: FINAL, type: 'image', statut: 'termine', qualite: 'apercu', cree_le: 'x', vues: ['aerienne'], nbImages: 2, livraison: true });
   assert.equal(travailParcours({ id: FINAL, type: 'image', statut: 'termine', options: {} })?.qualite, 'finale');
-  assert.equal(travailParcours({ id: FINAL, type: 'film', statut: 'en_cours' })?.qualite, null);
+  // VIS-18b : film et visite portent aussi leur qualité (absente = finale ; avant : null, traité comme finale).
+  assert.equal(travailParcours({ id: FINAL, type: 'film', statut: 'en_cours' })?.qualite, 'finale');
   assert.equal(travailParcours({ id: FINAL, type: 'maison', statut: 'termine' }), null);
   assert.equal(travailParcours(null), null);
 });
