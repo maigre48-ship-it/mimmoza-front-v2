@@ -1,0 +1,51 @@
+/* VIS-17 — « Votre parcours » (panneau Espace 3D + carte du chat). Thème clair, accent violet (comme la carte Brief créatif). */
+.mz-parcours { margin: 0 0 12px; border: 1px solid #ddd6fe; border-radius: 14px; background: #ffffff; color: #0f172a; font-size: 13px; line-height: 1.4; overflow: hidden; }
+.mz-parcours__tete { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; background: #faf8ff; border-bottom: 1px solid #ede9fe; }
+.mz-parcours__tete h2, .mz-parcours__tete h3 { margin: 0; font-size: 14px; font-weight: 700; color: #1e1b4b; }
+.mz-parcours__tete p { margin: 2px 0 0; font-size: 12px; color: #64748b; }
+.mz-parcours__types { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #ddd6fe; border-radius: 999px; background: #ffffff; }
+.mz-parcours__types button { border: 0; border-radius: 999px; background: transparent; color: #4c1d95; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.mz-parcours__types button.is-actif { background: #6d5dfc; color: #ffffff; font-weight: 600; }
+.mz-parcours__liste { list-style: none; margin: 0; padding: 4px 0; }
+.mz-parcours__etape { border-left: 3px solid transparent; }
+.mz-parcours__etape.is-courante { border-left-color: #6d5dfc; background: #f5f3ff; }
+.mz-parcours__ligne { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 8px 10px 6px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.mz-parcours__ligne:hover { background: #f8fafc; }
+.mz-parcours__etape.is-courante .mz-parcours__ligne:hover { background: #ede9fe; }
+.mz-parcours__ligne:focus-visible, .mz-parcours button:focus-visible { outline: 2px solid #6d5dfc; outline-offset: 1px; }
+.mz-parcours__texte { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.mz-parcours__titre { font-weight: 600; color: #1e1b4b; }
+.mz-parcours__titre em { margin-left: 6px; font-style: normal; font-weight: 500; font-size: 11px; color: #64748b; }
+.mz-parcours__etape.is-fait .mz-parcours__titre em { color: #15803d; }
+.mz-parcours__etape.is-en_cours .mz-parcours__titre em, .mz-parcours__etape.is-courante .mz-parcours__titre em { color: #6d28d9; }
+.mz-parcours__resume { color: #334155; font-size: 12px; overflow-wrap: anywhere; }
+.mz-parcours__raison { color: #9a3412; font-size: 12px; }
+.mz-parcours__etape.is-bloquee .mz-parcours__titre, .mz-parcours__etape.is-bloquee .mz-parcours__resume { color: #94a3b8; }
+.mz-parcours__chevron { flex: none; margin-top: 2px; color: #a78bfa; }
+.mz-parcours__pastille { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #ede9fe; color: #5b21b6; font-weight: 700; font-size: 11px; }
+.mz-parcours__pastille.is-fait { background: #dcfce7; color: #15803d; }
+.mz-parcours__pastille.is-en_cours { background: #6d5dfc; color: #ffffff; }
+.mz-parcours__pastille.is-bloquee { background: #f1f5f9; color: #94a3b8; }
+.mz-parcours__pastille.is-facultative { background: #f8fafc; color: #94a3b8; border: 1px dashed #cbd5e1; }
+.mz-parcours__tourne { animation: mz-parcours-tourne 1.1s linear infinite; }
+@keyframes mz-parcours-tourne { to { transform: rotate(360deg); } }
+.mz-parcours__actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 8px 41px; }
+.mz-parcours__actions button, .mz-parcours__suite button, .mz-parcours__detail { min-height: 30px; border: 1px solid #ddd6fe; border-radius: 999px; background: #ffffff; color: #4c1d95; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mz-parcours button.is-primaire { background: #6d5dfc; border-color: #6d5dfc; color: #ffffff; display: inline-flex; align-items: center; gap: 4px; }
+.mz-parcours button.is-primaire:hover { background: #5b4bf0; }
+/* Carte du chat : compacte. */
+.mz-parcours--carte { margin: 10px 0; max-width: 640px; }
+.mz-parcours__puces { list-style: none; display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 8px 10px; }
+.mz-parcours__puces button { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 3px; border: 1px solid #e2e8f0; border-radius: 999px; background: #ffffff; color: #334155; font-size: 12px; cursor: pointer; }
+.mz-parcours__puces button .mz-parcours__pastille { width: 20px; height: 20px; font-size: 10px; }
+.mz-parcours__puces button.is-courante { border-color: #6d5dfc; background: #f5f3ff; color: #1e1b4b; font-weight: 600; }
+.mz-parcours__puces button.is-bloquee { color: #94a3b8; }
+.mz-parcours__suite { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px 10px; border-top: 1px solid #f1f5f9; }
+.mz-parcours__suite p { margin: 0; flex: 1 1 220px; font-size: 12px; color: #334155; }
+.mz-parcours__suite p strong { color: #1e1b4b; font-size: 13px; }
+.mz-parcours__fini { margin: 0; padding: 8px 12px; color: #15803d; font-size: 12px; }
+.mz-parcours__detail { margin: 0 12px 10px; border-style: dashed; font-weight: 500; }
+@media (max-width: 520px) {
+  .mz-parcours__puces button span:last-child { display: none; }
+  .mz-parcours__actions { padding-left: 10px; }
+}

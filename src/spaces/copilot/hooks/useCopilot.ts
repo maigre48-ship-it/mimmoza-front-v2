@@ -16,6 +16,7 @@ import type {
 import { useCopilotContext } from './useCopilotContext';
 import { useCopilotStreaming } from './useCopilotStreaming';
 import { track } from '@/lib/mimmozia/track';
+import { instantaneParcoursPour } from '../studio3d/parcours.store';
 
 interface SendOptions {
   vertical?: Vertical;
@@ -80,6 +81,9 @@ export function useCopilot() {
     }
 
     const context = buildContext(options);
+    // VIS-17 : parcours guidé de la conversation (relu et revalidé par le serveur pour le bloc « PARCOURS — FAIT FOI »).
+    const parcours = instantaneParcoursPour(st.currentConversationId ?? null);
+    if (parcours) context.parcours = parcours;
     const wasNew = !st.currentConversationId;
 
     st.pushUserMessage(trimmed, st.mode);

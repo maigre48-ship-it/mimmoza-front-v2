@@ -1,0 +1,85 @@
+// supabase/functions/copilot-chat/agent/parcours-chat.ts
+// =============================================================================
+// VIS-17 (20/11/2026) — bloc système « PARCOURS — FAIT FOI » relu à CHAQUE message. Module PUR (testé par Deno).
+//
+// Le serveur relit lui-même en base ce qui fait foi : mission de conception de la conversation (agent_missions),
+// dernière 3D préparée (studio_preparations), rendus (studio_jobs) et aperçu validé (bloc ```mimmoza-parcours``` d'un
+// message de l'utilisateur). Ce que seul l'écran connaît (brief projet de l'étude dans le navigateur : vues, lumière,
+// saison, gamme ; réglages du film / de la visite ; type choisi) arrive dans `context.parcours`, relu défensivement
+// (lireInstantaneParcours). Le calcul des statuts est celui de l'écran (src/lib/studio/parcours.ts) : mêmes étapes.
+// =============================================================================
+import {
+  apercuValideDesMessages, blocParcoursSysteme, calculerParcours, lireInstantaneParcours, sourcesDeLInstantane, programmeDesCriteres, terrainDesCriteres, travailParcours,
+  typeParcoursDesMessages, typeParcoursDuTexte, type Parcours, type SourcesParcours, type TravailParcours,
+} from '../../../../src/lib/studio/parcours.ts';
+
+export interface PreparationLue { idu: string | null; resume: unknown }
+export interface MissionLue { type: string; statut: string; criteres?: unknown }
+
+export interface EntreeParcoursServeur {
+  instantane: unknown;
+  /** Dernière mission de conception de la conversation (statut réel), s'il y en a une. */
+  mission: MissionLue | null;
+  /** Dernière 3D préparée de la conversation. */
+  preparation: PreparationLue | null;
+  /** Lignes studio_jobs de la conversation. */
+  travaux: readonly unknown[];
+  /** Messages de l'utilisateur déjà en base (du plus ancien au plus récent). */
+  textesUtilisateur: readonly string[];
+  /** Message reçu (pas encore en base). */
+  messageCourant: string;
+}
+
+const estObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const nf = (v: number) => v.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
+
+/** Résumé de la 3D préparée (studio_preparations.resume), lu champ par champ, jamais deviné. */
+export function resumePreparation(p: PreparationLue | null): { terrain: string | null; volume: string | null } {
+  if (!p) return { terrain: null, volume: null };
+  const r = estObj(p.resume) ? p.resume : {};
+  const num = (k: string) => (typeof r[k] === 'number' && Number.isFinite(r[k]) ? r[k] as number : null);
+  const bat = num('batiments');
+  const gabarit = typeof r.gabarit === 'string' ? r.gabarit : null;
+  const logements = num('logements_places');
+  const sdp = num('sdp_estimee_m2');
+  const volume = [
+    bat !== null && gabarit ? `${String(bat)} bâtiment${bat > 1 ? 's' : ''} en ${gabarit}` : null,
+    sdp !== null ? `≈ ${nf(sdp)} m² de surface de plancher (estimée)` : null,
+    logements !== null ? `${nf(logements)} logements placés` : null,
+  ].filter(Boolean).join(' · ');
+  const assiette = typeof r.assiette === 'string' && r.assiette.trim() ? r.assiette.trim() : null;
+  return { terrain: assiette ?? p.idu, volume: volume || null };
+}
+
+/** Sources du parcours côté serveur : base (fait foi) + instantané de l'écran. */
+export function sourcesServeur(e: EntreeParcoursServeur): SourcesParcours {
+  const instantane = lireInstantaneParcours(e.instantane);
+  const textes = [...e.textesUtilisateur, e.messageCourant];
+  const type = instantane?.type ?? typeParcoursDuTexte(e.messageCourant) ?? typeParcoursDesMessages(e.textesUtilisateur);
+  const s = sourcesDeLInstantane(instantane, type);
+  const prep = resumePreparation(e.preparation);
+  const habillageFil = textes.some((t) => /```mimmoza-brief/.test(t)) ? 'Habillage choisi dans la conversation.' : null;
+  return {
+    ...s,
+    type,
+    terrain: prep.terrain ?? terrainDesCriteres(e.mission?.criteres),
+    conception: e.mission && e.mission.type === 'conception' ? { statut: e.mission.statut, resume: programmeDesCriteres(e.mission.criteres) ?? prep.volume } : null,
+    volume: e.preparation ? { pret: true, resume: prep.volume ?? '3D préparée par Mimmo.' } : { pret: false, resume: null },
+    habillage: { resume: s.habillage.resume ?? habillageFil, attenduParMimmo: false },
+    travaux: e.travaux.map(travailParcours).filter((t): t is TravailParcours => t !== null),
+    apercuValide: apercuValideDesMessages(textes),
+  };
+}
+
+/** Le bloc est-il utile à ce tour ? (projet en 3D, conception, rendus, ou demande d'image / film / visite) */
+export function parcoursPertinent(e: EntreeParcoursServeur): boolean {
+  return !!e.preparation || e.mission?.type === 'conception' || e.travaux.length > 0
+    || typeParcoursDuTexte(e.messageCourant) !== null || lireInstantaneParcours(e.instantane)?.type != null;
+}
+
+/** Bloc « PARCOURS — FAIT FOI » (vide quand le parcours n'est pas en jeu). */
+export function blocParcoursServeur(e: EntreeParcoursServeur): { bloc: string; parcours: Parcours | null } {
+  if (!parcoursPertinent(e)) return { bloc: '', parcours: null };
+  const parcours = calculerParcours(sourcesServeur(e));
+  return { bloc: blocParcoursSysteme(parcours), parcours };
+}

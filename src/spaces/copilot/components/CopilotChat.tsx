@@ -1,6 +1,6 @@
 // src/spaces/copilot/components/CopilotChat.tsx
 import type { Mission } from '../agent/agent.types';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
 import { useCopilotContext } from '../hooks/useCopilotContext';
 import { getCopilotQuickQuestions } from '../utils/quickQuestions';
@@ -22,6 +22,13 @@ import { is3DPreparationRequest, readJarvisDraft, withoutJarvisDraft, type Jarvi
 import { Box, Plus, Volume2, VolumeX } from 'lucide-react';
 import { BoutonFenetre, GlypheAgrandir, GlypheFermer, GlypheReduire, GlypheRestaurer } from './FenetreBoutons';
 import './CopilotFenetres.css';
+// VIS-17 — parcours guidé (image / film / visite) : calculé une fois ici, montré dans l'Espace 3D et dans le chat.
+import { useParcours } from '../studio3d/useParcours';
+import { CarteParcours, type ActionnerParcours } from '../studio3d/ParcoursGuide';
+import { ancreCarteParcours } from '../studio3d/parcoursEcran';
+import type { CommandeParcours } from '../studio3d/JarvisDraftPanel';
+import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from '../studio3d/parcours.store';
+import { messageValidationApercu } from '@/lib/studio/parcours';
 
 /** Fenêtre « Espace 3D » : ouverte, agrandie, réduite en bande sur le côté, ou fermée. */
 type EtatFenetre3D = 'ouvert' | 'large' | 'reduit' | 'ferme';
@@ -193,6 +200,41 @@ export function CopilotChat({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  // VIS-17 — parcours guidé : mêmes étapes et mêmes actions dans le panneau et dans la carte du chat.
+  const parcoursEcran = useParcours(messages, currentConversationId ?? null, showStudioDraft);
+  const [commandeParcours, setCommandeParcours] = useState<CommandeParcours & { conversation: string | null } | null>(null);
+  const [noticeParcours, setNoticeParcours] = useState<string | null>(null);
+  const ancreParcours = useMemo(() => (showStudioDraft ? ancreCarteParcours(messages as never, parcoursEcran.sources) : null), [showStudioDraft, messages, parcoursEcran.sources]);
+  const montrerPanneau3D = () => {
+    setFenetre3D((etat) => {
+      const suivant: EtatFenetre3D = etat === 'ferme' || etat === 'reduit' ? 'ouvert' : etat;
+      try { window.localStorage.setItem(CLE_FENETRE_3D, suivant); } catch { /* stockage indisponible */ }
+      return suivant;
+    });
+    setPleinEcran(false);
+  };
+  const commanderPanneau = (cible: CommandeParcours['cible']) => {
+    montrerPanneau3D();
+    setCommandeParcours((p) => ({ cible, type: parcoursEcran.parcours.type, jeton: (p?.jeton ?? 0) + 1, conversation: currentConversationId ?? null }));
+  };
+  const actionnerParcours: ActionnerParcours = (_etape, action) => {
+    setNoticeParcours(null);
+    if (action.cible === 'chat') { if (action.message) handleSend(action.message); return; }
+    if (action.cible === 'habillage') { ouvrirHabillage(null); return; }
+    if (action.cible === 'studio-interieur' || action.cible === 'studio-batiment') {
+      montrerPanneau3D();
+      const demande: DemandeParcoursStudio = action.cible === 'studio-interieur'
+        ? { etape: 'amenagement', sous: 'interieur', repondre: setNoticeParcours }
+        : { etape: 'batiment', sous: 'batiment', repondre: setNoticeParcours };
+      window.dispatchEvent(new CustomEvent(EVENEMENT_PARCOURS_STUDIO, { detail: demande }));
+      if (!demande.prise) setNoticeParcours('Le Studio ne peut pas s’ouvrir depuis cette page.');
+      return;
+    }
+    commanderPanneau(action.cible);
+  };
+  const validerApercu = (travailId: string) => handleSend(messageValidationApercu(travailId, parcoursEcran.parcours.type));
+  const commandeConversation = commandeParcours && commandeParcours.conversation === (currentConversationId ?? null) ? commandeParcours : null;
   // VIS-16 : action du panneau Missions (« Préparer la plaquette », « Ouvrir mon projet en 3D ») → la conversation
   // revient au premier plan : défilement jusqu'à la dernière réponse (après fermeture du panneau).
   useEffect(() => {
@@ -281,7 +323,9 @@ export function CopilotChat({
             </div>
           </header>
           <div className="mzia-fen3d__contenu">
-            <JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} onSend={(texte) => handleSend(texte)} habillage={habillageConversation} onHabillage={changerHabillage} />
+            <JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} onSend={(texte) => handleSend(texte)} habillage={habillageConversation} onHabillage={changerHabillage}
+              parcours={parcoursEcran.parcours} onParcours={actionnerParcours} onTypeParcours={parcoursEcran.choisirType} commandeParcours={commandeConversation}
+              noticeParcours={noticeParcours} onValiderApercu={validerApercu} apercuValide={parcoursEcran.sources.apercuValide} />
           </div>
         </section>
       </div>}
@@ -317,7 +361,11 @@ export function CopilotChat({
                 <details><summary>Voir la réponse erronée</summary><div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div></details>
               </div>;
             }
-            return <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} onRemplirSaisie={remplirSaisie} onOuvrirHabillage={showStudioDraft ? ouvrirHabillage : undefined} />;
+            const message = <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} onRemplirSaisie={remplirSaisie} onOuvrirHabillage={showStudioDraft ? ouvrirHabillage : undefined} />;
+            // VIS-17 : UNE carte « Votre parcours » par conversation, sous la dernière réponse qui touche au parcours, mise à jour en place.
+            if (m.id !== ancreParcours || m.status === 'streaming') return message;
+            return <Fragment key={m.id}>{message}<CarteParcours parcours={parcoursEcran.parcours} onAction={actionnerParcours}
+              onType={parcoursEcran.choisirType} onDetail={() => commanderPanneau('parcours')} /></Fragment>;
           })
         )}
       </div>

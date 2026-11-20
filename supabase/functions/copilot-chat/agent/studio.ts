@@ -490,7 +490,8 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
   if (type !== 'film' && type !== 'visite360' && type !== 'image') return { ok: false, erreur: 'Type de rendu inconnu (film, visite360 ou image).' };
   if (brut !== undefined && brut !== null && !estObj(brut)) return { ok: false, erreur: 'Options illisibles.' };
   const o = (brut ?? {}) as Obj;
-  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique'] : type === 'visite360' ? ['ambiance', 'interieurs', 'resolution'] : ['vues', 'ambiance', 'livraison', ...CLES_FOND];
+  // VIS-17 : `qualite` (image) — « apercu » = rendu rapide de l'étape Aperçu du parcours ; absente ou « finale » : comme avant.
+  const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique'] : type === 'visite360' ? ['ambiance', 'interieurs', 'resolution'] : ['vues', 'ambiance', 'livraison', 'qualite', ...CLES_FOND];
   const inconnue = Object.keys(o).find((k) => !permises.includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
   if (type === 'image') {
@@ -506,6 +507,9 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
     if (ambiance !== undefined && ambiance !== 'jour' && ambiance !== 'fin_de_journee' && ambiance !== 'crepuscule') return { ok: false, erreur: 'Choisissez une lumière : journée, fin de journée ou crépuscule.' };
     const fond = validerFond(o, proprietaire);
     if (!fond.ok) return fond;
+    // VIS-17 : aperçu rapide (1200 px, sans livraison commerciale) ; « finale » n'est pas recopiée (sortie identique à avant).
+    if (o.qualite !== undefined && o.qualite !== 'finale' && o.qualite !== 'apercu') return { ok: false, erreur: 'Choisissez une définition : finale ou aperçu rapide.' };
+    const apercu = o.qualite === 'apercu';
     // VIS-10 : livraison commerciale (formats, mention, ZIP) — recopiée telle que validée ; absente : défaut du worker.
     // VIS-14 (M2) : `livraison: null` (la clé elle-même) est REFUSÉE, comme par la base (le worker l'ignorerait, mais
     // la base la refuse avant lui) — omettre la clé ; « pas de livraison » = `{ active: false }`.
@@ -519,7 +523,7 @@ export function validerOptionsRendu(type: unknown, brut: unknown, proprietaire: 
     // photomontage suit la photo, jamais l'ambiance d'un brief).
     const fondPhoto = (fond.valeur as Obj).fond === 'photo_rue' || (fond.valeur as Obj).fond === 'photo_client';
     const ambianceFinale = ambiance ?? (fondPhoto ? 'jour' : undefined);
-    return { ok: true, valeur: { vues: VUES.filter((v) => (vues as unknown[]).includes(v)), ...(ambianceFinale !== undefined ? { ambiance: ambianceFinale } : {}), ...fond.valeur, ...(livraison ? { livraison } : {}) } };
+    return { ok: true, valeur: { vues: VUES.filter((v) => (vues as unknown[]).includes(v)), ...(ambianceFinale !== undefined ? { ambiance: ambianceFinale } : {}), ...fond.valeur, ...(livraison && !apercu ? { livraison } : {}), ...(apercu ? { qualite: 'apercu' } : {}) } };
   }
   const ambiance = o.ambiance ?? 'jour';
   if (!AMBIANCES.includes(ambiance as string)) return { ok: false, erreur: 'Choisissez une ambiance : journée, fin de journée ou nuit.' };
@@ -549,6 +553,8 @@ export function dureeAnnoncee(type: TypeRendu, options: Obj, extension = false):
     if (estFondPhoto(options.fond)) return dureeAnnonceeImagePhoto({ extension, nombreVues: Array.isArray(options.vues) ? options.vues.length : 1 });
     const n = Array.isArray(options.vues) ? Math.max(1, Math.min(MAX_VUES_PAR_IMAGE, options.vues.length)) : 1;
     const h = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
+    // VIS-17 : aperçu rapide — même formule que le front (travauxLogique.dureeEstimeeImage, qualité « apercu »).
+    if (options.qualite === 'apercu') return `environ ${h(10 + 5 * n)} à ${h(10 + 10 * n)} une fois le rendu démarré (aperçu rapide en 1200 px, pour valider le cadrage et l’habillage avant le rendu final)`;
     // VIS-14 (I1 a) : vues décentrées rendues plus grandes (image livrée ≥ 2880 px) — même table que le front
     // (travauxLogique.facteurDureeVue) : aérienne × 1,6–2,3 ; vues de rue piéton × 1–1,6 ; autres × 1.
     const vues = Array.isArray(options.vues) ? (options.vues as unknown[]).slice(0, n).map(String) : [];
@@ -569,7 +575,7 @@ export function resumeOptions(type: TypeRendu, o: Obj): string {
     const fond = fondDe(o);
     // VIS-14 (I2) : sans ambiance choisie, celle du brief projet (worker), sinon la journée.
     return `${(o.vues as string[]).map((v) => (estVueCatalogue(v) ? libelleCourtVue(v) : v)).join(', ')} · ${o.ambiance !== undefined ? amb[String(o.ambiance)] : 'lumière du brief projet (sinon en journée)'}` +
-      (fond !== 'etude' ? ` · fond : ${LIBELLES_FOND[fond].toLowerCase()}` : '') + (o.calage_client ? ' · placement ajusté' : '');
+      (fond !== 'etude' ? ` · fond : ${LIBELLES_FOND[fond].toLowerCase()}` : '') + (o.calage_client ? ' · placement ajusté' : '') + (o.qualite === 'apercu' ? ' · aperçu rapide' : '');
   }
   if (type === 'film') return [`${String(o.duree_s)} s`, amb[String(o.ambiance)], o.format === '9:16' ? 'vertical' : 'paysage', o.interieurs ? 'intérieurs' : null, o.musique ? 'musique' : null].filter(Boolean).join(' · ');
   return [amb[String(o.ambiance)], String(o.resolution).toUpperCase(), o.interieurs ? 'intérieurs' : null].filter(Boolean).join(' · ');

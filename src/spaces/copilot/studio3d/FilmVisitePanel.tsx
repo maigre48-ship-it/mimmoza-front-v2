@@ -36,6 +36,14 @@ import { catalogueVues, LIBELLES_GROUPE_VUE, MAX_VUES_PAR_IMAGE, vueCochable, vu
 // VIS-10 — badge étude / photoréaliste et livraison commerciale dans la visionneuse du Dossier 3D.
 import { BadgeRealisme, BlocLivraisonImage, DefinitionLivree } from './BlocLivraisonImage';
 import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
+// VIS-17 — parcours guidé : ouverture commandée par une étape, réglages film / visite gardés, validation de l'aperçu.
+import { lireMemoireParcours, majMemoireParcours } from './parcours.store';
+import type { ReglagesFilm, ReglagesVisite } from '@/lib/studio/parcours';
+
+/** VIS-17 — commande d'une étape du parcours : ouvrir une feuille (et sa définition) ou montrer les rendus réalisés. */
+export interface CommandeRendu { feuille: TypeTravail | null; qualite?: QualiteImage; jeton: number }
+const reglagesFilm = (f: OptionsFilm): ReglagesFilm => ({ duree_s: f.duree_s, format: f.format, musique: f.musique, interieurs: f.interieurs, ambiance: f.ambiance });
+const reglagesVisite = (v: OptionsVisite): ReglagesVisite => ({ interieurs: v.interieurs, resolution: v.resolution, ambiance: v.ambiance });
 
 /**
  * VIS-14 (I1 e) — vues de départ : celles du brief projet si l'utilisateur en a ENREGISTRÉ (et qu'elles sont
@@ -58,17 +66,28 @@ function ambianceDuBrief(conversationId: string): AmbianceImage | null {
 
 const AMBIANCES: Ambiance[] = ['jour', 'fin_de_journee', 'nuit'];
 
-export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
+export function FilmVisitePanel({ draft, conversationId, assurerValidation, commande, terrainParDefaut, onValiderApercu, apercuValide }: {
   draft: JarvisDraft;
   conversationId: string;
   /** Valide la fiche si elle ne l'est pas encore (comme « Voir en 3D »). */
   assurerValidation?: () => Promise<void>;
+  /** VIS-17 : étape du parcours cliquée (feuille à ouvrir, ou rendus réalisés si `feuille` est null). */
+  commande?: CommandeRendu | null;
+  /** VIS-17 : terrain de la 3D préparée (parcours mission), retenu pour la conversation s'il n'y en a pas. */
+  terrainParDefaut?: ConfirmedTerrain & { adresse?: string | null };
+  /** VIS-17 : « Valider cet aperçu » (étape 7) — envoie la validation dans la conversation. */
+  onValiderApercu?: (travailId: string) => void;
+  apercuValide?: string | null;
 }) {
   const [disponible, setDisponible] = useState<boolean | null>(null);
   const [travaux, setTravaux] = useState<TravailStudio[]>([]);
   const [feuille, setFeuille] = useState<TypeTravail | null>(null);
-  const [film, setFilm] = useState<OptionsFilm>(() => optionsParDefaut('film'));
-  const [visite, setVisite] = useState<OptionsVisite>(() => optionsParDefaut('visite360'));
+  // VIS-17 : réglages film / visite repris de la mémoire du parcours (personnalisation gardée d'une visite à l'autre).
+  const [film, setFilm] = useState<OptionsFilm>(() => ({ ...optionsParDefaut('film'), ...(lireMemoireParcours(conversationId).film as Partial<OptionsFilm> | null ?? {}) }));
+  const [visite, setVisite] = useState<OptionsVisite>(() => ({ ...optionsParDefaut('visite360'), ...(lireMemoireParcours(conversationId).visite as Partial<OptionsVisite> | null ?? {}) }));
+  const changerFilm = (maj: Partial<OptionsFilm>) => { const n = { ...film, ...maj }; setFilm(n); majMemoireParcours(conversationId, { film: reglagesFilm(n) }); };
+  const changerVisite = (maj: Partial<OptionsVisite>) => { const n = { ...visite, ...maj }; setVisite(n); majMemoireParcours(conversationId, { visite: reglagesVisite(n) }); };
+  const racine = useRef<HTMLElement | null>(null);
   const [image, setImage] = useState<OptionsImage>(() => ({ ...optionsParDefaut('image'), vues: vuesInitiales(conversationId), ambiance: ambianceDuBrief(conversationId) ?? 'jour' }));
   // VIS-14 (I2) : l'ambiance n'est envoyée que si l'utilisateur l'a CHOISIE ; sinon le worker applique celle du brief.
   const [ambianceChoisie, setAmbianceChoisie] = useState(false);
@@ -110,10 +129,25 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
   }, [travaux, recevoir]);
 
   const ouvrirFeuille = (type: TypeTravail) => {
+    // VIS-17 : parcours « mission » — le terrain de la 3D préparée vaut parcelle de la conversation.
+    if (!parcelleRetenue(conversationId) && terrainParDefaut) retenirParcelle(conversationId, terrainParDefaut);
     setFeuille(type);
     setMessage('');
     setTerrainManquant(!parcelleRetenue(conversationId));
   };
+  // VIS-17 : une étape du parcours ouvre la feuille voulue (aperçu rapide ou définition finale) ou montre les rendus.
+  const jetonCommande = commande?.jeton ?? 0;
+  const dernierJetonCommande = useRef(0);
+  useEffect(() => {
+    if (!commande || jetonCommande === 0 || jetonCommande === dernierJetonCommande.current) return;
+    dernierJetonCommande.current = jetonCommande;
+    if (commande.feuille) {
+      ouvrirFeuille(commande.feuille);
+      if (commande.feuille === 'image' && commande.qualite) setImage(o => ({ ...o, qualite: commande.qualite! }));
+    } else setFeuille(null);
+    racine.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jetonCommande]);
 
   const lancer = async () => {
     if (!feuille || lancement) return;
@@ -129,6 +163,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
       const charge = avecProchaineRevision(construit.projet, conversationId);
       // VIS-14 (I2) : image — `ambiance` retirée si elle n'a pas été choisie (brief projet, sinon journée, côté worker).
       const optionsImage: OptionsImage = ambianceChoisie ? image : (({ ambiance: _a, ...reste }) => reste)(image);
+      if (feuille === 'film') majMemoireParcours(conversationId, { film: reglagesFilm(film) });
+      if (feuille === 'visite360') majMemoireParcours(conversationId, { visite: reglagesVisite(visite) });
       const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? film : feuille === 'image' ? optionsImage : visite);
       if (!travail.ok) { setMessage(travail.erreur); return; }
       const r = await creerTravail(travail.valeur);
@@ -226,7 +262,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
   const indispo = disponible === false;
 
   return (
-    <section className="mzia-rendu" aria-label="Film, visite 360° ou image">
+    <section className="mzia-rendu" aria-label="Film, visite 360° ou image" ref={racine}>
       <div className="mzia-rendu__entete">
         <strong>Film, visite 360° ou image</strong>
         <span>Calculés en qualité photo, prêts à partager.</span>
@@ -270,7 +306,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
         </div>
         <div className="mzia-rendu__feuille-corps">
           {feuille === 'film' && <Choix titre="Durée" valeur={film.duree_s} options={[[30, '30 s'], [60, '1 min'], [90, '1 min 30']]}
-            onChange={v => setFilm(o => ({ ...o, duree_s: v }))} />}
+            onChange={v => changerFilm({ duree_s: v })} />}
           {feuille === 'image' && (['exterieur', 'privatif', 'interieur'] as GroupeVue[]).map(groupe => (
             <fieldset key={groupe} className="mzia-rendu__groupe">
               <legend>{groupe === 'exterieur' ? `Vues · ${LIBELLES_GROUPE_VUE[groupe]} (1 à ${String(Math.min(MAX_VUES_PAR_IMAGE, VUES_IMAGE.length))})` : LIBELLES_GROUPE_VUE[groupe]}</legend>
@@ -288,14 +324,18 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
           {feuille === 'image'
             ? <Choix titre="Lumière" valeur={image.ambiance ?? 'jour'}
               options={AMBIANCES_IMAGE.map(a => [a, LIBELLES_AMBIANCE[a]] as [AmbianceImage, string])}
-              onChange={v => { setAmbianceChoisie(true); setImage(o => ({ ...o, ambiance: v })); }} />
+              onChange={v => {
+                setAmbianceChoisie(true); setImage(o => ({ ...o, ambiance: v }));
+                // VIS-17 : la lumière choisie rejoint le brief projet (étape 6 « Vues & ambiance »).
+                try { champsBriefDeLaConversation(conversationId, { reglages: { ambiance: v } }); } catch { /* sans étude : choix local */ }
+              }} />
             : <Choix titre="Lumière" valeur={feuille === 'film' ? film.ambiance : visite.ambiance}
               options={AMBIANCES.map(a => [a, LIBELLES_AMBIANCE[a]] as [Ambiance, string])}
-              onChange={v => (feuille === 'film' ? setFilm(o => ({ ...o, ambiance: v })) : setVisite(o => ({ ...o, ambiance: v })))} />}
+              onChange={v => (feuille === 'film' ? changerFilm({ ambiance: v }) : changerVisite({ ambiance: v }))} />}
           {feuille === 'film' && <Choix titre="Format" valeur={film.format} options={[['16:9', 'Paysage'], ['9:16', 'Vertical (téléphone)']]}
-            onChange={v => setFilm(o => ({ ...o, format: v }))} />}
+            onChange={v => changerFilm({ format: v })} />}
           {feuille === 'visite360' && <Choix titre="Qualité" valeur={visite.resolution} options={[['6k', 'Haute'], ['8k', 'Très haute (plus long)']]}
-            onChange={v => setVisite(o => ({ ...o, resolution: v }))} />}
+            onChange={v => changerVisite({ resolution: v })} />}
           {feuille === 'image' && <Choix titre="Définition" valeur={image.qualite}
             options={QUALITES_IMAGE.map(q => [q, LIBELLES_QUALITE_IMAGE[q]] as [QualiteImage, string])}
             onChange={v => setImage(o => ({ ...o, qualite: v }))} />}
@@ -304,11 +344,11 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
           </p>}
           {feuille !== 'image' && <label className="mzia-rendu__case">
             <input type="checkbox" checked={feuille === 'film' ? film.interieurs : visite.interieurs}
-              onChange={e => (feuille === 'film' ? setFilm(o => ({ ...o, interieurs: e.target.checked })) : setVisite(o => ({ ...o, interieurs: e.target.checked })))} />
+              onChange={e => (feuille === 'film' ? changerFilm({ interieurs: e.target.checked }) : changerVisite({ interieurs: e.target.checked }))} />
             Montrer aussi l’intérieur des logements
           </label>}
           {feuille === 'film' && <label className="mzia-rendu__case">
-            <input type="checkbox" checked={film.musique} onChange={e => setFilm(o => ({ ...o, musique: e.target.checked }))} />
+            <input type="checkbox" checked={film.musique} onChange={e => changerFilm({ musique: e.target.checked })} />
             Ajouter une musique d’ambiance
           </label>}
           {terrainManquant && <div className="mzia-rendu__terrain">
@@ -349,6 +389,10 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
         </figure>)}
         {/* VIS-10 : brief appliqué, vues non produites, livraison commerciale (liens signés au clic). */}
         <BlocLivraisonImage resultat={visionneuse.resultat} avecVuesNonProduites />
+        {/* VIS-17 : étape 7 du parcours — l'aperçu regardé se valide ici (message dans la conversation). */}
+        {visionneuse.resultat.qualite === 'apercu' && onValiderApercu && (apercuValide === visionneuse.id
+          ? <p className="mzia-rendu__estimation" role="status"><Check size={13} /> Aperçu validé : passez au rendu final.</p>
+          : <p className="mzia-rendu__estimation">C’est bon ? <button type="button" className="is-primaire" onClick={() => onValiderApercu(visionneuse.id)}>Valider cet aperçu</button> — sinon, corrigez l’étape voulue (style, vues…) et relancez un aperçu.</p>)}
         {visionneuse.avertissements.length > 0 && <ul className="mzia-rendu__avertissements">
           {visionneuse.avertissements.map(a => <li key={a}>{a}</li>)}
         </ul>}
@@ -365,7 +409,9 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
               <div className="mzia-rendu__ligne">
                 <span><b>{LIBELLES_TYPE[t.type]}</b> · {resumeOptions(t.type, t.options)}<br /><small>{dateCourte(t.cree_le)} — {libelleStatut(t.statut)}</small></span>
                 {t.statut === 'termine' && t.type === 'film' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirFilm(t)}><Play size={13} /> Voir le film</button>}
-                {t.statut === 'termine' && t.type === 'image' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirImage(t)}><IconeImage size={13} /> Voir l’image</button>}
+                {t.statut === 'termine' && t.type === 'image' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirImage(t)}><IconeImage size={13} /> {(t.resultat as ResultatImage).qualite === 'apercu' ? 'Voir l’aperçu' : 'Voir l’image'}</button>}
+                {t.statut === 'termine' && t.type === 'image' && (t.resultat as ResultatImage | null)?.qualite === 'apercu' && onValiderApercu && apercuValide !== t.id
+                  && <button type="button" onClick={() => onValiderApercu(t.id)}>Valider l’aperçu</button>}
                 {t.statut === 'termine' && resultatVisite && <span className="mzia-rendu__actions">
                   <a className="mzia-rendu__bouton is-primaire" href={`/visite/${encodeURIComponent(resultatVisite.visite_id)}`} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Ouvrir la visite</a>
                   <button type="button" onClick={() => void copierLien(resultatVisite.visite_id)}>{copie === resultatVisite.visite_id ? <><Check size={13} /> Copié</> : <><Copy size={13} /> Copier le lien</>}</button>

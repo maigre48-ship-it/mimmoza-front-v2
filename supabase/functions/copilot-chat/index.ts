@@ -69,6 +69,8 @@ import { ACTION_PREPARER_3D_CONCEPTION, preparer3DDirect, briefDuMessage, consig
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 // VIS-16 : « Préparer la plaquette » — état réel des missions, pack plaquette.
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
+// VIS-17 : parcours guidé (image / film / visite) — bloc « PARCOURS — FAIT FOI » relu à chaque message.
+import { blocParcoursServeur } from './agent/parcours-chat.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
   CONSIGNE_EXTENSION, DELAI_PATRIMOINE_MS, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
@@ -10490,6 +10492,39 @@ async function buildEtatMissionsBlock(conversationId: string, userId: string): P
   }
 }
 
+/**
+ * VIS-17 : bloc « PARCOURS — FAIT FOI » — mission de conception, 3D préparée, rendus et aperçu validé relus en base,
+ * complétés par l'instantané de l'écran (brief projet local, réglages). Jamais bloquant : vide en cas d'échec.
+ */
+async function buildParcoursBlock(conversationId: string, userId: string, instantane: unknown, messageCourant: string): Promise<string> {
+  try {
+    const admin = getAdmin();
+    const [missions, preparations, travaux, messagesUtilisateur] = await Promise.all([
+      admin.from('agent_missions').select('type, statut, criteres').eq('conversation_id', conversationId).eq('user_id', userId)
+        .eq('type', 'conception').order('cree_le', { ascending: false }).limit(1),
+      admin.from('studio_preparations').select('idu, resume').eq('conversation_id', conversationId).eq('user_id', userId)
+        .order('cree_le', { ascending: false }).limit(1),
+      admin.from('studio_jobs').select('id, type, statut, options, resultat, cree_le').eq('conversation_id', conversationId).eq('user_id', userId)
+        .order('cree_le', { ascending: false }).limit(12),
+      admin.from('copilot_messages').select('content').eq('conversation_id', conversationId).eq('role', 'user')
+        .order('created_at', { ascending: false }).limit(60),
+    ]);
+    const { bloc } = blocParcoursServeur({
+      instantane,
+      mission: !missions.error && Array.isArray(missions.data) && missions.data[0] ? missions.data[0] as { type: string; statut: string; criteres: unknown } : null,
+      preparation: !preparations.error && Array.isArray(preparations.data) && preparations.data[0] ? preparations.data[0] as { idu: string | null; resume: unknown } : null,
+      travaux: !travaux.error && Array.isArray(travaux.data) ? travaux.data : [],
+      textesUtilisateur: !messagesUtilisateur.error && Array.isArray(messagesUtilisateur.data)
+        ? (messagesUtilisateur.data as { content: unknown }[]).map((m) => extractText(m.content)).reverse() : [],
+      messageCourant,
+    });
+    return bloc;
+  } catch (e) {
+    console.warn('[copilot] parcours indisponible :', e);
+    return '';
+  }
+}
+
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -11812,6 +11847,8 @@ async function traiterRequete(req: Request): Promise<Response> {
   // supplément de réservation qui couvre leur lecture.
   let documentsTour: DocumentsDuTour = DOCUMENTS_VIDES;
   let supplementDocuments = 0;
+  // VIS-17 : instantané du parcours envoyé par l'écran (context.parcours), retiré du contexte persisté.
+  let instantaneParcours: unknown = null;
 
   try {
     // ── Étape 1 : JWT, PUIS corps de requête ────────────────────
@@ -11827,6 +11864,12 @@ async function traiterRequete(req: Request): Promise<Response> {
       return await repondrePreparation3DDirecte(corpsRequete as Record<string, unknown>, userId, req.headers.get('Authorization') ?? '');
     }
     payload = validateRequest(corpsRequete, userId);
+    // VIS-17 : l'instantané du parcours change à chaque message : relu à part, jamais fusionné ni persisté.
+    {
+      const ctxBrut = payload.context as unknown as Record<string, unknown>;
+      instantaneParcours = ctxBrut.parcours ?? null;
+      delete ctxBrut.parcours;
+    }
 
     // ── Étape 2 : conversation+contexte ∥ plan ──────────────────
     // `ensureConversation` puis `loadLatestUserContext` restent enchaînés (le
@@ -12029,7 +12072,7 @@ async function traiterRequete(req: Request): Promise<Response> {
     //
     // `payload.message` est passé en clair : le message du tour n'a pas besoin
     // d'être déjà en base pour figurer dans ce qui part au modèle.
-    const [messages, priorToolResults, savedStudioDraft, blocAgent, etatMissions] = await Promise.all([
+    const [messages, priorToolResults, savedStudioDraft, blocAgent, etatMissions, blocParcours] = await Promise.all([
       buildMessages(conversationId, payload.message, mode, payload.attachments, documentsTour),
       // Jamais bloquant — en cas d'échec, le bloc est vide.
       buildPriorToolResultsBlock(conversationId),
@@ -12038,6 +12081,8 @@ async function traiterRequete(req: Request): Promise<Response> {
       blocAgentChat(userId, effectiveContext).catch(() => ''),
       // VIS-16 : état réel des missions de la conversation (prime sur les statuts de l'historique). Jamais bloquant.
       agentDisponible(effectiveContext.vertical) ? buildEtatMissionsBlock(conversationId, userId) : Promise.resolve(''),
+      // VIS-17 : parcours guidé (étapes, statuts calculés, prochaine étape). Jamais bloquant.
+      agentDisponible(effectiveContext.vertical) ? buildParcoursBlock(conversationId, userId, instantaneParcours, payload.message) : Promise.resolve(''),
     ]);
 
     // Demande de SUITE (reprise automatique d'une réponse coupée, envoyée par
@@ -12070,7 +12115,7 @@ async function traiterRequete(req: Request): Promise<Response> {
 
     const result = await runOrchestrator({
       mode, tier, ctx: effectiveContext, messages, sse,
-      priorToolResults: [priorToolResults, savedStudioDraft, blocAgent, etatMissions].filter(Boolean).join('\n\n'),
+      priorToolResults: [priorToolResults, savedStudioDraft, blocAgent, etatMissions, blocParcours].filter(Boolean).join('\n\n'),
       // userId vient de requireUserId() (JWT vérifié) ; l'en-tête est réutilisé
       // tel quel pour que les écritures passent par le client UTILISATEUR.
       auth: { userId, authHeader: req.headers.get('Authorization') ?? '' },

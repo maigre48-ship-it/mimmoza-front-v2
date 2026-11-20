@@ -51,6 +51,8 @@ import { lireDemandePhotoMaison } from '@/lib/studio/photoReelle';
 import type { DemandeBrief } from '../studio3d/briefCreatif';
 import { demandePreremplie, lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
 import { habillageDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
+// VIS-17 : bloc ```mimmoza-parcours``` (aperçu validé) masqué dans la bulle de l'utilisateur.
+import { lireBlocParcours } from '@/lib/studio/parcours';
 import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
 import { lireBlocChoix, situationChoix } from '../utils/choixCliquables';
 // LOT D1 : réponse longue → aperçu dans le fil + document complet dans le panneau.
@@ -167,6 +169,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   if (isUser) {
     // LOT BRIEF-CRÉATIF : le bloc ```mimmoza-brief``` (relu par le serveur) est masqué ; une pastille le signale.
     const blocBrief = lireBlocBrief(message.text);
+    const blocParcours = lireBlocParcours(blocBrief.visible);
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
         <div style={{
@@ -176,7 +179,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
         }}>
           {blocBrief.brief && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 600 }}>Brief créatif</span>}
           {blocBrief.brief && <br />}
-          {blocBrief.visible}
+          {blocParcours.apercuValide && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#dcfce7', color: '#15803d', fontSize: 11, fontWeight: 600 }}>Aperçu validé</span>}
+          {blocParcours.apercuValide && <br />}
+          {blocParcours.visible}
         </div>
       </div>
     );

@@ -246,6 +246,8 @@ export interface ValuationEngineContext {
 export interface MimmozaContext {
   vertical: Vertical;
   route: string;
+  /** VIS-17 : instantané du parcours guidé (ce que seul l'écran connaît : brief projet local, réglages film / visite). */
+  parcours?: unknown;
   parcel?: ParcelContextRef;
   study?: StudyContextRef;
   listing?: ListingContextRef;

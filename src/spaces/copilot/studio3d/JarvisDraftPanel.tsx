@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '../types/copilot.types';
 import { jarvisMassing, latestJarvisDraft, readJarvisDraft, reconcileJarvisDraft, type JarvisDraft } from './jarvisDraft';
 import { JarvisMassingPreview } from './JarvisMassingPreview';
@@ -27,6 +27,18 @@ import { apercuDepuisEvaluation } from './ficheDimensions';
 import type { EtatHabillage } from './FicheProjet3D';
 // Lot brief-formes : limites du dossier (bâtiment à ailes → pas de toit à deux pans).
 import { limitesDossier } from './briefCreatif';
+// VIS-17 — parcours guidé en tête du panneau ; les étapes ouvrent les outils existants (fiche, habillage, brief relié
+// au rendu, feuille « Film, visite 360° ou image »).
+import { ParcoursPanneau, type ActionnerParcours } from './ParcoursGuide';
+import type { CibleParcours, Parcours, TypeParcours } from '@/lib/studio/parcours';
+import type { CommandeRendu } from './FilmVisitePanel';
+import { ouverturePreparation } from './preparationStudio';
+import { BriefProjetRenduSection } from '@/spaces/promoteur/pages/BriefProjetRenduSection';
+import { etudeDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
+
+/** VIS-17 — commande d'une étape du parcours vers le panneau (jeton : une valeur par clic). */
+export interface CommandeParcours { cible: CibleParcours | 'parcours'; type: TypeParcours; jeton: number }
+const FEUILLE_DU_TYPE = { image: 'image', film: 'film', visite: 'visite360' } as const;
 
 const LABELS = {
   objectif: 'Objectif',
@@ -41,9 +53,17 @@ type Field = keyof typeof LABELS;
 /** R2 — résultat de l'ouverture : `parcelle-requise` = poser la question minimale dans le dossier. */
 export type IssueOuvertureStudio = void | 'parcelle-requise';
 
-export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage }: {
+export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, onParcours, onTypeParcours, commandeParcours, noticeParcours, onValiderApercu, apercuValide }: {
   messages: readonly ChatMessage[];
   conversationId: string | null;
+  /** VIS-17 : parcours calculé (CopilotChat), actions des étapes, commande d'une étape cliquée (panneau ou carte du chat). */
+  parcours?: Parcours | null;
+  onParcours?: ActionnerParcours;
+  onTypeParcours?: (t: TypeParcours) => void;
+  commandeParcours?: CommandeParcours | null;
+  noticeParcours?: string | null;
+  onValiderApercu?: (travailId: string) => void;
+  apercuValide?: string | null;
   /**
    * Lot brief-unifié : section habillage ouverte ou non (tenu par CopilotChat : ligne « Choisir l'habillage → » du chat,
    * demande de brief de Mimmo) ; `demande` porte le type du rendu attendu, `jeton` change à chaque ouverture demandée.
@@ -129,11 +149,73 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   // Lot brief-unifié : sans fiche du moteur, la section habillage reste disponible si le chat ou Mimmo l'ouvre.
   const habillageSansFiche = !ficheOk && !!habillage?.ouverte;
   const parcelleConnue = volume.contexte.parcelle.type !== 'aucune';
+
+  // VIS-17 — rendus (film, visite, image) aussi depuis la 3D préparée par Mimmo (parcours mission, sans fiche décrite).
+  const draftPret = !!draft && !!draft.objectif?.trim() && diagnostiquerPreparation3D(draft).pret;
+  const prepRendu = useMemo(() => {
+    if (!ficheOk) return null;
+    const o = ouverturePreparation({ ...ficheOk.prep, volume: ficheOk.ev.volume });
+    return o.ok ? { draft: o.fiche, terrain: o.terrain } : null;
+  }, [ficheOk]);
+  const rendu = conversationId ? (draft && draftPret ? { draft, terrain: undefined } : prepRendu) : null;
+  const refParcours = useRef<HTMLDivElement | null>(null);
+  const refDimensions = useRef<HTMLDivElement | null>(null);
+  const refReglages = useRef<HTMLDivElement | null>(null);
+  const [reglagesOuverts, setReglagesOuverts] = useState(false);
+  const [noteParcours, setNoteParcours] = useState<string | null>(null);
+  const [commandeRendu, setCommandeRendu] = useState<CommandeRendu | null>(null);
+  const etude = useMemo(() => (conversationId ? etudeDeLaConversation(conversationId) : null), [conversationId]);
+  const jetonParcours = commandeParcours?.jeton ?? 0;
+  // Une commande n'est exécutée qu'une fois (pas de nouveau à la remontée du panneau sur la même conversation).
+  const dernierJetonParcours = useRef(jetonParcours);
+  useEffect(() => {
+    const c = commandeParcours;
+    if (!c || jetonParcours === 0 || jetonParcours === dernierJetonParcours.current) return;
+    dernierJetonParcours.current = jetonParcours;
+    setNoteParcours(null);
+    const defiler = (r: { current: HTMLElement | null }) => window.requestAnimationFrame(() => r.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
+    const versRendu = (feuille: CommandeRendu['feuille'], qualite?: CommandeRendu['qualite']) => {
+      if (!rendu) { setNoteParcours('Les images, films et visites se lancent depuis la 3D : préparez-la d’abord (étape 3).'); defiler(refParcours); return; }
+      setCommandeRendu((p) => ({ feuille, ...(qualite ? { qualite } : {}), jeton: (p?.jeton ?? 0) + 1 }));
+    };
+    switch (c.cible) {
+      case 'parcours': defiler(refParcours); break;
+      case 'dimensions':
+        if (ficheOk) defiler(refDimensions);
+        else { setNoteParcours('Le volume s’ajuste ici une fois la 3D préparée par Mimmo ; sinon, ouvrez-le dans le Studio.'); defiler(refParcours); }
+        break;
+      case 'reglages-rendu':
+        if (etude) { setReglagesOuverts(true); defiler(refReglages); }
+        else { setNoteParcours('Vues, lumière et gamme se règlent dans le brief d’une étude : aucune étude n’est rattachée à cette conversation. Choisissez les vues dans la feuille « Image ».'); versRendu('image'); }
+        break;
+      case 'feuille-image': versRendu('image'); break;
+      case 'feuille-film': versRendu('film'); break;
+      case 'feuille-visite': versRendu('visite360'); break;
+      case 'apercu': versRendu('image', 'apercu'); break;
+      case 'final': versRendu(FEUILLE_DU_TYPE[c.type], c.type === 'image' ? 'finale' : undefined); break;
+      case 'resultats': versRendu(null); break;
+      default: break;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jetonParcours]);
+  const parcoursUi = parcours && onParcours ? <div ref={refParcours}>
+    <ParcoursPanneau parcours={parcours} onAction={onParcours} onType={onTypeParcours} />
+    {(noteParcours || noticeParcours) && <p role="status" className="jarvis-dossier__proposal">{noteParcours ?? noticeParcours}</p>}
+    {reglagesOuverts && etude && <div ref={refReglages} style={{ margin: '0 0 12px' }}>
+      <BriefProjetRenduSection studyId={etude} source="parcours" />
+      <button type="button" className="jarvis-dossier__link" onClick={() => setReglagesOuverts(false)}>Fermer les réglages</button>
+    </div>}
+  </div> : null;
+  const panneauRendu = (assurer?: () => Promise<void>) => rendu && conversationId ? <FilmVisitePanel draft={rendu.draft} conversationId={conversationId}
+    assurerValidation={assurer} commande={commandeRendu} terrainParDefaut={rendu.terrain} onValiderApercu={onValiderApercu} apercuValide={apercuValide} /> : null;
+
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
-    <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus />
+    {parcoursUi}
+    <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus={!rendu} />
+    {panneauRendu()}
     {ficheOk && <dl className="jarvis-dossier__fields">
       <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>Programme</dt><dd><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
-      <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.dimensions}</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} onSend={onSend} /></dd></div>
+      <div className="jarvis-dossier__field jarvis-dossier__field--large" ref={refDimensions}><dt>{LABELS.dimensions}</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} onSend={onSend} /></dd></div>
       <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.style}</dt><dd>{styleFiche}</dd></div>
     </dl>}
     {habillageSansFiche && <dl className="jarvis-dossier__fields">
@@ -251,6 +333,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
 
   return (
     <aside aria-label="Dossier de préparation 3D" className="jarvis-dossier">
+      {parcoursUi}
       <div className="jarvis-dossier__heading">
         <div><h2>Votre projet</h2><p>Repris de la conversation</p></div>
         <span className={`jarvis-dossier__status ${saved?.status === 'validated' && diagnostic.pret ? 'is-validated' : ''}`}>
@@ -271,12 +354,12 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
         <Box size={16} /> {opening ? 'Ouverture de Studio…' : nombreBatiments > 1 ? `Voir les ${String(nombreBatiments)} bâtiments en 3D` : 'Voir en 3D'} <ArrowUpRight size={17} />
       </button>}
       {!editing && <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio}
-        suiviRendus={!(conversationId && draft.objectif?.trim() && diagnostic.pret)} />}
+        suiviRendus={!rendu} />}
       {demandeParcelle && !editing && conversationId && diagnostic.pret && <ConfirmerParcelle adresseInitiale={draft.localisation}
         onConfirmer={terrain => void voirEn3D(terrain)} onAnnuler={() => setDemandeParcelle(false)} />}
       {/* Fiche sans volume chiffré (dimensions ou R+N manquants) : volume d'étude calculé sur la parcelle, en hypothèse. */}
       {!editing && !draftMassing && parcelleConnue && <VolumeParcelleSection {...volume} conversationId={conversationId} fiche={draft} onOpenStudio={onOpenStudio} />}
-      {!editing && conversationId && draft.objectif?.trim() && diagnostic.pret && <FilmVisitePanel draft={draft} conversationId={conversationId} assurerValidation={assurerValidation} />}
+      {!editing && panneauRendu(draftPret ? assurerValidation : undefined)}
       <div className={`jarvis-dossier__body ${expanded ? 'is-expanded' : ''}`}>
       {currentStudioVolume && <p className="jarvis-dossier__proposal">Aperçu actualisé depuis Studio sur cet appareil. Les corrections se font dans l’onglet Studio.</p>}
       {newSuggestion && !editing && <p className="jarvis-dossier__proposal">Nouvelle proposition de Mimmo : l’aperçu montre les changements à examiner avant le transfert.</p>}
@@ -311,7 +394,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
       ) : (
         <>
           <dl className="jarvis-dossier__fields">
-            {(Object.entries(LABELS) as [Field, string][]).map(([key, label], index) => <div key={key}
+            {(Object.entries(LABELS) as [Field, string][]).map(([key, label], index) => <div key={key} ref={key === 'dimensions' ? refDimensions : undefined}
               className={`jarvis-dossier__field${(key === 'style' || ((key === 'programme' || key === 'dimensions') && ficheOk)) ? ' jarvis-dossier__field--large' : ''}`}>
               <dt><span>{String(index + 1).padStart(2, '0')}</span> {label}</dt>
               {key === 'programme' && ficheOk ? <dd><ProgrammeFiche fiche={ficheOk} texteModele={draft.programme} /></dd>

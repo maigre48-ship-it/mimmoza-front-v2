@@ -24,7 +24,9 @@ import { lireMissionParId } from './agent/agentApi';
 // VIS-15 : ouverture du projet en 3D à la fin d'une mission de conception.
 import { corpsPreparation3D, EVENEMENT_OUVRIR_PROJET_3D, lireIssuePreparation3D } from './agent/projet3DMission';
 import type { DemandeOuvertureProjet3D } from './agent/BoutonProjet3D';
-import { lirePreparationStockee, ouverturePreparation } from './studio3d/preparationStudio';
+import { dernierePreparation, lirePreparationStockee, ouverturePreparation } from './studio3d/preparationStudio';
+// VIS-17 : une étape du parcours ouvre le Studio intégré sur la bonne étape (Bâtiment, Aménagement → Intérieur).
+import { EVENEMENT_PARCOURS_STUDIO, preparerEtapeStudio, type DemandeParcoursStudio } from './studio3d/parcours.store';
 import { AtelierConception } from './agent/conception/AtelierConception';
 import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
 import { usePlanAccess } from '@/lib/billing/usePlanAccess';
@@ -593,6 +595,53 @@ export default function MimmozIAPage() {
     };
     window.addEventListener(EVENEMENT_OUVRIR_PROJET_3D, surProjet3D);
     return () => window.removeEventListener(EVENEMENT_OUVRIR_PROJET_3D, surProjet3D);
+  }, [voirEn3D]);
+  // VIS-17 : étape du parcours → Studio intégré ouvert sur l'étape voulue (mémoire des colonnes du Studio, même origine),
+  // par les parcours existants : 3D préparée par Mimmo (comme « Ouvrir la 3D préparée »), sinon fiche du projet.
+  useEffect(() => {
+    const surStudio = (e: Event) => {
+      const d = (e as CustomEvent<DemandeParcoursStudio>).detail;
+      if (!d) return;
+      d.prise = true;
+      preparerEtapeStudio(d.etape, d.sous);
+      const libelle = d.etape === 'amenagement' ? '« Aménagement », onglet « Intérieur »' : '« Bâtiment »';
+      const state = useCopilotStore.getState();
+      const conversationId = state.currentConversationId;
+      const avant = studio3dRef.current;
+      if (conversationId && avant.demande && avant.conversationId === conversationId) {
+        // Studio déjà chargé : il garde son étape (rien n'est rechargé, aucune modification perdue).
+        setStudio3d({ ...avant, ouvert: true });
+        d.repondre(`Le Studio était déjà ouvert : dans sa colonne de gauche, choisissez l’étape ${libelle}.`);
+        return;
+      }
+      void (async () => {
+        try {
+          if (!conversationId) throw new Error('Ouvrez d’abord la conversation du projet.');
+          const ref = dernierePreparation(state.messages as never);
+          if (ref) {
+            const lu = await supabase.from('studio_preparations').select('id,idu,entree,volume').eq('id', ref.preparationId).maybeSingle();
+            const p = lu.error ? null : lirePreparationStockee(lu.data);
+            if (!p) throw new Error('La 3D préparée est illisible : demandez à Mimmo de la préparer à nouveau.');
+            const o = ouverturePreparation(p);
+            if (!o.ok) throw new Error(o.erreur);
+            const res = await voirEn3D(o.fiche, conversationId, o.terrain);
+            d.repondre(res === 'parcelle-requise' ? 'Le Studio demande de confirmer la parcelle.' : null);
+            return;
+          }
+          const fiche = latestJarvisDraft(state.messages);
+          if (fiche) {
+            const res = await voirEn3D(fiche, conversationId);
+            d.repondre(res === 'parcelle-requise' ? 'Le Studio demande de confirmer la parcelle.' : null);
+            return;
+          }
+          d.repondre('Préparez d’abord la 3D du projet (étape 3) : le Studio s’ouvrira ensuite sur cette étape.');
+        } catch (erreur) {
+          d.repondre(erreur instanceof Error ? erreur.message : 'Ouverture du Studio impossible.');
+        }
+      })();
+    };
+    window.addEventListener(EVENEMENT_PARCOURS_STUDIO, surStudio);
+    return () => window.removeEventListener(EVENEMENT_PARCOURS_STUDIO, surStudio);
   }, [voirEn3D]);
   const preparerMission3D = useCallback((mission: Mission) => {
     const state = useCopilotStore.getState();
