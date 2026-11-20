@@ -88,6 +88,15 @@ export function etudeDeLaConversation(conversationId: string): string | null {
   return etudeDuChat(conversationId, getActiveStudyId(), stockage);
 }
 
+/**
+ * VIS-16 : habillage mémorisé pour l'étude de la conversation (dernier choix de la carte « Brief créatif ») — sert à
+ * PRÉ-REMPLIR la carte quand Mimmo demande l'habillage d'un rendu ; null sans étude ou sans habillage mémorisé.
+ */
+export function habillageDeLaConversation(conversationId: string | null | undefined): SourceHabillage | null {
+  if (!conversationId) return null;
+  try { return habillageMemorise(etudeDeLaConversation(conversationId)); } catch { return null; }
+}
+
 /** Champs du contrat pour une conversation (chat, FilmVisitePanel) ; null sans étude rattachée. */
 export function champsBriefDeLaConversation(conversationId: string, maj: { reglages?: ReglagesRendu; habillage?: SourceHabillage | null } = {}): { brief: BriefProjet; champs: ChampsContratBrief } | null {
   const etude = etudeDeLaConversation(conversationId);

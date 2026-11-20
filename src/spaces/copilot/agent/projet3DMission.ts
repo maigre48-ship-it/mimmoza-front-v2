@@ -44,6 +44,31 @@ export function phraseSuiteConception(m: Pick<Mission, 'statut'>): string {
 /** Message envoyé à Mimmo par le bouton secondaire « Préparer la plaquette ». */
 export const MESSAGE_PACK_PLAQUETTE = 'Prépare le pack plaquette de ce projet (visuels de commercialisation), à partir de la 3D de la conception.';
 
+// ── VIS-16 (20/11/2026) : un clic dans le panneau Missions ramène la conversation au premier plan ──────────────
+// Essai du 20/11 : « Préparer la plaquette » envoyait bien le message, mais le panneau Missions (fenêtre modale)
+// restait ouvert par-dessus : la réponse de Mimmo était invisible (« ça ne marche pas »).
+
+/** Événement fenêtre : la conversation revient au premier plan et défile jusqu'à la dernière réponse (CopilotChat). */
+export const EVENEMENT_CONVERSATION_PREMIER_PLAN = 'mimmoza:conversation-premier-plan';
+
+/**
+ * Conversation à (r)ouvrir avant d'envoyer le message de la carte : celle de la mission si l'écran en montre une
+ * autre (ou l'accueil) ; null si la bonne conversation est déjà affichée (ou si la mission n'en a pas).
+ */
+export function conversationAOuvrir(
+  m: Pick<Mission, 'conversation_id'>, courante: string | null | undefined, vue: 'welcome' | 'conversation' | string = 'conversation',
+): string | null {
+  const cible = m.conversation_id ?? null;
+  if (!cible) return null;
+  return cible !== (courante ?? null) || vue !== 'conversation' ? cible : null;
+}
+
+/** Fait défiler la conversation jusqu'à la réponse (après fermeture du panneau). Sans fenêtre : rien. */
+export function signalerConversationPremierPlan(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(EVENEMENT_CONVERSATION_PREMIER_PLAN));
+}
+
 export type IssuePreparation3D =
   | { ok: true; preparationId: string; gabaritRetenu: string | null; assiette: string | null }
   | { ok: false; message: string };

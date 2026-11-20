@@ -85,7 +85,9 @@ import { optionPhotoClient, photoProjetDesSorties, photoProjetUtilisableCommeFon
 import { confirmerRenduMaison, devisRenduMaison, empreinteProjetMaison, maisonDeLaConversation, MESSAGE_MAISON_SANS_3D, MESSAGE_PHOTO_REQUISE_MAISON, type OutilsStudio } from './studio-maison.ts';
 // VIS-04 (18/11/2026) — brief projet (Style & tendances, programme, habillage, vues) relié au rendu, et catalogue
 // commun des vues (mimmozia-studio docs/vis/COORDINATION.md). Code PUR partagé avec le front.
-import { empreinteChamps, lireChampsContrat, type ChampsContratBrief } from '../../../../src/lib/studio/briefProjet.ts';
+import { empreinteChamps, habillageDuBriefProjet, lireChampsContrat, type ChampsContratBrief } from '../../../../src/lib/studio/briefProjet.ts';
+// VIS-16 : pack plaquette (vues choisies par le serveur).
+import { phraseVues, vuesDuModeleRemplacables, vuesPackPlaquette } from './plaquette.ts';
 import { estVueCatalogue, libelleCourtVue, MAX_VUES_PAR_IMAGE, phraseVuesDisponibles, phrasesPronosticVues, pronosticVues, VUES_DISPONIBLES, vuesARendre } from '../../../../src/lib/studio/catalogueVues.ts';
 // VIS-10 (19/11/2026) — option `livraison` (livraison commerciale du worker VIS-07 / VIS-INT-2), mêmes règles que la base.
 import { avecLivraisonParDefaut, validerOptionLivraison } from '../../../../src/lib/studio/livraisonCommerciale.ts';
@@ -1435,7 +1437,8 @@ export const CONSIGNE_RENDU_STUDIO =
   'ses choix d’habillage sont déjà écrits dans son message : c’est l’outil qui ouvre la carte « Brief créatif » dans l’Espace 3D (ou reprend l’habillage ' +
   'déjà choisi) puis le devis. Seul le TYPE de rendu peut se demander, s’il n’est pas précisé (bloc mimmoza-choix : Film, Visite 360°, Image).';
 
-const RE_RENDU_TYPE = /(^|[^\p{L}])(films?|vid[ée]os?|visites?\s+(?:virtuelles?|immersives?|360|3\s?d)|360\s?°|image\s+photo|images\s+photo|photo-?r[ée]alis\p{L}*)(?![\p{L}])/iu;
+// VIS-16 : la plaquette (pack de visuels de commercialisation) est une demande de rendu image.
+const RE_RENDU_TYPE = /(^|[^\p{L}])(films?|vid[ée]os?|visites?\s+(?:virtuelles?|immersives?|360|3\s?d)|360\s?°|image\s+photo|images\s+photo|photo-?r[ée]alis\p{L}*|plaquettes?|visuels?\s+de\s+commercialisation)(?![\p{L}])/iu;
 const RE_RENDU_NIE = /(^|[^\p{L}])(pas|sans|aucun|aucune|ni)\s+(?:de\s+|d['’]\s*|la\s+|le\s+|l['’]\s*)?(films?|vid[ée]os?|visites?|images?|rendus?)(?![\p{L}])/iu;
 
 /** Le message demande-t-il un rendu d'un TYPE précis (film, vidéo, visite virtuelle / 360°, image photoréaliste) ? */
@@ -1466,7 +1469,7 @@ export function doitForcerLancerRendu(p: {
 
 /** Les outils Studio méritent-ils d'être proposés à ce tour ? (dernier message utilisateur, dernière réponse) */
 export function studioPertinent(textes: readonly string[]): boolean {
-  const RE = /\b(3\s?d|studio|maquette|volume|implantation|rendu|rendus|image|images|film|vid[ée]o|visite|360|perspective|photor[ée]alist)/i;
+  const RE = /\b(3\s?d|studio|maquette|volume|implantation|rendu|rendus|image|images|film|vid[ée]o|visite|360|perspective|photor[ée]alist|plaquette)/i;
   return textes.some((t) => RE.test(t ?? ''));
 }
 
@@ -1881,9 +1884,21 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // VIS-04 — vues de l'image : cochées dans la carte (message reçu), sinon celles du brief projet ; seules les vues
   // DISPONIBLES partent, les vues « bientôt » demandées sont DITES dans le devis (jamais retirées en silence).
   const notesVues: string[] = [];
+  // VIS-16 : plaquette demandée (`pack`, posé par index.ts d'après le message REÇU) — vues du brief projet si
+  // enregistrées, sinon PACK_PLAQUETTE ; l'ancien jeu (3/4 gauche, 3/4 droite, face) écrit par le modèle est remplacé.
+  const packPlaquette = type === 'image' && input.pack === 'plaquette' && !(carte?.ok && carte.valeur.vues)
+    && vuesDuModeleRemplacables(estObj(optionsDemandees) ? optionsDemandees.vues : undefined);
+  if (packPlaquette) {
+    const o = estObj(optionsDemandees) ? optionsDemandees : {};
+    // Le pack mêle vues aériennes, privatives et intérieures : images d'étude (le fond photo de rue n'en porte qu'une).
+    const avecFondPhoto = estFondPhoto(o.fond);
+    optionsDemandees = Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'vues' && !(CLES_FOND as readonly string[]).includes(k)));
+    if (avecFondPhoto) notesVues.push('Pack plaquette : images d’étude (une vue dans une vraie photo de la rue se demande à part).');
+  }
   if (type === 'image') {
     const voulues = carte?.ok && carte.valeur.vues ? carte.valeur.vues
-      : !(estObj(optionsDemandees) && optionsDemandees.vues !== undefined) && briefProjet?.rendu?.vues?.length ? briefProjet.rendu.vues : null;
+      : !(estObj(optionsDemandees) && optionsDemandees.vues !== undefined) && briefProjet?.rendu?.vues?.length ? briefProjet.rendu.vues
+      : packPlaquette ? vuesPackPlaquette() : null;
     if (voulues) {
       const r = vuesARendre(voulues);
       if (r.nonProduites.length) notesVues.push(`Vues pas encore produites par la machine de rendu (bientôt) : ${r.nonProduites.map(libelleCourtVue).join(', ')} — non incluses dans ce rendu.`);
@@ -1893,6 +1908,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   }
   const opts0 = validerOptionsRendu(type, optionsDemandees, uid);
   if (!opts0.ok) return erreur(`${opts0.erreur} RIEN N’A ÉTÉ LANCÉ.`);
+  // VIS-16 : ce qui sera chiffré une fois l'habillage choisi (dit dans la carte d'action du chat et au modèle).
+  const prevu: PrevuRendu | null = type === 'image' && Array.isArray(opts0.valeur.vues)
+    ? { vues: opts0.valeur.vues as string[], duree: dureeAnnoncee(type, opts0.valeur), pack: packPlaquette && !(briefProjet?.rendu?.vues?.length) }
+    : null;
   if (type === 'image') {
     const autorise = await env.depot.typeRenduAutorise('image', opts0.valeur);
     if (autorise === false) return fondPhoto(opts0.valeur) ? refusFondPhoto() : refusImage();
@@ -1987,13 +2006,14 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // conservée et l'extension) : ni carte, ni question d'habillage ; seule l'ambiance d'un brief fourni est reprise.
   if (input.ouvrir_brief === true && src.source.genre === 'preparation' && !briefCarteLu && !extension) {
     const p = src.source.preparation;
-    return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine) });
+    return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine), prevu });
   }
   if (!brief && src.source.genre === 'preparation' && !extension) {
     let posee = false;
     try { posee = await env.depot.questionBriefPosee(uid, env.conversationId); } catch { posee = false; }
     const p = src.source.preparation;
-    if (!posee) return demandeBrief(type, { actuel: null, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine) });
+    // VIS-16 : carte pré-remplie avec l'habillage du brief projet enregistré (s'il y en a un).
+    if (!posee) return demandeBrief(type, { actuel: null, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine), prevu, prerempli: briefPrerempli(briefProjet) });
     // Jamais la même question deux fois : déjà posée dans un message précédent → valeurs par défaut, dites.
     brief = { ...BRIEF_DEFAUT, precisions: null, defauts: [...CHAMPS_BRIEF] }; origineBrief = 'defaut_impose';
   }
@@ -2038,7 +2058,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     if (aAiles && brief && toitEnPente(brief.toiture)) {
       const p = src.source.preparation;
       if (origineBrief === 'fourni') return erreur(`${RAISON_PENTE_AILES} RIEN N’A ÉTÉ LANCÉ. Propose un toit-terrasse ou une toiture végétalisée (carte d’habillage de l’Espace 3D).`);
-      return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine) });
+      return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine), prevu });
     }
   }
   const actifs = await env.depot.travauxActifs(uid);
@@ -2354,17 +2374,33 @@ export async function fondDuDevis(env: EnvStudio, uid: string, p: PreparationLue
   };
 }
 
+/** VIS-16 — rendu prévu une fois l'habillage choisi (vues, durée annoncée, pack plaquette). */
+export interface PrevuRendu { vues: string[]; duree: string; pack: boolean }
+
+/** VIS-16 — habillage du brief projet enregistré → brief pré-rempli (champs non lus : valeurs proposées). */
+export function briefPrerempli(c: ChampsContratBrief | null): BriefRendu | null {
+  const h = habillageDuBriefProjet(c);
+  if (!h) return null;
+  const v = validerBrief({ ...h, a_toi_de_choisir: true });
+  return v.ok ? v.valeur : null;
+}
+
 /**
  * Garde E1-brief : aucun devis sans brief pour une 3D préparée. Le front affiche la carte « Brief
  * créatif » (CarteBriefCreatif) à la place de la carte d'outil ; la question texte reste le repli.
  * `actuel` : brief connu (modification) ; `apercu` : volume réel pour l'aperçu 3D de la carte.
  */
-function demandeBrief(type: TypeRendu, carte: { actuel: BriefRendu | null; apercu: ApercuVolume | null; limites: LimitesBrief }): ResultatOutil {
+function demandeBrief(type: TypeRendu, carte: { actuel: BriefRendu | null; apercu: ApercuVolume | null; limites: LimitesBrief; prevu?: PrevuRendu | null; prerempli?: BriefRendu | null }): ResultatOutil {
   const modification = carte.actuel !== null;
+  const prerempli = !modification && carte.prerempli ? carte.prerempli : null;
+  const prevu = carte.prevu ?? null;
   return {
     status: 'partial', source: SOURCE_STUDIO,
     data: {
       brief_requis: true, type, carte: 'brief_creatif', ...(modification ? { modification: true, actuel: carte.actuel } : {}),
+      // VIS-16 : carte pré-remplie avec le brief projet ; vues et durée prévues (carte d'action du chat).
+      ...(prerempli ? { actuel: prerempli, prerempli: 'brief_projet' } : {}),
+      ...(prevu ? { vues_prevues: prevu.vues, duree_prevue: prevu.duree, ...(prevu.pack ? { pack: 'plaquette' } : {}) } : {}),
       champs: {
         style: { valeurs: BRIEF_STYLES, defaut: BRIEF_DEFAUT.style },
         facade: { valeurs: BRIEF_FACADES, defaut: BRIEF_DEFAUT.facade },
@@ -2387,7 +2423,9 @@ function demandeBrief(type: TypeRendu, carte: { actuel: BriefRendu | null; aperc
     message:
       (modification
         ? "RIEN N'A ÉTÉ LANCÉ. Le panneau « Espace 3D » (à droite du chat) s'ouvre sur l'habillage du projet (carte « Brief créatif »), préremplie avec l'habillage actuel : "
-        : "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Le panneau « Espace 3D » (à droite du chat) s'ouvre de lui-même sur l'habillage du projet (carte « Brief créatif ») : ") +
+        : "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Le panneau « Espace 3D » (à droite du chat) s'ouvre de lui-même sur l'habillage du projet (carte « Brief créatif ») " +
+          (prerempli ? "PRÉ-REMPLIE avec l'habillage du brief projet enregistré (dis-le) : " : ': ')) +
+      (prevu ? `Visuels prévus après l'habillage${prevu.pack ? ' (pack plaquette)' : ''} : ${String(prevu.vues.length)} vue${prevu.vues.length > 1 ? 's' : ''} — ${phraseVues(prevu.vues)} ; durée ${prevu.duree}. Annonce EXACTEMENT ces vues et cette durée, aucune autre. ` : '') +
       "l'utilisateur y choisit façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, ambiance et, s'il le souhaite, les détails (toiture, teinte, garde-corps, menuiseries, soubassement), avec un aperçu de son volume. " +
       "Écris UN SEUL message court : invite-le à faire ses choix dans l'Espace 3D, section habillage (ou à répondre en texte, ou « à toi de choisir ») ; " +
       "ne recopie pas la liste des choix, ne pose aucune autre question. Quand il valide l'habillage, son message contient un bloc " +

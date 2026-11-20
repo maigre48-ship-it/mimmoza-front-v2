@@ -33,9 +33,11 @@ export function messageRelanceAssiette(erreur: string | null): string | null {
   return `Relance la mission de conception sur l'assiette groupée complète${liste ? ` (${liste})` : ''}, puis ouvre le projet en 3D.`;
 }
 
-export function BoutonProjet3D({ mission, onSend, onRapport, compact = false }: {
+export function BoutonProjet3D({ mission, onSend, onRapport, onAction, compact = false }: {
   mission: Mission;
   onSend?: (texte: string) => void;
+  /** VIS-16 : « Préparer la plaquette » cliqué, ou 3D ouverte — le panneau Missions se ferme pour montrer la suite. */
+  onAction?: () => void;
   /** Ouvre le rapport (action secondaire). */
   onRapport?: () => void;
   compact?: boolean;
@@ -50,6 +52,9 @@ export function BoutonProjet3D({ mission, onSend, onRapport, compact = false }: 
     try {
       const issue = await demanderOuvertureProjet3D(mission);
       if (!issue.ok) { setErreur(issue.message); return; }
+      // VIS-16 : 3D ouverte → le panneau Missions se ferme (sinon il reste par-dessus l'Espace 3D). En échec il reste
+      // ouvert pour que le message d'erreur soit lu.
+      onAction?.();
       setInfo([issue.assiette ? `Assiette : ${issue.assiette}.` : null, issue.gabaritRetenu ? `${issue.gabaritRetenu}.` : null].filter(Boolean).join(' ') || null);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : 'Ouverture de la 3D impossible.');
@@ -62,7 +67,7 @@ export function BoutonProjet3D({ mission, onSend, onRapport, compact = false }: 
         <button type="button" className="mzag-btn mzag-btn--plein" disabled={occupe} onClick={() => void ouvrir()}>
           <Box size={14} aria-hidden /> {occupe ? 'Préparation de la 3D…' : 'Ouvrir mon projet en 3D'}
         </button>
-        {onSend && <button type="button" className="mzag-btn" disabled={occupe} onClick={() => onSend(MESSAGE_PACK_PLAQUETTE)}>Préparer la plaquette</button>}
+        {onSend && <button type="button" className="mzag-btn" disabled={occupe} onClick={() => { onAction?.(); onSend(MESSAGE_PACK_PLAQUETTE); }}>Préparer la plaquette</button>}
         {onRapport && <button type="button" className="mzag-btn mzag-btn--discret" onClick={onRapport}><FileText size={14} aria-hidden /> Voir le rapport</button>}
       </div>
       {info && <p className="mzag-info" role="status" style={{ margin: 0 }}>{info}</p>}

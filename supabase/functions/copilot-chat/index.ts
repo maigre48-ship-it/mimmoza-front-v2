@@ -67,6 +67,8 @@ import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUT
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
 import { ACTION_PREPARER_3D_CONCEPTION, preparer3DDirect, briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, demandePlansSeuls, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
+// VIS-16 : « Préparer la plaquette » — état réel des missions, pack plaquette.
+import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
   CONSIGNE_EXTENSION, DELAI_PATRIMOINE_MS, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
@@ -4699,7 +4701,10 @@ async function executeTool(
       // FINITIONS 18/11 — « Recevoir les plans » : lu dans le message REÇU (jamais déduit des paramètres du modèle) ;
       // le premier temps devient le devis des plans seuls.
       const texteRecu = typeof (ctx as unknown as Record<string, unknown>).message_utilisateur === 'string' ? (ctx as unknown as Record<string, unknown>).message_utilisateur as string : '';
-      const entree = name === 'studio_lancer_rendu' && input.confirmer !== true && demandePlansSeuls(texteRecu) ? { ...input, type: 'image', plans_seuls: true } : input;
+      const entree0 = name === 'studio_lancer_rendu' && input.confirmer !== true && demandePlansSeuls(texteRecu) ? { ...input, type: 'image', plans_seuls: true } : input;
+      // VIS-16 : plaquette demandée dans le message REÇU → pack plaquette (vues choisies par le serveur, jamais l'ancien jeu).
+      const entree = name === 'studio_lancer_rendu' && entree0.confirmer !== true && entree0.plans_seuls !== true && demandePlaquette(texteRecu)
+        ? { ...entree0, pack: 'plaquette' } : entree0;
       // Lot E1 : identité = JWT vérifié ; écritures avec le client UTILISATEUR (RLS).
       return ((await executerOutilStudio(name, entree, envStudio(ctx, auth)))
         ?? { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` }) as ToolResult;
@@ -10412,6 +10417,9 @@ async function buildPriorToolResultsBlock(conversationId: string): Promise<strin
       if (!nom) continue;
       // Les actions ne rapportent aucune donnée : rien à rappeler.
       if (nom.startsWith('action_')) continue;
+      // VIS-16 : sortie d'un ÉTAT qui change (mission, rendu) — rappelée telle quelle, elle se périmait (« mission au
+      // statut devis » 6 min après sa fin, 20/11). L'état réel des missions est relu à chaque message (blocEtatMissions).
+      if (OUTILS_ETAT_VOLATIL.has(nom)) continue;
 
       const signature = `${nom}:${compactJson(row.tool_input, 200)}`;
       if (vus.has(signature)) continue;
@@ -10450,6 +10458,34 @@ async function buildPriorToolResultsBlock(conversationId: string): Promise<strin
   } catch (e) {
     // Un rappel indisponible ne doit jamais empêcher de répondre.
     console.warn('[copilot] rappel des résultats précédents indisponible :', e);
+    return '';
+  }
+}
+
+/**
+ * VIS-16 : état RÉEL des missions de la conversation (relu en base à chaque message), avec la conception enregistrée
+ * par chaque mission de conception. Jamais bloquant : vide en cas d'échec.
+ */
+async function buildEtatMissionsBlock(conversationId: string, userId: string): Promise<string> {
+  try {
+    const { data, error } = await getAdmin()
+      .from('agent_missions')
+      .select('id, type, statut, etapes_faites, etapes_max, termine_le, erreur')
+      .eq('conversation_id', conversationId).eq('user_id', userId)
+      .order('cree_le', { ascending: false }).limit(5);
+    if (error || !Array.isArray(data) || !data.length) return '';
+    const missions = data as MissionEtatReel[];
+    const ids = missions.filter((m) => m.type === 'conception').map((m) => m.id);
+    if (ids.length) {
+      const c = await getAdmin().from('agent_conceptions').select('id, mission_id, cree_le')
+        .in('mission_id', ids).eq('user_id', userId).order('cree_le', { ascending: false });
+      if (!c.error && Array.isArray(c.data)) {
+        for (const m of missions) m.conception_id = (c.data as { id: string; mission_id: string }[]).find((x) => x.mission_id === m.id)?.id ?? null;
+      }
+    }
+    return blocEtatMissions(missions);
+  } catch (e) {
+    console.warn('[copilot] état des missions indisponible :', e);
     return '';
   }
 }
@@ -10883,8 +10919,10 @@ async function runOrchestrator(params: {
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
   // Lot E1 : outils Studio proposés quand le tour (ou la réponse précédente : devis à confirmer) parle de 3D / rendu.
   const lastAssistantMessage = [...params.messages].reverse().find((message) => message.role === 'assistant');
+  // VIS-16 : « Préparer la plaquette » (bouton de fin de conception) = demande de rendu : outils Studio au tour.
+  const plaquetteAuTour = agentDisponible(ctx.vertical) && demandePlaquette(userText);
   const studioAuTour = agentDisponible(ctx.vertical)
-    && (Boolean(briefCarte) || Boolean(formeCarte) || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
+    && (Boolean(briefCarte) || Boolean(formeCarte) || plaquetteAuTour || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
   // LOT X3 : parcours « extension de maison » — demandé dans ce message, ou poursuivi (dernière question de Mimmo
   // issue du parcours ET réponse qui y répond). Dans ces deux cas, le premier tour est IMPOSÉ sur l'outil.
@@ -10938,7 +10976,9 @@ async function runOrchestrator(params: {
     ? availableTools.filter((tool) => OUTILS_CADRAGE_MISSION.has(tool.name))
     : tools;
   // Lot choix-cliquables : outils Studio au tour → la question d'habillage n'est jamais posée par le modèle.
-  const systemStudio = studioAuTour ? `${system}\n\n${CONSIGNE_RENDU_STUDIO}` : system;
+  const systemStudio0 = studioAuTour ? `${system}\n\n${CONSIGNE_RENDU_STUDIO}` : system;
+  // VIS-16 : plaquette demandée → état réel de la mission, puis rendu image avec le pack (vues choisies par le serveur).
+  const systemStudio = plaquetteAuTour ? `${systemStudio0}\n\n${consignePlaquette()}` : systemStudio0;
   const systemExtension0 = !intentionMission.mission && (extensionAuTour || parcoursEnCours) ? `${systemStudio}\n\n${CONSIGNE_EXTENSION}` : systemStudio;
   // LOT G10b : consigne du parcours « maison neuve ».
   const systemExtension = !intentionMission.mission && (maisonAuTour || parcoursMaisonEnCours) ? `${systemExtension0}\n\n${CONSIGNE_MAISON_NEUVE}` : systemExtension0;
@@ -11989,13 +12029,15 @@ async function traiterRequete(req: Request): Promise<Response> {
     //
     // `payload.message` est passé en clair : le message du tour n'a pas besoin
     // d'être déjà en base pour figurer dans ce qui part au modèle.
-    const [messages, priorToolResults, savedStudioDraft, blocAgent] = await Promise.all([
+    const [messages, priorToolResults, savedStudioDraft, blocAgent, etatMissions] = await Promise.all([
       buildMessages(conversationId, payload.message, mode, payload.attachments, documentsTour),
       // Jamais bloquant — en cas d'échec, le bloc est vide.
       buildPriorToolResultsBlock(conversationId),
       buildSavedStudioDraftBlock(conversationId, userId),
       // Mémoire du projet + doctrine des missions (agent autonome). Jamais bloquant.
       blocAgentChat(userId, effectiveContext).catch(() => ''),
+      // VIS-16 : état réel des missions de la conversation (prime sur les statuts de l'historique). Jamais bloquant.
+      agentDisponible(effectiveContext.vertical) ? buildEtatMissionsBlock(conversationId, userId) : Promise.resolve(''),
     ]);
 
     // Demande de SUITE (reprise automatique d'une réponse coupée, envoyée par
@@ -12028,7 +12070,7 @@ async function traiterRequete(req: Request): Promise<Response> {
 
     const result = await runOrchestrator({
       mode, tier, ctx: effectiveContext, messages, sse,
-      priorToolResults: [priorToolResults, savedStudioDraft, blocAgent].filter(Boolean).join('\n\n'),
+      priorToolResults: [priorToolResults, savedStudioDraft, blocAgent, etatMissions].filter(Boolean).join('\n\n'),
       // userId vient de requireUserId() (JWT vérifié) ; l'en-tête est réutilisé
       // tel quel pour que les écritures passent par le client UTILISATEUR.
       auth: { userId, authHeader: req.headers.get('Authorization') ?? '' },

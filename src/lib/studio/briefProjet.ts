@@ -215,6 +215,36 @@ export function materiauxHabillage(h: SourceHabillage | null): { role: RoleMater
   ];
 }
 
+/**
+ * VIS-16 (20/11/2026) — sens inverse de `materiauxHabillage` : le brief projet enregistré (matériaux à rôle explicite,
+ * ambiance du rendu) → choix d'habillage pour PRÉ-REMPLIR la carte « Brief créatif ». Seuls les libellés écrits par
+ * `materiauxHabillage` sont reconnus (aucune interprétation) ; null si rien n'est reconnu. Pur.
+ */
+export function habillageDuBriefProjet(c: { brief?: Pick<BriefV2, 'materiaux'> | null; rendu?: Pick<RenduV2, 'ambiance'> | null } | null | undefined): SourceHabillage | null {
+  if (!c) return null;
+  const h: SourceHabillage = {};
+  const FACADE: Record<string, [string, string]> = {
+    'brique claire': ['brique', 'claire'], 'brique rouge': ['brique', 'naturelle'], 'béton blanc': ['beton', 'claire'], 'béton brut': ['beton', 'naturelle'],
+    'bois brûlé': ['bardage_bois', 'foncee'], 'bardage bois': ['bardage_bois', 'naturelle'], 'enduit beige': ['enduit_clair', 'naturelle'],
+    'enduit blanc': ['enduit_blanc', 'naturelle'], 'pierre claire': ['pierre', 'naturelle'], 'verre teinté': ['verre', 'naturelle'],
+  };
+  const MENUISERIES: Record<string, string> = { 'menuiseries aluminium gris': 'gris', 'menuiseries anthracite': 'anthracite', 'menuiseries blanches': 'blanc', 'menuiseries bronze': 'bronze' };
+  const GARDE_CORPS: Record<string, string> = { 'garde-corps métal': 'metal', 'garde-corps en verre': 'verre', 'garde-corps pleins': 'plein' };
+  const SOUBASSEMENT: Record<string, string> = { 'soubassement en pierre': 'pierre', 'soubassement en béton': 'beton', 'soubassement en brique': 'brique' };
+  const TOITURE: Record<string, string> = { 'toiture végétalisée': 'vegetalisee', 'toiture en tuiles': 'deux_pans_tuiles', 'toiture en ardoise': 'deux_pans_ardoise', 'toiture en zinc': 'deux_pans_zinc' };
+  for (const m of c.brief?.materiaux ?? []) {
+    const l = String(m?.libelle ?? '').trim().toLowerCase();
+    if (m?.role === 'facade' && FACADE[l] && !h.facade) { h.facade = FACADE[l][0]; h.teinte = FACADE[l][1]; }
+    if (m?.role === 'menuiseries' && MENUISERIES[l] && !h.menuiseries) h.menuiseries = MENUISERIES[l];
+    if (m?.role === 'garde_corps' && GARDE_CORPS[l] && !h.garde_corps) h.garde_corps = GARDE_CORPS[l];
+    if (m?.role === 'soubassement' && SOUBASSEMENT[l] && !h.soubassement) h.soubassement = SOUBASSEMENT[l];
+    if (m?.role === 'toiture' && TOITURE[l] && !h.toiture) h.toiture = TOITURE[l];
+  }
+  const amb = c.rendu?.ambiance;
+  if (amb === 'jour' || amb === 'fin_de_journee') h.ambiance = amb;
+  return Object.keys(h).length ? h : null;
+}
+
 /** Réglages saisis par le promoteur (Style & tendances, FilmVisitePanel, carte du devis). */
 export interface ReglagesRendu {
   gamme?: GammeV2 | null;

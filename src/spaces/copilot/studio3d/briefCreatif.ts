@@ -39,6 +39,9 @@
 // ── Bloc du message (même langue et même version que studio.ts) ────────────────
 export const BRIEF_BLOC_LANGUE = 'mimmoza-brief';
 export const BRIEF_BLOC_VERSION = 1;
+// VIS-16 : libellés des vues prévues (carte d'action du chat).
+import { estVueCatalogue, libelleCourtVue } from '../../../lib/studio/catalogueVues.ts';
+
 export const OUTIL_LANCER_RENDU = 'studio_lancer_rendu';
 
 export type TypeRenduBrief = 'film' | 'visite360' | 'image';
@@ -314,6 +317,13 @@ export interface DemandeBrief {
   actuel: (ChoixBrief & { defauts: string[] }) | null;
   apercu: ApercuVolume | null;
   limites: LimitesBrief;
+  /** VIS-16 : carte pré-remplie avec l'habillage du brief projet enregistré (serveur : `prerempli: "brief_projet"`). */
+  prerempli?: boolean;
+  /** VIS-16 : vues de l'image prévues une fois l'habillage choisi (identifiants du catalogue), et durée annoncée. */
+  vuesPrevues?: string[];
+  dureePrevue?: string | null;
+  /** VIS-16 : vues du pack plaquette (pas de vues dans le brief projet). */
+  pack?: boolean;
 }
 
 const dans = <T extends string>(liste: readonly OptionBrief<T>[], v: unknown): v is T => liste.some((o) => o.valeur === v);
@@ -377,7 +387,13 @@ export function lireDemandeBrief(call: { name: string; status?: string; output?:
     const amb = estObj(champs.ambiance) && Array.isArray(champs.ambiance.valeurs) ? champs.ambiance.valeurs : null;
     const ambiances = (amb ?? (type === 'image' ? ['jour', 'fin_de_journee'] : ['jour', 'fin_de_journee', 'nuit']))
       .filter((a): a is Ambiance => dans(AMBIANCES, a) && !(type === 'image' && a === 'nuit'));
-    return { origine: 'demande', type, ambiances: ambiances.length ? ambiances : ['jour'], actuel: lireActuel(d.actuel), apercu: lireApercu(d.apercu), limites };
+    const vuesPrevues = type === 'image' && Array.isArray(d.vues_prevues) ? d.vues_prevues.filter(estVueCatalogue) : [];
+    return {
+      origine: 'demande', type, ambiances: ambiances.length ? ambiances : ['jour'], actuel: lireActuel(d.actuel), apercu: lireApercu(d.apercu), limites,
+      // VIS-16 : pré-remplissage et rendu prévu, dits dans la carte d'action du chat.
+      ...(d.prerempli === 'brief_projet' ? { prerempli: true } : {}),
+      ...(vuesPrevues.length ? { vuesPrevues, dureePrevue: typeof d.duree_prevue === 'string' ? d.duree_prevue : null, ...(d.pack === 'plaquette' ? { pack: true } : {}) } : {}),
+    };
   }
   if (out.status === 'confirmation_requise' && estObj(d.brief_actuel)) {
     const actuel = lireActuel(d.brief_actuel);
@@ -385,6 +401,21 @@ export function lireDemandeBrief(call: { name: string; status?: string; output?:
     return { origine: 'devis', type, ambiances: type === 'image' ? ['jour', 'fin_de_journee'] : ['jour', 'fin_de_journee', 'nuit'], actuel, apercu: lireApercu(d.apercu), limites };
   }
   return null;
+}
+
+/**
+ * VIS-16 — demande de Mimmo sans habillage connu + habillage du brief projet de l'étude (mémorisé) → carte
+ * PRÉ-REMPLIE (`prerempli: true`) ; les champs absents restent « proposés par Mimmo ». Sinon : demande inchangée. Pur.
+ */
+export function demandePreremplie(d: DemandeBrief, source: object | null | undefined): DemandeBrief {
+  if (d.origine !== 'demande' || d.actuel || !source || typeof source !== 'object') return d;
+  const habillage = source as Readonly<Record<string, unknown>>;
+  const connus = CHAMPS_CARTE.filter((c) => habillage[c] !== undefined && habillage[c] !== null);
+  if (!connus.length) return d;
+  const actuel = lireActuel({
+    ...CHOIX_DEFAUT, ...Object.fromEntries(connus.map((c) => [c, habillage[c]])), defauts: CHAMPS_CARTE.filter((c) => !connus.includes(c)),
+  });
+  return actuel ? { ...d, actuel, prerempli: true } : d;
 }
 
 // ── État de la carte ──────────────────────────────────────────────────────────
@@ -514,9 +545,12 @@ export function champsBloc(extra: BlocProjet, image: boolean): Record<string, un
  * Message envoyé au chat : une ligne lisible, puis le bloc relu par le serveur. Sans type (fiche « Espace 3D ») :
  * bloc sans `type` — le serveur l'enregistre comme habillage du projet, sans lancer de devis.
  */
-export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'limites'>, mimmoChoisit = false, extra: BlocProjet = {}): string {
+export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'limites'> & Partial<Pick<DemandeBrief, 'vuesPrevues'>>, mimmoChoisit = false, extra: BlocProjet = {}): string {
   const bloc0 = d.type ? { v: BRIEF_BLOC_VERSION, type: d.type, brief: briefAEnvoyer(etat, mimmoChoisit) } : { v: BRIEF_BLOC_VERSION, brief: briefAEnvoyer(etat, mimmoChoisit) };
-  const bloc = { ...bloc0, ...champsBloc(extra, d.type === 'image') };
+  // VIS-16 : les vues prévues par le serveur (pack plaquette, brief projet) repartent avec l'habillage — sinon le tour
+  // suivant (« Brief créatif validé… », sans le mot « plaquette ») retombait sur une vue unique.
+  const vues = extra.vues?.length ? extra.vues : d.vuesPrevues?.length ? d.vuesPrevues : null;
+  const bloc = { ...bloc0, ...champsBloc({ ...extra, vues }, d.type === 'image') };
   const recap = recapitulatif(choixAppliques(etat, mimmoChoisit), d);
   const mimmo = mimmoChoisit && etat.touches.length < CHAMPS_CARTE.length;
   const tete = !d.type
@@ -528,6 +562,19 @@ export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'li
 }
 
 const RE_BLOC = new RegExp('```' + BRIEF_BLOC_LANGUE + '[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n?```');
+
+/**
+ * VIS-16 — ce que la carte d'action du chat dit quand Mimmo attend l'habillage : ce qui sera chiffré ensuite (vues,
+ * durée) et si la carte est pré-remplie avec le brief projet. Pur.
+ */
+export function phraseAttenteBrief(d: Pick<DemandeBrief, 'type' | 'prerempli' | 'vuesPrevues' | 'dureePrevue' | 'pack'>): string {
+  const vues = (d.vuesPrevues ?? []).filter(estVueCatalogue);
+  const quoi = d.type === 'image' && vues.length
+    ? `${d.pack ? 'le pack plaquette' : vues.length > 1 ? 'les visuels' : 'l’image'} : ${String(vues.length)} vue${vues.length > 1 ? 's' : ''} (${vues.map(libelleCourtVue).join(', ')})${d.dureePrevue ? `, ${d.dureePrevue.split(' (')[0]}` : ''}`
+    : d.type ? LIB_TYPE[d.type] : 'le projet';
+  return `Mimmo attend votre habillage pour chiffrer ${quoi}.` +
+    (d.prerempli ? ' Habillage pré-rempli avec votre brief projet : vérifiez-le, ou laissez Mimmo choisir.' : ' Choisissez-le dans l’Espace 3D, ou laissez Mimmo choisir.');
+}
 
 /** Message utilisateur → texte à afficher (sans le bloc) et présence d'un brief. */
 export function lireBlocBrief(texte: string): { visible: string; brief: boolean } {

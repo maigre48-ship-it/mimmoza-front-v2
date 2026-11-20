@@ -309,10 +309,14 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
       options: {
         type: 'object',
         description: "film : duree_s (30|60|90), ambiance (jour|fin_de_journee|nuit), format ('16:9'|'9:16'), interieurs, musique (booléens) ; " +
-          "visite360 : ambiance, interieurs, resolution ('6k'|'8k') ; image : vues (1 à 3 parmi trois_quarts_gauche, trois_quarts_droite, face), " +
-          "ambiance (jour|fin_de_journee), fond (etude|photo_rue ; photo_client seulement via la carte « Fond de l'image »). Absentes : valeurs par défaut.",
+          "visite360 : ambiance, interieurs, resolution ('6k'|'8k') ; image : vues (1 à 6 identifiants du catalogue : trois_quarts_gauche, " +
+          "trois_quarts_droite, face, angle_rue, aerienne, entree, coeur_ilot, terrasse, balcon, jardin_prive, rooftop, sejour, chambre, vue_baie ; " +
+          "OMETS `vues` sauf demande précise de l'utilisateur : le serveur prend celles du brief projet, sinon une vue 3/4 gauche ; " +
+          "plaquette → `pack`), ambiance (jour|fin_de_journee|crepuscule), fond (etude|photo_rue ; photo_client seulement via la carte « Fond de l'image »). Absentes : valeurs par défaut.",
       },
       source: { type: 'string', enum: ['auto', 'version', 'preparation'], description: '« auto » (défaut) : version enregistrée si elle existe, sinon 3D préparée.' },
+      // VIS-16 : pack plaquette (catalogue commun des vues).
+      pack: { type: 'string', enum: ['plaquette'], description: "Image seulement : l'utilisateur demande la PLAQUETTE (visuels de commercialisation) → « plaquette », sans `vues` ni `fond` : vues du brief projet si enregistrées, sinon le pack plaquette (6 vues : 3/4 gauche, 3/4 droite, aérienne, cœur d’îlot, terrasse, séjour). Annonce les vues et la durée renvoyées par l’outil." },
       conception_id: { type: 'string' },
       preparation_id: { type: 'string' },
       brief: {

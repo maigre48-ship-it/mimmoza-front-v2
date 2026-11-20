@@ -15,6 +15,7 @@ import { FollowupPanel } from '../followup/FollowupPanel';
 import { JarvisDraftPanel, type IssueOuvertureStudio } from '../studio3d/JarvisDraftPanel';
 // Lot brief-unifié : l'habillage se choisit dans l'Espace 3D ; le chat l'y ouvre (et Mimmo aussi, quand il le demande).
 import { demandeEnCours, type DemandeBrief } from '../studio3d/briefCreatif';
+import { EVENEMENT_CONVERSATION_PREMIER_PLAN } from '../agent/projet3DMission';
 import type { EtatHabillage } from '../studio3d/FicheProjet3D';
 import type { ConfirmedTerrain } from '../studio3d/terrainCadastre';
 import { is3DPreparationRequest, readJarvisDraft, withoutJarvisDraft, type JarvisDraft } from '../studio3d/jarvisDraft';
@@ -192,6 +193,15 @@ export function CopilotChat({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+  // VIS-16 : action du panneau Missions (« Préparer la plaquette », « Ouvrir mon projet en 3D ») → la conversation
+  // revient au premier plan : défilement jusqu'à la dernière réponse (après fermeture du panneau).
+  useEffect(() => {
+    const surPremierPlan = () => {
+      window.requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }));
+    };
+    window.addEventListener(EVENEMENT_CONVERSATION_PREMIER_PLAN, surPremierPlan);
+    return () => window.removeEventListener(EVENEMENT_CONVERSATION_PREMIER_PLAN, surPremierPlan);
+  }, []);
 
   // Filet de sécurité : si on entre dans MimmozIA alors que le store est resté
   // sur "quick" (usage précédent du drawer), on aligne une fois sur le mode forcé.

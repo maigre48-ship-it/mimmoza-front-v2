@@ -49,7 +49,8 @@ import { ChoixFondImage } from '../studio3d/ChoixFondImage';
 import { DemandePhotoMaison } from '../studio3d/DemandePhotoMaison';
 import { lireDemandePhotoMaison } from '@/lib/studio/photoReelle';
 import type { DemandeBrief } from '../studio3d/briefCreatif';
-import { lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
+import { demandePreremplie, lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
+import { habillageDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
 import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
 import { lireBlocChoix, situationChoix } from '../utils/choixCliquables';
 // LOT D1 : réponse longue → aperçu dans le fil + document complet dans le panneau.
@@ -191,9 +192,12 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             { const photo = lireDemandePhotoMaison(tc); if (photo) return <DemandePhotoMaison requise={photo} contour={photo.contour} onSend={onSend} afficherTexte />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
-            { const demande = lireDemandeBrief(tc); if (demande) {
+            { const demandeLue = lireDemandeBrief(tc);
+              // VIS-16 : carte d'action pré-remplie avec l'habillage du brief projet de l'étude (dit dans la carte).
+              const demande = demandeLue ? demandePreremplie(demandeLue, habillageDeLaConversation(conversationId)) : null;
+              if (demande) {
               const brief = onOuvrirHabillage
-                ? <LigneHabillage demande={demande} messageId={message.id} onOuvrir={onOuvrirHabillage} />
+                ? <LigneHabillage demande={demande} messageId={message.id} onOuvrir={onOuvrirHabillage} onSend={onSend} />
                 : <CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} />;
               return demande.origine === 'demande' ? brief : <><CopilotApiResultCard call={tc} />{brief}<ChoixFondImage call={tc} demande={demande} messageId={message.id} onSend={onSend} /></>;
             } }

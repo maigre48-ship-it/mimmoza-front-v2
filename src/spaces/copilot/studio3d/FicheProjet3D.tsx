@@ -44,6 +44,10 @@ import {
 } from './briefCreatif';
 import { VignetteTravee } from './VignetteTravee';
 import { CarteBriefCreatif } from './CarteBriefCreatif';
+// VIS-16 : pré-remplissage de l'habillage avec le brief projet de l'étude.
+import { demandePreremplie } from './briefCreatif';
+import { habillageDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
+import { useCopilotStore } from '../store/copilotStore';
 import { libelleNiveaux } from './volumeParcelle';
 import './FicheProjet3D.css';
 
@@ -301,7 +305,12 @@ export function StyleFiche({ messages, apercu, limites, onSend, habillage, onHab
 }) {
   const brief = useMemo(() => briefCourant(messages), [messages]);
   // Rendu en attente de l'habillage (Mimmo l'a demandé) : « Valider » enverra un bloc typé → devis.
-  const enCours = useMemo(() => demandeEnCours(messages as never), [messages]);
+  // VIS-16 : carte pré-remplie avec l'habillage du brief projet de l'étude (s'il est mémorisé).
+  const conversationCourante = useCopilotStore((s) => s.currentConversationId);
+  const enCours = useMemo(() => {
+    const e = demandeEnCours(messages as never);
+    return e ? { ...e, demande: demandePreremplie(e.demande, habillageDeLaConversation(conversationCourante)) } : null;
+  }, [messages, conversationCourante]);
   const [ouverteLocale, setOuverteLocale] = useState(false);
   const controle = !!habillage && !!onHabillage;
   const ouverte = controle ? habillage.ouverte : ouverteLocale;

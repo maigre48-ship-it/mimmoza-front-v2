@@ -18,7 +18,7 @@ import type { LigneJournal, Mission } from './agent.types';
 import { RapportMission } from './RapportMission';
 // VIS-15 : ouverture du projet en 3D à la fin d'une mission de conception.
 import { BoutonProjet3D } from './BoutonProjet3D';
-import { missionConceptionOuvrable3D } from './projet3DMission';
+import { conversationAOuvrir, missionConceptionOuvrable3D, signalerConversationPremierPlan } from './projet3DMission';
 import { useCopilot } from '../hooks/useCopilot';
 import { FormulaireRegles } from './conception/FormulaireRegles';
 import { lireQuestionRegles } from '@/spaces/promoteur/shared/echangeStudio/conception';
@@ -250,9 +250,19 @@ function DetailMission({ id }: { id: string }) {
 /** VIS-15 : suite proposée par Mimmo à la clôture d'une conception (3D d'abord, puis plaquette). */
 function SuiteProjet3D({ mission }: { mission: Mission }) {
   const { sendMessage } = useCopilot();
+  // VIS-16 : le panneau (modal) se ferme et la conversation de la mission revient au premier plan, puis défile
+  // jusqu'à la réponse — avant, le message partait derrière le panneau resté ouvert (« ça ne marche pas », 20/11).
+  const envoyer = async (texte: string) => {
+    const st = useCopilotStore.getState();
+    const cible = conversationAOuvrir(mission, st.currentConversationId, st.mimmoziaView);
+    if (cible) await st.selectConversation(cible);
+    await sendMessage(texte);
+    signalerConversationPremierPlan();
+  };
   return (
     <section className="mzag-carte" aria-label="Suite de la conception">
-      <BoutonProjet3D mission={mission} onSend={(t) => { void sendMessage(t); }} />
+      <BoutonProjet3D mission={mission} onSend={(t) => { void envoyer(t); }}
+        onAction={() => { useAgentUi.getState().fermer(); signalerConversationPremierPlan(); }} />
     </section>
   );
 }
