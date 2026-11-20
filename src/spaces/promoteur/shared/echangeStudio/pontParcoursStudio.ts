@@ -98,8 +98,43 @@ export const FORMAT_TEMOIN = 'mimmozia-temoin-personnalise' as const;
 export const VERSION_TEMOIN = 1 as const;
 export const TYPOLOGIES_TEMOIN = ['T1', 'T2', 'T3', 'T4', 'T5'] as const;
 export type TypologieTemoin = (typeof TYPOLOGIES_TEMOIN)[number];
-/** Taille maximale du bloc `reglage` (JSON) : au-delà il est retiré (le résumé reste). */
+/**
+ * Taille maximale du bloc `reglage`, en OCTETS de JSON compact UTF-8 (VIS-19 : avant, en caractères) : au-delà il est
+ * retiré (le résumé reste).
+ */
 export const TAILLE_MAX_REGLAGE = 60_000;
+/**
+ * VIS-19 — taille maximale du témoin ENTIER, en octets de JSON compact UTF-8. La base (`studio_temoins`) exige
+ * `octet_length(temoin::text) < 131072` ; le texte d'un jsonb ajoute une espace après chaque « : » et « , » et peut
+ * écrire certains nombres plus longuement : 90 000 octets compacts laissent une marge d'environ 40 %. Au-delà, le
+ * `reglage` est retiré (le témoin reste lisible, le résumé aussi).
+ */
+export const TAILLE_MAX_TEMOIN_OCTETS = 90_000;
+
+/** VIS-19 — taille en octets UTF-8 du JSON compact de `v` (Infinity si non sérialisable). */
+export function octetsJson(v: unknown): number {
+  let s: string | undefined;
+  try { s = JSON.stringify(v); } catch { return Number.POSITIVE_INFINITY; }
+  if (s === undefined) return 0;
+  if (typeof TextEncoder === 'function') return new TextEncoder().encode(s).length;
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) { n += 4; i++; }
+    else n += 3;
+  }
+  return n;
+}
+
+/** VIS-19 — témoin borné : sans `reglage` si celui-ci dépasse TAILLE_MAX_REGLAGE ou le témoin TAILLE_MAX_TEMOIN_OCTETS. */
+function borner<B extends { readonly reglage?: Record<string, unknown> }, T>(b: B, completer: (x: B) => T): T {
+  const t = completer(b);
+  if (b.reglage === undefined || (octetsJson(b.reglage) <= TAILLE_MAX_REGLAGE && octetsJson(t) <= TAILLE_MAX_TEMOIN_OCTETS)) return t;
+  const { reglage: _retire, ...sans } = b;
+  return completer(sans as B);
+}
 
 export interface FinitionPieceTemoin {
   /** Fonction de pièce du moteur (« sejour », « chambre », « cuisine »…). */
@@ -202,7 +237,7 @@ export function lireTemoin(v: unknown): TemoinPersonnalise | null {
   const m = estObj(v.modifications) ? v.modifications : {};
   let reglage: Record<string, unknown> | undefined;
   if (estObj(v.reglage)) {
-    try { if (JSON.stringify(v.reglage).length <= TAILLE_MAX_REGLAGE) reglage = v.reglage; } catch { reglage = undefined; }
+    if (octetsJson(v.reglage) <= TAILLE_MAX_REGLAGE) reglage = v.reglage;
   }
   const meubles = nombre(v.meubles);
   const base = {
@@ -217,13 +252,15 @@ export function lireTemoin(v: unknown): TemoinPersonnalise | null {
     ...(reglage ? { reglage } : {}),
   } as const;
   const majLe = txt(v.majLe, 40) ?? new Date(0).toISOString();
-  return { ...base, resume: resumeTemoin(base), empreinte: empreinteTemoin(base), majLe };
+  const complet = (b: Omit<TemoinPersonnalise, 'resume' | 'empreinte' | 'majLe'>): TemoinPersonnalise => ({ ...b, resume: resumeTemoin(b), empreinte: empreinteTemoin(b), majLe });
+  return borner(base as Omit<TemoinPersonnalise, 'resume' | 'empreinte' | 'majLe'>, complet);
 }
 
 /** Construit un témoin complet (résumé, empreinte, horodatage) — côté Studio. */
 export function creerTemoin(base: Omit<TemoinPersonnalise, 'format' | 'version' | 'resume' | 'empreinte' | 'majLe'>, maintenant: Date = new Date()): TemoinPersonnalise {
   const b = { format: FORMAT_TEMOIN, version: VERSION_TEMOIN, ...base } as Omit<TemoinPersonnalise, 'resume' | 'empreinte' | 'majLe'>;
-  return { ...b, resume: resumeTemoin(b), empreinte: empreinteTemoin(b), majLe: maintenant.toISOString() };
+  const complet = (x: Omit<TemoinPersonnalise, 'resume' | 'empreinte' | 'majLe'>): TemoinPersonnalise => ({ ...x, resume: resumeTemoin(x), empreinte: empreinteTemoin(x), majLe: maintenant.toISOString() });
+  return borner(b, complet);
 }
 
 /* ───────────────────────── Messages ───────────────────────── */
@@ -252,7 +289,16 @@ export interface ChargeAccuse {
 }
 
 export interface ChargeTemoinDemander { readonly requeteId: string; readonly projetId?: string }
-export interface ChargeTemoinEtat { readonly projetId: string | null; readonly temoin: TemoinPersonnalise | null }
+export interface ChargeTemoinEtat {
+  readonly projetId: string | null;
+  readonly temoin: TemoinPersonnalise | null;
+  /**
+   * VIS-19 — vrai seulement quand le Studio RETIRE un témoin personnalisé qu'il avait envoyé dans cette session (il
+   * passe d'un témoin personnalisé à aucun) : le site supprime alors la ligne `studio_temoins`. Absent (Studio qui
+   * démarre, autosauvegarde pas encore relue, autre appareil sans réglage) : rien n'est supprimé.
+   */
+  readonly retire?: true;
+}
 
 export type MessagePont =
   | { readonly type: typeof TYPE_PONT_PARCOURS; readonly version: number; readonly canal: 'etape.ouvrir'; readonly charge: ChargeOuvrirEtape }
@@ -306,7 +352,8 @@ export function lireMessagePont(data: unknown): LecturePont {
     case 'temoin.etat': {
       const temoin = ch.temoin === null ? null : lireTemoin(ch.temoin);
       if (ch.temoin !== null && temoin === null) return { ok: false, erreur: 'témoin illisible', requeteId: null, version: false };
-      return { ok: true, message: { ...base, canal: 'temoin.etat', charge: { projetId: projetId ?? null, temoin } } };
+      const retire = ch.retire === true && (temoin === null || !temoin.personnalise);
+      return { ok: true, message: { ...base, canal: 'temoin.etat', charge: { projetId: projetId ?? null, temoin, ...(retire ? { retire: true as const } : {}) } } };
     }
     default:
       return { ok: false, erreur: `canal « ${String(data.canal)} » inconnu`, requeteId, version: false };

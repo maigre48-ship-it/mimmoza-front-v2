@@ -18,7 +18,7 @@ import { lireMemoireParcours, majMemoireParcours, PARCOURS_EVENT, publierInstant
 import type { SourcesParcours } from '@/lib/studio/parcours';
 // VIS-18a / VIS-18b : logement témoin personnalisé dans le Studio (copie locale immédiate, puis base studio_temoins).
 import { supabase } from '@/lib/supabaseClient';
-import { etatTemoinConversation, EVENEMENT_TEMOIN_STUDIO, lireTemoinLocal, lireTemoinPersonnalise, type ClientTemoins, type EtatTemoinParcours } from './temoinStudio';
+import { etatTemoinConversation, EVENEMENT_TEMOIN_STUDIO, lireEchecBase, lireTemoinLocal, lireTemoinPersonnalise, type ClientTemoins, type EtatTemoinParcours } from './temoinStudio';
 
 export interface EtatParcoursEcran {
   parcours: Parcours;
@@ -55,7 +55,7 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
       const { data } = await supabase.auth.getUser();
       const uid = data.user?.id;
       if (!uid || !vivant) return;
-      setTemoin(lireTemoinPersonnalise({ local: lireTemoinLocal(uid, conversationId) }));
+      setTemoin(lireTemoinPersonnalise({ local: lireTemoinLocal(uid, conversationId), echecBase: lireEchecBase(uid, conversationId) }));
       const etat = await etatTemoinConversation(supabase as unknown as ClientTemoins, uid, conversationId);
       if (vivant) setTemoin(etat);
     })().catch(() => undefined);

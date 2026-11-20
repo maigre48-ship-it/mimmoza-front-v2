@@ -29,7 +29,7 @@ import { dernierePreparation, lirePreparationStockee, ouverturePreparation } fro
 import { EVENEMENT_PARCOURS_STUDIO, preparerEtapeStudio, type DemandeParcoursStudio } from './studio3d/parcours.store';
 // VIS-18a : Studio DÉJÀ ouvert (cadre ou autre onglet) → il passe sur l'étape cliquée (accusé) ; témoin personnalisé reçu.
 import { EVENEMENT_OUVRIR_ETAPE_STUDIO, ouvrirEtapeStudio, type CadreStudio, type DetailOuvrirEtape } from './studio3d/pontParcoursSite';
-import { recevoirTemoinStudio, type ClientTemoins } from './studio3d/temoinStudio';
+import { recevoirTemoinStudio, temoinPourConversation, type ClientTemoins } from './studio3d/temoinStudio';
 import { CANAL_DIFFUSION_PARCOURS, creerMessagePont, examinerMessagePont } from '@/spaces/promoteur/shared/echangeStudio/pontParcoursStudio';
 import { AtelierConception } from './agent/conception/AtelierConception';
 import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
@@ -617,34 +617,42 @@ export default function MimmozIAPage() {
   // VIS-18a — logement témoin personnalisé envoyé par le Studio (cadre : sa fenêtre et son origine ; autre onglet :
   // BroadcastChannel, même origine, projet de la conversation courante) → copie locale, studio_temoins, événement.
   useEffect(() => {
-    const recevoir = (data: unknown, origine: string, autorisees: string[]) => {
+    const recevoir = (data: unknown, origine: string, autorisees: string[], via: 'cadre' | 'canal') => {
       const d = examinerMessagePont({ origin: origine, data }, autorisees, window.location.origin, false);
       if (d.type !== 'message' || d.message.canal !== 'temoin.etat') return;
       const charge = d.message.charge;
       const conversationId = useCopilotStore.getState().currentConversationId;
       if (!conversationId) return;
       const projetId = projetIdChat(conversationId);
-      if (charge.projetId !== null && charge.projetId !== projetId) return;
+      // VIS-19 : par le canal, le projet DOIT être celui de la conversation (un onglet Studio non relié envoie null) ;
+      // null n'est toléré que par le cadre ouvert pour la conversation courante (même contrôle que cadreCourant) ; la
+      // ligne en base n'est supprimée que sur `retire` d'un Studio relié à CE projet.
+      const decision = temoinPourConversation({
+        via, projetIdCharge: charge.projetId, projetIdAttendu: projetId,
+        cadreDeLaConversation: via === 'cadre' && cadreCourant(conversationId) !== null, retire: charge.retire === true,
+      });
+      if (!decision.accepte) return;
       void (async () => {
         const { data: auth } = await supabase.auth.getUser();
         const userId = auth.user?.id;
         if (!userId) return;
-        const r = await recevoirTemoinStudio(supabase as unknown as ClientTemoins, userId, conversationId, projetId, charge.temoin);
-        if (r.base && !r.base.ok) console.warn('[VIS-18a] témoin personnalisé non enregistré en base (gardé dans le navigateur) :', r.base.erreur);
+        const r = await recevoirTemoinStudio(supabase as unknown as ClientTemoins, userId, conversationId, projetId, charge.temoin, undefined, decision.retirer);
+        // Échec d'écriture : l'étape « Intérieurs » du parcours affiche « enregistré sur cet appareil seulement ».
+        if (r.base && !r.base.ok) console.warn('[VIS-19] témoin personnalisé : base non mise à jour (gardé sur cet appareil) :', r.base.erreur);
       })();
     };
     const surFenetre = (e: MessageEvent) => {
       const c = cadreStudioRef.current;
       if (!c || e.source !== c.fenetre || e.origin !== c.origine) return;
-      recevoir(e.data, e.origin, [c.origine]);
+      recevoir(e.data, e.origin, [c.origine], 'cadre');
     };
     window.addEventListener('message', surFenetre);
     let canal: BroadcastChannel | null = null;
     try { canal = typeof BroadcastChannel === 'function' ? new BroadcastChannel(CANAL_DIFFUSION_PARCOURS) : null; } catch { canal = null; }
-    const surCanal = (e: MessageEvent) => recevoir(e.data, window.location.origin, []);
+    const surCanal = (e: MessageEvent) => recevoir(e.data, window.location.origin, [], 'canal');
     canal?.addEventListener('message', surCanal);
     return () => { window.removeEventListener('message', surFenetre); canal?.removeEventListener('message', surCanal); canal?.close(); };
-  }, []);
+  }, [cadreCourant]);
   // VIS-18a — n'importe quelle étape du parcours (Style & façades, Vues & ambiance…) : Studio déjà ouvert → il y passe.
   // Aucun Studio ouvert : `absent`, le parcours garde son action habituelle (rien n'est ouvert ici).
   useEffect(() => {

@@ -39,6 +39,9 @@ alter table public.studio_temoins enable row level security;
 
 revoke all on public.studio_temoins from anon;
 grant select, insert, update, delete on public.studio_temoins to authenticated;
+-- VIS-19 : hygiène — les privilèges par défaut de Supabase donnent aussi TRUNCATE / REFERENCES / TRIGGER (TRUNCATE
+-- contourne la RLS) : retirés explicitement.
+revoke truncate, references, trigger on public.studio_temoins from authenticated, anon;
 
 do $$
 begin

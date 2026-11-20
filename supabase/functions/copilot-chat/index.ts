@@ -69,8 +69,9 @@ import { ACTION_PREPARER_3D_CONCEPTION, preparer3DDirect, briefDuMessage, consig
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 // VIS-16 : « Préparer la plaquette » — état réel des missions, pack plaquette.
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
+import { etatMissionsUtile } from './agent/etat-missions.ts';
 // VIS-17 : parcours guidé (image / film / visite) — bloc « PARCOURS — FAIT FOI » relu à chaque message.
-import { blocParcoursServeur } from './agent/parcours-chat.ts';
+import { blocParcoursServeur, fusionnerTextesUtilisateur, MESSAGES_BLOCS_PARCOURS, MESSAGES_RECENTS_PARCOURS, MOTIFS_BLOCS_PARCOURS } from './agent/parcours-chat.ts';
 // VIS-18b : fond de l'image choisi dans l'étape 6 du parcours (instantané de l'écran), repris par le devis d'image.
 import { fondDuParcours } from '../../../src/lib/studio/parcours.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
@@ -10471,16 +10472,31 @@ async function buildPriorToolResultsBlock(conversationId: string): Promise<strin
 /**
  * VIS-16 : état RÉEL des missions de la conversation (relu en base à chaque message), avec la conception enregistrée
  * par chaque mission de conception. Jamais bloquant : vide en cas d'échec.
+ * VIS-19 : injecté seulement si le tour concerne la 3D / la plaquette / les missions, ou si une mission a bougé depuis
+ * le dernier message (agent/etat-missions.ts) — plus à chaque message de chaque conversation ayant une mission.
  */
-async function buildEtatMissionsBlock(conversationId: string, userId: string): Promise<string> {
+async function buildEtatMissionsBlock(conversationId: string, userId: string, tour: { messageCourant: string; carte: boolean }): Promise<string> {
   try {
-    const { data, error } = await getAdmin()
-      .from('agent_missions')
-      .select('id, type, statut, etapes_faites, etapes_max, termine_le, erreur')
-      .eq('conversation_id', conversationId).eq('user_id', userId)
-      .order('cree_le', { ascending: false }).limit(5);
+    const [lues, dernier] = await Promise.all([
+      getAdmin()
+        .from('agent_missions')
+        .select('id, type, statut, etapes_faites, etapes_max, termine_le, erreur, maj_le')
+        .eq('conversation_id', conversationId).eq('user_id', userId)
+        .order('cree_le', { ascending: false }).limit(5),
+      // Dernier message en base (le message reçu n'y est pas encore) : sa date et, s'il est de Mimmo, son texte.
+      getAdmin().from('copilot_messages').select('role, content, created_at').eq('conversation_id', conversationId)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    const { data, error } = lues;
     if (error || !Array.isArray(data) || !data.length) return '';
-    const missions = data as MissionEtatReel[];
+    const missions = data as (MissionEtatReel & { maj_le?: string | null })[];
+    const ligne = !dernier.error && dernier.data ? dernier.data as { role?: unknown; content?: unknown; created_at?: unknown } : null;
+    const utile = etatMissionsUtile({
+      messageCourant: tour.messageCourant, carte: tour.carte, missions,
+      dernierAssistant: ligne && ligne.role === 'assistant' ? extractText(ligne.content) : null,
+      dernierMessageLe: ligne && typeof ligne.created_at === 'string' ? ligne.created_at : null,
+    });
+    if (!utile) return '';
     const ids = missions.filter((m) => m.type === 'conception').map((m) => m.id);
     if (ids.length) {
       const c = await getAdmin().from('agent_conceptions').select('id, mission_id, cree_le')
@@ -10503,25 +10519,37 @@ async function buildEtatMissionsBlock(conversationId: string, userId: string): P
 async function buildParcoursBlock(conversationId: string, userId: string, instantane: unknown, messageCourant: string): Promise<string> {
   try {
     const admin = getAdmin();
-    const [missions, preparations, travaux, messagesUtilisateur, temoins] = await Promise.all([
+    const [missions, preparations, travaux, messagesUtilisateur, temoins, messagesBlocs] = await Promise.all([
       admin.from('agent_missions').select('type, statut, criteres').eq('conversation_id', conversationId).eq('user_id', userId)
         .eq('type', 'conception').order('cree_le', { ascending: false }).limit(1),
       admin.from('studio_preparations').select('idu, resume').eq('conversation_id', conversationId).eq('user_id', userId)
         .order('cree_le', { ascending: false }).limit(1),
       admin.from('studio_jobs').select('id, type, statut, options, resultat, cree_le').eq('conversation_id', conversationId).eq('user_id', userId)
         .order('cree_le', { ascending: false }).limit(12),
-      admin.from('copilot_messages').select('content').eq('conversation_id', conversationId).eq('role', 'user')
-        .order('created_at', { ascending: false }).limit(60),
+      // VIS-19 : au lieu de 60 messages complets — les 20 derniers (type de parcours demandé) et les seuls messages
+      // portant un bloc relu par le parcours (```mimmoza-parcours : aperçu validé ; ```mimmoza-brief : habillage).
+      admin.from('copilot_messages').select('id, created_at, content').eq('conversation_id', conversationId).eq('role', 'user')
+        .order('created_at', { ascending: false }).limit(MESSAGES_RECENTS_PARCOURS),
       // VIS-18b : logement témoin personnalisé dans le Studio (VIS-18a) ; table absente (migration non appliquée) : ignorée.
       admin.from('studio_temoins').select('temoin').eq('conversation_id', conversationId).eq('user_id', userId).maybeSingle(),
+      Promise.all(MOTIFS_BLOCS_PARCOURS.map((motif) => admin.from('copilot_messages').select('id, created_at, content')
+        .eq('conversation_id', conversationId).eq('role', 'user').ilike('content->0->>text', motif)
+        .order('created_at', { ascending: false }).limit(MESSAGES_BLOCS_PARCOURS))),
     ]);
+    const lignesDe = (r: { error: unknown; data: unknown }) => !r.error && Array.isArray(r.data)
+      ? (r.data as { id?: unknown; created_at?: unknown; content: unknown }[]).map((m) => ({ id: m.id, created_at: m.created_at, texte: extractText(m.content) })) : [];
+    // Filtre refusé par la base (forme du contenu inattendue) : repli sur l'ancienne lecture, pour ne perdre aucun bloc.
+    const blocs = messagesBlocs.some((r) => r.error)
+      ? [await admin.from('copilot_messages').select('id, created_at, content').eq('conversation_id', conversationId).eq('role', 'user')
+        .order('created_at', { ascending: false }).limit(60)]
+      : messagesBlocs;
+    const textesUtilisateur = fusionnerTextesUtilisateur(lignesDe(messagesUtilisateur), ...blocs.map(lignesDe));
     const { bloc } = blocParcoursServeur({
       instantane,
       mission: !missions.error && Array.isArray(missions.data) && missions.data[0] ? missions.data[0] as { type: string; statut: string; criteres: unknown } : null,
       preparation: !preparations.error && Array.isArray(preparations.data) && preparations.data[0] ? preparations.data[0] as { idu: string | null; resume: unknown } : null,
       travaux: !travaux.error && Array.isArray(travaux.data) ? travaux.data : [],
-      textesUtilisateur: !messagesUtilisateur.error && Array.isArray(messagesUtilisateur.data)
-        ? (messagesUtilisateur.data as { content: unknown }[]).map((m) => extractText(m.content)).reverse() : [],
+      textesUtilisateur,
       messageCourant,
       temoin: !temoins.error && temoins.data ? temoins.data : null,
     });
@@ -12089,7 +12117,13 @@ async function traiterRequete(req: Request): Promise<Response> {
       // Mémoire du projet + doctrine des missions (agent autonome). Jamais bloquant.
       blocAgentChat(userId, effectiveContext).catch(() => ''),
       // VIS-16 : état réel des missions de la conversation (prime sur les statuts de l'historique). Jamais bloquant.
-      agentDisponible(effectiveContext.vertical) ? buildEtatMissionsBlock(conversationId, userId) : Promise.resolve(''),
+      // VIS-19 : seulement si le tour concerne la 3D / la plaquette / les missions, ou si une mission a bougé.
+      agentDisponible(effectiveContext.vertical)
+        ? buildEtatMissionsBlock(conversationId, userId, {
+          messageCourant: payload.message,
+          carte: Boolean((effectiveContext as unknown as Record<string, unknown>).brief_carte) || Boolean((effectiveContext as unknown as Record<string, unknown>).forme_carte),
+        })
+        : Promise.resolve(''),
       // VIS-17 : parcours guidé (étapes, statuts calculés, prochaine étape). Jamais bloquant.
       agentDisponible(effectiveContext.vertical) ? buildParcoursBlock(conversationId, userId, instantaneParcours, payload.message) : Promise.resolve(''),
     ]);

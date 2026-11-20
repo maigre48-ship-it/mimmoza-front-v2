@@ -67,6 +67,33 @@ export function resumePreparation(p: PreparationLue | null): { terrain: string |
   return { terrain: assiette ?? p.idu, volume: volume || null };
 }
 
+/** VIS-19 — derniers messages de l’utilisateur relus (type de parcours demandé), au lieu de 60. */
+export const MESSAGES_RECENTS_PARCOURS = 20;
+/** VIS-19 — messages contenant un bloc relu par le parcours (aperçu validé, habillage) : au plus ce nombre. */
+export const MESSAGES_BLOCS_PARCOURS = 20;
+/** VIS-19 — blocs cherchés (ilike sur `content->0->>text`) : ```mimmoza-parcours (aperçu validé), ```mimmoza-brief (habillage). */
+export const MOTIFS_BLOCS_PARCOURS = ['%```mimmoza-parcours%', '%```mimmoza-brief%'] as const;
+
+export interface LigneMessageLue { id?: unknown; created_at?: unknown; texte: string }
+
+/**
+ * VIS-19 — PURE : textes de l'utilisateur pour le parcours, depuis les derniers messages ET les messages à bloc
+ * (deux lectures courtes au lieu de 60 messages complets) : sans doublon (id), du plus ancien au plus récent.
+ */
+export function fusionnerTextesUtilisateur(...listes: ReadonlyArray<readonly LigneMessageLue[]>): string[] {
+  const vus = new Set<string>();
+  const lignes: LigneMessageLue[] = [];
+  for (const l of listes) {
+    for (const m of l) {
+      const id = typeof m.id === 'string' || typeof m.id === 'number' ? String(m.id) : null;
+      if (id !== null) { if (vus.has(id)) continue; vus.add(id); }
+      lignes.push(m);
+    }
+  }
+  const t = (m: LigneMessageLue) => { const v = typeof m.created_at === 'string' ? Date.parse(m.created_at) : Number.NaN; return Number.isFinite(v) ? v : 0; };
+  return lignes.map((m, i) => ({ m, i })).sort((a, b) => t(a.m) - t(b.m) || a.i - b.i).map(({ m }) => m.texte);
+}
+
 /** Sources du parcours côté serveur : base (fait foi) + instantané de l'écran. */
 export function sourcesServeur(e: EntreeParcoursServeur): SourcesParcours {
   const instantane = lireInstantaneParcours(e.instantane);

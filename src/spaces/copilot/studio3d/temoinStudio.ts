@@ -24,16 +24,37 @@ export interface EtatTemoinParcours {
   resume: string | null;
   temoin: TemoinPersonnalise | null;
   source: 'base' | 'local' | null;
+  /** VIS-19 — l'écriture en base de CE témoin a échoué : il n'est connu que de ce navigateur (le worker ne le voit pas). */
+  appareilSeulement?: boolean;
 }
 
 const RIEN: EtatTemoinParcours = { fait: false, resume: null, temoin: null, source: null };
+/** VIS-19 — mention ajoutée au résumé quand l'écriture en base a échoué (étape « Intérieurs » du parcours). */
+export const MENTION_APPAREIL_SEULEMENT = 'enregistré sur cet appareil seulement';
+
+/**
+ * VIS-19 — PURE : un témoin reçu par le site est-il pour la conversation courante ?
+ *  - par le BroadcastChannel (n'importe quel onglet Studio de la même origine) : le projet DOIT être celui de la
+ *    conversation (`projetId` null = Studio non relié → refusé) ;
+ *  - par l'iframe : même projet, ou `projetId` null SEULEMENT si ce cadre a été ouvert pour la conversation courante
+ *    (même contrôle que `cadreCourant(conversationId)` dans MimmozIAPage).
+ */
+export function temoinPourConversation(r: {
+  via: 'cadre' | 'canal'; projetIdCharge: string | null; projetIdAttendu: string | null; cadreDeLaConversation: boolean; retire?: boolean;
+}): { accepte: boolean; retirer: boolean } {
+  if (!r.projetIdAttendu) return { accepte: false, retirer: false };
+  const memeProjet = r.projetIdCharge === r.projetIdAttendu;
+  const accepte = memeProjet || (r.via === 'cadre' && r.projetIdCharge === null && r.cadreDeLaConversation);
+  // Suppression de la ligne en base : seulement un Studio RELIÉ à ce projet qui retire SON témoin (jamais un Studio non relié).
+  return { accepte, retirer: accepte && memeProjet && r.retire === true };
+}
 
 /**
  * PURE — état de l'étape « Intérieurs » vu du Studio, depuis la ligne `studio_temoins` (colonne `temoin`, ou la ligne
  * entière) et/ou la copie locale. La plus récente (`majLe`) des deux lisibles l'emporte ; à égalité la base.
  * Un témoin non personnalisé (logement seulement ouvert) ne compte pas comme « fait ».
  */
-export function lireTemoinPersonnalise(sources: { ligneBase?: unknown; local?: unknown } | null | undefined): EtatTemoinParcours {
+export function lireTemoinPersonnalise(sources: { ligneBase?: unknown; local?: unknown; echecBase?: unknown } | null | undefined): EtatTemoinParcours {
   if (!sources) return RIEN;
   const brutBase = sources.ligneBase && typeof sources.ligneBase === 'object' && 'temoin' in (sources.ligneBase as object)
     ? (sources.ligneBase as { temoin: unknown }).temoin : sources.ligneBase;
@@ -41,6 +62,10 @@ export function lireTemoinPersonnalise(sources: { ligneBase?: unknown; local?: u
   const local = lireTemoin(sources.local);
   const t = base && local ? (Date.parse(local.majLe) > Date.parse(base.majLe) ? local : base) : base ?? local;
   if (!t || !t.personnalise) return RIEN;
+  // VIS-19 : écriture en base échouée pour CE témoin (même empreinte) et la base n'a pas mieux → dit à l'utilisateur.
+  if (t === local && typeof sources.echecBase === 'string' && sources.echecBase === t.empreinte) {
+    return { fait: true, resume: `${t.resume} (${MENTION_APPAREIL_SEULEMENT})`, temoin: t, source: 'local', appareilSeulement: true };
+  }
   return { fait: true, resume: t.resume, temoin: t, source: t === base ? 'base' : 'local' };
 }
 
@@ -63,6 +88,19 @@ export function lireTemoinLocal(userId: string, conversationId: string, stockage
   try { return JSON.parse(stockage.getItem(k) ?? 'null'); } catch { return null; }
 }
 
+/** VIS-19 — empreinte du témoin dont l'écriture en base a échoué (null : aucune). */
+export function lireEchecBase(userId: string, conversationId: string, stockage: StockageCle | null = stockageParDefaut()): string | null {
+  const k = cleTemoinLocal(userId, conversationId);
+  if (!k || !stockage) return null;
+  try { const v = stockage.getItem(`${k}.echec-base`); return v && v.startsWith('fnv1a32:') ? v : null; } catch { return null; }
+}
+
+function memoriserEchecBase(userId: string, conversationId: string, empreinte: string | null, stockage: StockageCle | null): void {
+  const k = cleTemoinLocal(userId, conversationId);
+  if (!k || !stockage) return;
+  try { stockage.setItem(`${k}.echec-base`, empreinte ?? ''); } catch { /* stockage plein */ }
+}
+
 export function memoriserTemoinLocal(userId: string, conversationId: string, temoin: TemoinPersonnalise | null, stockage: StockageCle | null = stockageParDefaut()): boolean {
   const k = cleTemoinLocal(userId, conversationId);
   if (!k || !stockage) return false;
@@ -76,6 +114,8 @@ export interface ClientTemoins {
   from(table: string): {
     upsert(ligne: Record<string, unknown>, o: { onConflict: string }): PromiseLike<{ error: { message: string } | null }>;
     select(colonnes: string): { eq(col: string, v: string): { maybeSingle(): PromiseLike<{ data: unknown; error: { message: string } | null }> } };
+    /** VIS-19 — suppression du témoin retiré (politique RLS delete propriétaire). */
+    delete?(): { eq(col: string, v: string): PromiseLike<{ error: { message: string } | null }> };
   };
 }
 
@@ -84,6 +124,18 @@ export async function enregistrerTemoinBase(client: ClientTemoins, conversationI
     const { error } = await client.from(TABLE_TEMOINS).upsert({
       conversation_id: conversationId, projet_id: projetId, temoin, resume: temoin.resume.slice(0, 300), empreinte: temoin.empreinte,
     }, { onConflict: 'user_id,conversation_id' });
+    return error ? { ok: false, erreur: error.message } : { ok: true, erreur: null };
+  } catch (e) {
+    return { ok: false, erreur: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** VIS-19 — témoin retiré dans le Studio : la ligne de la conversation est supprimée (RLS : seulement la sienne). */
+export async function supprimerTemoinBase(client: ClientTemoins, conversationId: string): Promise<{ ok: boolean; erreur: string | null }> {
+  try {
+    const t = client.from(TABLE_TEMOINS);
+    if (typeof t.delete !== 'function') return { ok: false, erreur: 'suppression indisponible' };
+    const { error } = await t.delete().eq('conversation_id', conversationId);
     return error ? { ok: false, erreur: error.message } : { ok: true, erreur: null };
   } catch (e) {
     return { ok: false, erreur: e instanceof Error ? e.message : String(e) };
@@ -100,25 +152,38 @@ export async function chargerTemoinBase(client: ClientTemoins, conversationId: s
 /** État complet (base + local) d'une conversation — pour le parcours (asynchrone, jamais bloquant). */
 export async function etatTemoinConversation(client: ClientTemoins, userId: string, conversationId: string, stockage: StockageCle | null = stockageParDefaut()): Promise<EtatTemoinParcours> {
   const ligneBase = await chargerTemoinBase(client, conversationId);
-  return lireTemoinPersonnalise({ ligneBase, local: lireTemoinLocal(userId, conversationId, stockage) });
+  return lireTemoinPersonnalise({ ligneBase, local: lireTemoinLocal(userId, conversationId, stockage), echecBase: lireEchecBase(userId, conversationId, stockage) });
 }
 
-/** Dernière empreinte écrite en base par conversation (une écriture échouée est retentée au prochain envoi). */
+/** Dernière empreinte écrite en base par conversation (`RETIRE` : ligne supprimée ; un échec est retenté au prochain envoi). */
 const ecritsEnBase = new Map<string, string>();
+const RETIRE = 'retire';
 
 /**
  * Réception d'un `temoin.etat` validé : copie locale, écriture en base (si l'empreinte a changé), événement.
- * `temoin` null (le Studio n'a plus de personnalisation) : copie locale effacée, la base garde la dernière version.
+ * VIS-19 : `temoin` null ou non personnalisé avec `retirer` (le Studio relié à ce projet a retiré sa personnalisation) :
+ * copie locale effacée ET ligne `studio_temoins` supprimée — le parcours et Mimmo ne disent plus « fait », le worker
+ * reprend le témoin automatique. Sans `retirer` (Studio qui démarre, autre appareil) : copie locale effacée seulement.
+ * Écriture échouée : l'empreinte est notée localement ; l'étape « Intérieurs » dit « enregistré sur cet appareil seulement ».
  */
 export async function recevoirTemoinStudio(
   client: ClientTemoins, userId: string, conversationId: string, projetId: string | null, temoin: TemoinPersonnalise | null,
-  stockage: StockageCle | null = stockageParDefaut(),
+  stockage: StockageCle | null = stockageParDefaut(), retirer = false,
 ): Promise<{ local: boolean; base: { ok: boolean; erreur: string | null } | null }> {
   const local = memoriserTemoinLocal(userId, conversationId, temoin, stockage);
   const cle = `${userId}.${conversationId}`;
-  const base = temoin && temoin.personnalise && ecritsEnBase.get(cle) !== temoin.empreinte
-    ? await enregistrerTemoinBase(client, conversationId, projetId, temoin) : null;
-  if (temoin && base?.ok) ecritsEnBase.set(cle, temoin.empreinte);
+  let base: { ok: boolean; erreur: string | null } | null = null;
+  if (temoin && temoin.personnalise) {
+    if (ecritsEnBase.get(cle) !== temoin.empreinte) {
+      base = await enregistrerTemoinBase(client, conversationId, projetId, temoin);
+      if (base.ok) ecritsEnBase.set(cle, temoin.empreinte);
+      memoriserEchecBase(userId, conversationId, base.ok ? null : temoin.empreinte, stockage);
+    }
+  } else if (retirer && ecritsEnBase.get(cle) !== RETIRE) {
+    base = await supprimerTemoinBase(client, conversationId);
+    if (base.ok) ecritsEnBase.set(cle, RETIRE); else ecritsEnBase.delete(cle);
+    memoriserEchecBase(userId, conversationId, null, stockage);
+  }
   try { window.dispatchEvent(new CustomEvent(EVENEMENT_TEMOIN_STUDIO, { detail: { conversationId } })); } catch { /* hors navigateur */ }
   return { local, base };
 }
