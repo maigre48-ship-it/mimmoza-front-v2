@@ -2,6 +2,9 @@
 // SUITE-2 — passage 0.6.0 → 0.7.0 (VIS-12 nu intérieur, VIS-13 douche si baignoire impossible) : banc INCHANGÉ
 // (aucun plan du banc n'a `nuInterieur` ; toutes les salles de bains du banc reçoivent leur baignoire), et
 // placements / non placés / scores identiques octet pour octet à 0.6.0 (empreinte vérifiée, journal SUITE-2).
+// SUITE-6 — passage 0.7.0 → 0.7.1 (F6b : tête de lit jamais contre une baie ni une porte-fenêtre) : studio, T2, T5
+// inchangés ; T3 et T4 changent (lits tournés vers un mur plein) — attendus relevés avec 0.7.1 (même code exécuté
+// sous Node, mimmozia-studio/docs/vis/SUITE-6-journal.md) ; tous les lits restent posés.
 // Attendus RELEVÉS avec le moteur 0.3.0 (avant la recopie) : graine, verdict, score de tri, meubles placés, non placés
 // de chaque variante (seed 1, 3 variantes). Sans `tailles` ni `disponibles`, la 0.6.0 doit les reproduire à l'identique.
 import { strict as assert } from 'node:assert';
@@ -14,13 +17,15 @@ const BRIEF = (await lire('p03-t3')).brief;
 const ATTENDU_03: Record<string, Array<[number, string, number, number, number]>> = {
   'p01-studio': [[1, "defavorable", 99.1, 19, 3], [3, "defavorable", 97.9, 19, 3], [2, "defavorable", 94.5, 20, 2]],
   'p02-t2': [[2, "defavorable", 97.8, 24, 4], [1, "defavorable", 97.7, 24, 4], [3, "defavorable", 96.1, 24, 4]],
-  'p03-t3': [[1, "reserve", 98.2, 31, 2], [2, "reserve", 98.2, 31, 2], [3, "reserve", 97.4, 31, 2]],
-  'p04-t4': [[3, "favorable", 99.2, 41, 0], [1, "favorable", 96.8, 41, 0], [2, "favorable", 96.8, 40, 1]],
+  // SUITE-6 (0.7.1) — AVANT : [[1, "reserve", 98.2, 31, 2], [2, "reserve", 98.2, 31, 2], [3, "reserve", 97.4, 31, 2]]
+  'p03-t3': [[2, "reserve", 98.2, 31, 2], [1, "reserve", 97.5, 31, 2], [3, "reserve", 97.4, 31, 2]],
+  // SUITE-6 (0.7.1) — AVANT : [[3, "favorable", 99.2, 41, 0], [1, "favorable", 96.8, 41, 0], [2, "favorable", 96.8, 40, 1]]
+  'p04-t4': [[3, "favorable", 99.2, 40, 1], [1, "favorable", 97.3, 39, 2], [2, "favorable", 97.3, 39, 2]],
   'p05-t5': [[3, "favorable", 99.6, 47, 0], [1, "favorable", 99.3, 47, 0], [2, "favorable", 99, 47, 0]],
 };
 
-Deno.test('moteur embarqué : version 0.7.0', () => {
-  assert.equal(VERSION_MOTEUR, '0.7.0');
+Deno.test('moteur embarqué : version 0.7.1', () => {
+  assert.equal(VERSION_MOTEUR, '0.7.1');
 });
 
 for (const [cas, attendu] of Object.entries(ATTENDU_03)) {

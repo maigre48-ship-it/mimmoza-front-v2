@@ -76,7 +76,7 @@ Deno.test('BOUT EN BOUT : plan du banc p03-t3 + brief → variantes triées, ré
   assert.match(j.resumeTexte, /^Variante A recommandée/);
   assert.equal(j.synthese.choixPrincipaux.length, 3);
   assert.ok(j.synthese.verdictsParPiece.length === fx.plan.rooms.length);
-  assert.equal(j.moteur.version, '0.7.0');
+  assert.equal(j.moteur.version, '0.7.1');
   for (const v of j.variantes) assert.ok(Array.isArray(v.choixGaines));
   console.log(`  p03-t3 : ${j.variantes.map((v: { libelle: string; seed: number; verdict: string; score: number; duree_ms: number }) => `${v.libelle}/graine ${v.seed} ${v.verdict} ${v.score} (${v.duree_ms} ms)`).join(' | ')} ; total ${j.duree_ms} ms ; écartées ${j.ecartees.length}`);
 });

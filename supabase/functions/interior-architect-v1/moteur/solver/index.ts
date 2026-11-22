@@ -495,10 +495,10 @@ function cercleOk(rc: RoomCtx, poses: Pose[]): boolean {
 interface Pose { pl: Placement; spec: FurnitureSpec; fp: Rect; clr: Clearances; prio: number; itemIdx: number; host?: string; zones: Zone[] }
 interface Cand { center: Vec2; rot: Placement['rotationDeg']; mirrored: boolean; runIdx: number | null; score: number; fp: Rect; assoc?: string; bonus?: number; zones?: Zone[]; ligne?: Ligne; famille?: 'flottant' }
 
-export type Rejet = 'hors_piece' | 'collision' | 'fixture' | 'debattement' | 'fenetre' | 'degagement' | 'distance_technique' | 'passage' | 'satellites' | 'role_ou_eau' | 'pmr' | 'axe_salon';
+export type Rejet = 'hors_piece' | 'collision' | 'fixture' | 'debattement' | 'fenetre' | 'tete_baie' | 'degagement' | 'distance_technique' | 'passage' | 'satellites' | 'role_ou_eau' | 'pmr' | 'axe_salon';
 const LIBELLE_REJET: Record<Rejet, string> = {
   hors_piece: 'hors pièce', collision: 'collision', fixture: 'sur équipement fixe', debattement: 'dans un débattement',
-  fenetre: 'devant une fenêtre', degagement: 'dégagement insuffisant', distance_technique: 'distance technique',
+  fenetre: 'devant une fenêtre', tete_baie: 'tête de lit contre une baie ou porte-fenêtre', degagement: 'dégagement insuffisant', distance_technique: 'distance technique',
   passage: 'passage < seuil', satellites: 'satellites (chevets, chaises, TV, électroménager) impossibles', role_ou_eau: 'rôle ou eau',
   pmr: 'exigence PMR (art. 13) non tenue', axe_salon: 'dans l\'axe canapé ↔ TV',
 };
@@ -517,6 +517,30 @@ function toleresDans(cat: string, cote: string): Set<string> {
   return NON_OBSTACLES;
 }
 
+/** Tolérance (m) de part et d'autre du nu d'une baie : une tête de lit à moins de cette distance y est adossée. */
+const TOL_TETE_BAIE = 0.1;
+/**
+ * F6b (0.7.1, SUITE-6) — la tête du lit (dos de l'emprise, `rot`) est-elle contre une baie de la pièce (fenêtre ou
+ * porte-fenêtre, toute allège) ? Baie du mur que la tête touche (normale intérieure = devant du lit), recouvrement
+ * de plus de 5 cm le long du mur.
+ */
+function teteContreBaie(rc: RoomCtx, fp: Rect, rot: Placement['rotationDeg']): boolean {
+  const f = frontDir(rot);
+  const tete = bande(fp, neg(f), TOL_TETE_BAIE);
+  return rc.fenetres.some((w) => {
+    if (Math.abs(w.normal[0] - f[0]) > 1e-6 || Math.abs(w.normal[1] - f[1]) > 1e-6) return false;
+    const r = w.rect, t = TOL_TETE_BAIE;
+    const nu: Rect = w.normal[1] > 0.5 ? { minX: r.minX, maxX: r.maxX, minY: r.minY - t, maxY: r.minY + t }
+      : w.normal[1] < -0.5 ? { minX: r.minX, maxX: r.maxX, minY: r.maxY - t, maxY: r.maxY + t }
+        : w.normal[0] > 0.5 ? { minX: r.minX - t, maxX: r.minX + t, minY: r.minY, maxY: r.maxY }
+          : { minX: r.maxX - t, maxX: r.maxX + t, minY: r.minY, maxY: r.maxY };
+    const ox = Math.min(tete.maxX, nu.maxX) - Math.max(tete.minX, nu.minX);
+    const oy = Math.min(tete.maxY, nu.maxY) - Math.max(tete.minY, nu.minY);
+    const [long, travers] = Math.abs(f[1]) > 0.5 ? [ox, oy] : [oy, ox];
+    return long > 0.05 && travers > 1e-6;
+  });
+}
+
 function faisableBase(rc: RoomCtx, poses: Pose[], s: FurnitureSpec, c: Cand): Rejet | null {
   const fp = c.fp, rot = c.rot, cat = s.category, tapis = cat === 'tapis';
   if (!s.allowedRoles.includes(rc.room.role) || (s.needsWater && !rc.room.hasWater)) return 'role_ou_eau';
@@ -530,6 +554,9 @@ function faisableBase(rc: RoomCtx, poses: Pose[], s: FurnitureSpec, c: Cand): Re
       if (inter <= 0.001) continue;
       if (w.kind === 'french_window' || !s.allowedUnderWindow || (w.sill !== null && s.size.h > w.sill)) return 'fenetre';
     }
+    // F6b (0.7.1, SUITE-6) — un lit ne s'adosse JAMAIS à une baie ni à une porte-fenêtre (ORG-13 : mur plein) : autre
+    // mur ou autre orientation, sinon le lit n'est pas posé (raison chiffrée « tête de lit contre une baie »).
+    if (cat === 'lit' && teteContreBaie(rc, fp, rot)) return 'tete_baie';
   }
   // Réserves PMR des meubles déjà posés.
   for (const p of poses) for (const z of p.zones) if (!z.tol.has(cat) && rectsOverlap(fp, z.r)) return z.regle === 'ORG-12' ? 'axe_salon' : 'pmr';

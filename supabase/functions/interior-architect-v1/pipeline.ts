@@ -10,7 +10,7 @@ import { amenager, type ChoixGaine, type ResultatAmenager } from './moteur/pipel
 import type { Fixture, InteriorBrief, InteriorReport, LayoutPlan, PlanInput, Verdict } from './moteur/types.ts';
 import type { StyleSheet } from './moteur/style/types.ts';
 
-export const VERSION_MOTEUR = '0.7.0';
+export const VERSION_MOTEUR = '0.7.1';
 export const VERSION_FONCTION = 'interior-architect-v1 (INT-10b)';
 
 /**

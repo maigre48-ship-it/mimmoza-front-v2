@@ -1,18 +1,16 @@
-# Moteur embarqué — @mimmoza/interior-core 0.7.0 (instantané figé)
+# Moteur embarqué — @mimmoza/interior-core 0.7.1 (instantané figé)
 
-- Source : archive `C:\Users\maigr\Dev\mimmoza-interior-core\interior-core-v0.7.zip` (sha256
-  `e068b362b990109fd7cddc66095301d397f7f98043882a0211a48b7dd939edd6`), dossier `src/**` (aucun test copié).
-  La 0.7.0 = copie du Studio (`mimmozia-studio/src/core/interieurArchitecte/moteur`) au 22/11/2026 : 0.6.0 + VIS-12
-  (`analyzer/nuInterieur.ts`, champ optionnel `nuInterieur` du plan) + VIS-13 (`bainTient`, douche si baignoire
-  impossible, repli `baignoire_160x70 → douche`). Voir `CHANGELOG.md` du paquet.
-- Copie faite le 22/11/2026 par le lot SUITE-2 ; remplace la copie 0.6.0 (NUIT-1) par écrasement.
-  Fichier nouveau : `analyzer/nuInterieur.ts`. Modifiés depuis 0.6.0 : analyzer/index, programmer/index, types.
-  Aucun fichier 0.6.0 orphelin.
-- Copie IDENTIQUE vérifiée (`diff -r` contre `src/` du zip et contre la copie du Studio : aucune différence hors ce fichier).
+- Source : archive `C:\Users\maigr\Dev\mimmoza-interior-core\interior-core-v0.7.1.zip` (sha256
+  `24b87bff32bb6be57d83b2f3146665cf6753d4608942a2bf86f1755a788fa653`), dossier `src/**` (aucun test copié).
+  0.7.1 = 0.7.0 + règle F6b du solveur (`solver/index.ts` seul) : un lit ne s'adosse jamais à une baie ni à une
+  porte-fenêtre (rejet `tete_baie` ; autre mur / autre orientation, sinon lit non posé avec la raison). Voir
+  `CHANGELOG.md` du paquet.
+- Copie faite le 22/11/2026 par le lot SUITE-6 (Studio : `docs/vis/SUITE-6-journal.md`) ; seul `moteur/solver/index.ts`
+  change depuis 0.7.0 (SUITE-2). Aucun fichier nouveau ni orphelin ; import map inchangée.
+- Copie IDENTIQUE vérifiée (`diff -r` contre `src/` du paquet et contre la copie du Studio : aucune différence hors ce fichier).
 - Utilisation : `../pipeline.ts` appelle `amenager` sans `tailles`, `disponibles` ni `nuInterieur`. Banc studio, T2–T5
-  (`tests/banc-non-regression.test.ts`) : variantes identiques à 0.3.0 / 0.6.0, placements identiques octet pour octet
-  à 0.6.0. Effet attendu ailleurs : une salle de bains où aucune baignoire ne tient avec 0,70 m de passage reçoit une
-  douche (au lieu d'une baignoire omise).
+  (`tests/banc-non-regression.test.ts`) : studio, T2, T5 identiques à 0.7.0 ; T3 (ordre / score d'une variante) et T4
+  (un chevet et une commode en moins, lits tournés vers un mur plein) mis à jour, tous les lits posés.
 
 ## Adaptation des imports (aucune modification de la copie)
 
