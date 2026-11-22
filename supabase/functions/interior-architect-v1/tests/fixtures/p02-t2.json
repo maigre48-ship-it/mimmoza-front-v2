@@ -1,0 +1,656 @@
+{
+ "plan": {
+  "id": "p02-t2",
+  "label": "T2 42 m² — angle sud-ouest, balcon 6 m²",
+  "typology": "T2",
+  "kind": "appartement",
+  "construction": "neuf",
+  "northDeg": 90,
+  "ceilingHeight": 2.5,
+  "walls": [
+   {
+    "id": "p02-t2-m01",
+    "a": [
+     0,
+     0
+    ],
+    "b": [
+     0,
+     2.4
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m02",
+    "a": [
+     0,
+     0
+    ],
+    "b": [
+     2.2,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m03",
+    "a": [
+     0,
+     2.4
+    ],
+    "b": [
+     0,
+     6
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m04",
+    "a": [
+     0,
+     2.4
+    ],
+    "b": [
+     2.2,
+     2.4
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m05",
+    "a": [
+     0,
+     6
+    ],
+    "b": [
+     0,
+     7.5
+    ],
+    "thickness": 0.05,
+    "loadBearing": false,
+    "exterior": true
+   },
+   {
+    "id": "p02-t2-m06",
+    "a": [
+     0,
+     6
+    ],
+    "b": [
+     4,
+     6
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p02-t2-m07",
+    "a": [
+     0,
+     7.5
+    ],
+    "b": [
+     4,
+     7.5
+    ],
+    "thickness": 0.05,
+    "loadBearing": false,
+    "exterior": true
+   },
+   {
+    "id": "p02-t2-m08",
+    "a": [
+     2.2,
+     0
+    ],
+    "b": [
+     2.2,
+     2.4
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m09",
+    "a": [
+     2.2,
+     0
+    ],
+    "b": [
+     4.2,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m10",
+    "a": [
+     2.2,
+     2.4
+    ],
+    "b": [
+     4.2,
+     2.4
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m11",
+    "a": [
+     4,
+     6
+    ],
+    "b": [
+     4,
+     7.5
+    ],
+    "thickness": 0.05,
+    "loadBearing": false,
+    "exterior": true
+   },
+   {
+    "id": "p02-t2-m12",
+    "a": [
+     4,
+     6
+    ],
+    "b": [
+     7,
+     6
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p02-t2-m13",
+    "a": [
+     4.2,
+     0
+    ],
+    "b": [
+     4.2,
+     2.4
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m14",
+    "a": [
+     4.2,
+     0
+    ],
+    "b": [
+     7,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m15",
+    "a": [
+     4.2,
+     2.4
+    ],
+    "b": [
+     4.2,
+     3.8
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m16",
+    "a": [
+     4.2,
+     3.8
+    ],
+    "b": [
+     7,
+     3.8
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p02-t2-m17",
+    "a": [
+     7,
+     0
+    ],
+    "b": [
+     7,
+     3.8
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p02-t2-m18",
+    "a": [
+     7,
+     3.8
+    ],
+    "b": [
+     7,
+     6
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   }
+  ],
+  "rooms": [
+   {
+    "id": "entree",
+    "name": "Entrée",
+    "declaredRole": "entree",
+    "polygon": [
+     [
+      0,
+      0
+     ],
+     [
+      2.2,
+      0
+     ],
+     [
+      2.2,
+      2.4
+     ],
+     [
+      0,
+      2.4
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "sdb",
+    "name": "Salle de bains",
+    "declaredRole": "salle_de_bain",
+    "polygon": [
+     [
+      2.2,
+      0
+     ],
+     [
+      4.2,
+      0
+     ],
+     [
+      4.2,
+      2.4
+     ],
+     [
+      2.2,
+      2.4
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "chambre",
+    "name": "Chambre",
+    "declaredRole": "chambre",
+    "polygon": [
+     [
+      4.2,
+      0
+     ],
+     [
+      7,
+      0
+     ],
+     [
+      7,
+      3.8
+     ],
+     [
+      4.2,
+      3.8
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "sejour",
+    "name": "Séjour / cuisine",
+    "declaredRole": "sejour_cuisine",
+    "polygon": [
+     [
+      0,
+      2.4
+     ],
+     [
+      4.2,
+      2.4
+     ],
+     [
+      4.2,
+      3.8
+     ],
+     [
+      7,
+      3.8
+     ],
+     [
+      7,
+      6
+     ],
+     [
+      0,
+      6
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "balcon",
+    "name": "Balcon",
+    "declaredRole": "exterieur",
+    "polygon": [
+     [
+      0,
+      6
+     ],
+     [
+      4,
+      6
+     ],
+     [
+      4,
+      7.5
+     ],
+     [
+      0,
+      7.5
+     ]
+    ],
+    "level": 0
+   }
+  ],
+  "openings": [
+   {
+    "id": "d-palier",
+    "kind": "door",
+    "wallId": "p02-t2-m02",
+    "offset": 0.65,
+    "width": 0.9,
+    "connects": [
+     "entree",
+     null
+    ],
+    "swing": {
+     "into": "entree",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-sdb",
+    "kind": "door",
+    "wallId": "p02-t2-m08",
+    "offset": 1.25,
+    "width": 0.7,
+    "connects": [
+     "entree",
+     "sdb"
+    ],
+    "swing": {
+     "into": "sdb",
+     "hinge": "b"
+    }
+   },
+   {
+    "id": "d-sejour",
+    "kind": "door",
+    "wallId": "p02-t2-m04",
+    "offset": 0.8,
+    "width": 0.8,
+    "connects": [
+     "entree",
+     "sejour"
+    ]
+   },
+   {
+    "id": "d-chambre",
+    "kind": "door",
+    "wallId": "p02-t2-m15",
+    "offset": 0.3,
+    "width": 0.8,
+    "connects": [
+     "sejour",
+     "chambre"
+    ],
+    "swing": {
+     "into": "chambre",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "pf-balcon",
+    "kind": "french_window",
+    "wallId": "p02-t2-m06",
+    "offset": 1.2,
+    "width": 1.6,
+    "connects": [
+     "sejour",
+     "balcon"
+    ],
+    "sillHeight": 0,
+    "swing": null
+   },
+   {
+    "id": "f-sejour-n",
+    "kind": "window",
+    "wallId": "p02-t2-m12",
+    "offset": 0.9,
+    "width": 1.2,
+    "connects": [
+     "sejour",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-sejour-e",
+    "kind": "window",
+    "wallId": "p02-t2-m18",
+    "offset": 0.6,
+    "width": 1,
+    "connects": [
+     "sejour",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-chambre",
+    "kind": "window",
+    "wallId": "p02-t2-m17",
+    "offset": 1.3,
+    "width": 1.2,
+    "connects": [
+     "chambre",
+     null
+    ],
+    "sillHeight": 1
+   }
+  ],
+  "fixtures": [
+   {
+    "kind": "gaine",
+    "roomId": "sdb",
+    "position": [
+     2.325,
+     0.125
+    ],
+    "size": {
+     "w": 0.25,
+     "d": 0.25
+    },
+    "id": "p02-t2-f01"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "sdb",
+    "position": [
+     3.4,
+     0.25
+    ],
+    "id": "p02-t2-f02"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "sdb",
+    "position": [
+     3.6,
+     0.25
+    ],
+    "id": "p02-t2-f03"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "sdb",
+    "position": [
+     2.3,
+     1.5
+    ],
+    "size": {
+     "w": 0.1,
+     "d": 0.5
+    },
+    "id": "p02-t2-f04"
+   },
+   {
+    "kind": "gaine",
+    "roomId": "sejour",
+    "position": [
+     0.125,
+     2.525
+    ],
+    "size": {
+     "w": 0.25,
+     "d": 0.25
+    },
+    "id": "p02-t2-f05"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "sejour",
+    "position": [
+     0.25,
+     3.6
+    ],
+    "id": "p02-t2-f06"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "sejour",
+    "position": [
+     0.25,
+     3.8
+    ],
+    "id": "p02-t2-f07"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "sejour",
+    "position": [
+     6.9,
+     4.9
+    ],
+    "size": {
+     "w": 0.1,
+     "d": 0.8
+    },
+    "id": "p02-t2-f08"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "chambre",
+    "position": [
+     6.9,
+     1.9
+    ],
+    "size": {
+     "w": 0.1,
+     "d": 0.8
+    },
+    "id": "p02-t2-f09"
+   },
+   {
+    "kind": "tableau_electrique",
+    "roomId": "entree",
+    "position": [
+     0.1,
+     1.5
+    ],
+    "id": "p02-t2-f10"
+   }
+  ]
+ },
+ "expectations": {
+  "roles": {
+   "entree": "entree",
+   "sdb": "salle_de_bain",
+   "chambre": "chambre",
+   "sejour": "sejour_cuisine",
+   "balcon": "exterieur"
+  },
+  "requiredFunctions": {
+   "entree": [
+    "rangement_entree"
+   ],
+   "sdb": [
+    "bain",
+    "lavabo",
+    "toilette",
+    "lavage_linge"
+   ],
+   "chambre": [
+    "dormir_double",
+    "rangement_vetements",
+    "chevet"
+   ],
+   "sejour": [
+    "assise_salon",
+    "tv",
+    "repas",
+    "cuisson",
+    "evier",
+    "froid",
+    "plan_de_travail",
+    "rangement_cuisine"
+   ],
+   "balcon": []
+  },
+  "notes": [
+   "Chambre 2,80 × 3,80 : lit 140 ou 160 possible, armoire contre le mur de séparation avec la salle de bains.",
+   "Cuisine linéaire le long du mur ouest du séjour (gaine en angle).",
+   "Lave-linge dans la salle de bains (pas de cellier).",
+   "Porte entrée → séjour sans sens d'ouverture renseigné : l'analyseur doit le supposer et le dire."
+  ]
+ }
+}

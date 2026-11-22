@@ -1,5 +1,5 @@
 /**
- * @mimmoza/interior-core — point d'entrée du paquet (INT-09c).
+ * @mimmoza/interior-core — point d'entrée du paquet (INT-09c ; INT-09f : édition — insérer / retirer un meuble).
  *
  * Point d'entrée RECOMMANDÉ : `amenager(plan, brief, options)` (src/pipeline.ts), qui suppose les points d'eau
  * manquants en choisissant leur position selon le résultat de l'aménagement, puis enchaîne analyse → programme →
@@ -10,13 +10,18 @@
 export { amenager, MAX_CRITIQUES_PIECE } from './pipeline';
 export type { ChoixGaine, OptionsAmenager, ResultatAmenager } from './pipeline';
 export { analyzePlan, EQUIPEMENTS_EAU, ROLES_HUMIDES } from './analyzer';
-export { buildProgram } from './programmer';
-export { solveLayout } from './solver';
+export { buildProgram, equivalente } from './programmer';
+export type { OptionsProgramme } from './programmer';
+export { solveLayout, insererPlacement } from './solver';
+export type { InsertionInput, ResultatInsertion, CodeRefusInsertion, Rejet } from './solver';
+export { insererMeuble, meublesInserables, retirerMeuble } from './edition';
+export type { InsertionMeuble, ResultatInsertionMeuble } from './edition';
 export { critique } from './critic';
 export { applyStyle, buildStyleSheet, STYLES, STYLE_IDS, getStyle, STUDIO_MATERIAL_IDS, isStudioMaterial } from './style';
 export type { StyleSheet, RoomStyle, OptionFinition, Revetement } from './style/types';
 export { candidatsPointsEau, supposerPointsEau, COTE_GAINE_SUPPOSEE, MAX_CANDIDATS_PIECE } from './hypotheses/pointsEau';
 export type { CandidatPointEau, CandidatsPiece, CandidatsPointsEau, PointsEauSupposes } from './hypotheses/pointsEau';
-export { CATALOG, getSpec } from './data/catalog';
+export { CATALOG, getSpec, avecTailles, specAvecTailles, SUFFIXE_NOMINAL, estNominal, idDeBase, tailleSurchargee } from './data/catalog';
+export type { TailleSpec, TaillesSpecs } from './data/catalog';
 export { RULES } from './data/rules';
 export type * from './types';

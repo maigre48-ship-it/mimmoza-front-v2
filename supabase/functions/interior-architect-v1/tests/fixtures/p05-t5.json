@@ -1,0 +1,1360 @@
+{
+ "plan": {
+  "id": "p05-t5",
+  "label": "T5 100 m² — familial, quatre chambres",
+  "typology": "T5",
+  "kind": "appartement",
+  "construction": "neuf",
+  "northDeg": 200,
+  "ceilingHeight": 2.5,
+  "walls": [
+   {
+    "id": "p05-t5-m01",
+    "a": [
+     0,
+     0
+    ],
+    "b": [
+     0,
+     4.3
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m02",
+    "a": [
+     0,
+     0
+    ],
+    "b": [
+     3.4,
+     0
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m03",
+    "a": [
+     0,
+     4.3
+    ],
+    "b": [
+     0,
+     8
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m04",
+    "a": [
+     0,
+     4.3
+    ],
+    "b": [
+     3.4,
+     4.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m05",
+    "a": [
+     0,
+     8
+    ],
+    "b": [
+     5.4,
+     8
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m06",
+    "a": [
+     3.4,
+     0
+    ],
+    "b": [
+     3.4,
+     1.4
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m07",
+    "a": [
+     3.4,
+     0
+    ],
+    "b": [
+     4.4,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m08",
+    "a": [
+     3.4,
+     1.4
+    ],
+    "b": [
+     3.4,
+     4.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m09",
+    "a": [
+     3.4,
+     1.4
+    ],
+    "b": [
+     4.4,
+     1.4
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m10",
+    "a": [
+     3.4,
+     4.3
+    ],
+    "b": [
+     5.4,
+     4.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m11",
+    "a": [
+     4.4,
+     0
+    ],
+    "b": [
+     4.4,
+     1.4
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m12",
+    "a": [
+     4.4,
+     0
+    ],
+    "b": [
+     5.4,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m13",
+    "a": [
+     5.4,
+     0
+    ],
+    "b": [
+     5.4,
+     3.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m14",
+    "a": [
+     5.4,
+     0
+    ],
+    "b": [
+     7,
+     0
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m15",
+    "a": [
+     5.4,
+     3.3
+    ],
+    "b": [
+     5.4,
+     4.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m16",
+    "a": [
+     5.4,
+     3.3
+    ],
+    "b": [
+     7,
+     3.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m17",
+    "a": [
+     5.4,
+     4.3
+    ],
+    "b": [
+     5.4,
+     8
+    ],
+    "thickness": 0.16,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m18",
+    "a": [
+     5.4,
+     4.3
+    ],
+    "b": [
+     7.6,
+     4.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m19",
+    "a": [
+     5.4,
+     8
+    ],
+    "b": [
+     7.6,
+     8
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m20",
+    "a": [
+     7,
+     0
+    ],
+    "b": [
+     7,
+     3.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m21",
+    "a": [
+     7,
+     0
+    ],
+    "b": [
+     9.8,
+     0
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m22",
+    "a": [
+     7,
+     3.3
+    ],
+    "b": [
+     9.8,
+     3.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m23",
+    "a": [
+     7.6,
+     4.3
+    ],
+    "b": [
+     7.6,
+     8
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m24",
+    "a": [
+     7.6,
+     4.3
+    ],
+    "b": [
+     10.1,
+     4.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m25",
+    "a": [
+     7.6,
+     8
+    ],
+    "b": [
+     10.1,
+     8
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m26",
+    "a": [
+     9.8,
+     0
+    ],
+    "b": [
+     9.8,
+     3.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m27",
+    "a": [
+     9.8,
+     0
+    ],
+    "b": [
+     12.5,
+     0
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m28",
+    "a": [
+     9.8,
+     3.3
+    ],
+    "b": [
+     12.5,
+     3.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m29",
+    "a": [
+     10.1,
+     4.3
+    ],
+    "b": [
+     10.1,
+     8
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m30",
+    "a": [
+     10.1,
+     4.3
+    ],
+    "b": [
+     12.5,
+     4.3
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p05-t5-m31",
+    "a": [
+     10.1,
+     8
+    ],
+    "b": [
+     12.5,
+     8
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m32",
+    "a": [
+     12.5,
+     0
+    ],
+    "b": [
+     12.5,
+     3.3
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m33",
+    "a": [
+     12.5,
+     3.3
+    ],
+    "b": [
+     12.5,
+     4.3
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p05-t5-m34",
+    "a": [
+     12.5,
+     4.3
+    ],
+    "b": [
+     12.5,
+     8
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   }
+  ],
+  "rooms": [
+   {
+    "id": "cuisine",
+    "name": "Cuisine",
+    "declaredRole": "cuisine",
+    "polygon": [
+     [
+      0,
+      0
+     ],
+     [
+      3.4,
+      0
+     ],
+     [
+      3.4,
+      4.3
+     ],
+     [
+      0,
+      4.3
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "p2",
+    "declaredRole": null,
+    "polygon": [
+     [
+      3.4,
+      0
+     ],
+     [
+      4.4,
+      0
+     ],
+     [
+      4.4,
+      1.4
+     ],
+     [
+      3.4,
+      1.4
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "entree",
+    "name": "Entrée",
+    "declaredRole": "entree",
+    "polygon": [
+     [
+      4.4,
+      0
+     ],
+     [
+      5.4,
+      0
+     ],
+     [
+      5.4,
+      4.3
+     ],
+     [
+      3.4,
+      4.3
+     ],
+     [
+      3.4,
+      1.4
+     ],
+     [
+      4.4,
+      1.4
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "sejour",
+    "name": "Séjour",
+    "declaredRole": "sejour",
+    "polygon": [
+     [
+      0,
+      4.3
+     ],
+     [
+      5.4,
+      4.3
+     ],
+     [
+      5.4,
+      8
+     ],
+     [
+      0,
+      8
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "couloir",
+    "name": "Couloir",
+    "declaredRole": "degagement",
+    "polygon": [
+     [
+      5.4,
+      3.3
+     ],
+     [
+      12.5,
+      3.3
+     ],
+     [
+      12.5,
+      4.3
+     ],
+     [
+      5.4,
+      4.3
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "sde",
+    "name": "Salle d'eau",
+    "declaredRole": "salle_d_eau",
+    "polygon": [
+     [
+      5.4,
+      0
+     ],
+     [
+      7,
+      0
+     ],
+     [
+      7,
+      3.3
+     ],
+     [
+      5.4,
+      3.3
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "ch3",
+    "name": "Chambre 3",
+    "declaredRole": "chambre",
+    "polygon": [
+     [
+      7,
+      0
+     ],
+     [
+      9.8,
+      0
+     ],
+     [
+      9.8,
+      3.3
+     ],
+     [
+      7,
+      3.3
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "ch4",
+    "name": "Chambre 4",
+    "declaredRole": "chambre",
+    "polygon": [
+     [
+      9.8,
+      0
+     ],
+     [
+      12.5,
+      0
+     ],
+     [
+      12.5,
+      3.3
+     ],
+     [
+      9.8,
+      3.3
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "sdb",
+    "name": "Salle de bains",
+    "declaredRole": "salle_de_bain",
+    "polygon": [
+     [
+      5.4,
+      4.3
+     ],
+     [
+      7.6,
+      4.3
+     ],
+     [
+      7.6,
+      8
+     ],
+     [
+      5.4,
+      8
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "ch1",
+    "name": "Chambre parentale",
+    "declaredRole": "chambre_parentale",
+    "polygon": [
+     [
+      7.6,
+      4.3
+     ],
+     [
+      10.1,
+      4.3
+     ],
+     [
+      10.1,
+      8
+     ],
+     [
+      7.6,
+      8
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "ch2",
+    "name": "Chambre 2",
+    "declaredRole": "chambre",
+    "polygon": [
+     [
+      10.1,
+      4.3
+     ],
+     [
+      12.5,
+      4.3
+     ],
+     [
+      12.5,
+      8
+     ],
+     [
+      10.1,
+      8
+     ]
+    ],
+    "level": 0
+   }
+  ],
+  "openings": [
+   {
+    "id": "d-palier",
+    "kind": "door",
+    "wallId": "p05-t5-m12",
+    "offset": 0.05,
+    "width": 0.9,
+    "connects": [
+     "entree",
+     null
+    ],
+    "swing": {
+     "into": "entree",
+     "hinge": "b"
+    }
+   },
+   {
+    "id": "d-wc",
+    "kind": "door",
+    "wallId": "p05-t5-m09",
+    "offset": 0.15,
+    "width": 0.7,
+    "connects": [
+     "entree",
+     "p2"
+    ],
+    "swing": {
+     "into": "entree",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-cuisine",
+    "kind": "door",
+    "wallId": "p05-t5-m08",
+    "offset": 1,
+    "width": 0.8,
+    "connects": [
+     "entree",
+     "cuisine"
+    ],
+    "swing": {
+     "into": "cuisine",
+     "hinge": "b"
+    }
+   },
+   {
+    "id": "d-sejour",
+    "kind": "door",
+    "wallId": "p05-t5-m10",
+    "offset": 0.55,
+    "width": 0.9,
+    "connects": [
+     "entree",
+     "sejour"
+    ]
+   },
+   {
+    "id": "o-passe",
+    "kind": "opening",
+    "wallId": "p05-t5-m04",
+    "offset": 1.1,
+    "width": 1.2,
+    "connects": [
+     "cuisine",
+     "sejour"
+    ]
+   },
+   {
+    "id": "o-couloir",
+    "kind": "opening",
+    "wallId": "p05-t5-m15",
+    "offset": 0.05,
+    "width": 0.9,
+    "connects": [
+     "entree",
+     "couloir"
+    ]
+   },
+   {
+    "id": "d-sde",
+    "kind": "door",
+    "wallId": "p05-t5-m16",
+    "offset": 0.45,
+    "width": 0.7,
+    "connects": [
+     "couloir",
+     "sde"
+    ],
+    "swing": {
+     "into": "sde",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-ch3",
+    "kind": "door",
+    "wallId": "p05-t5-m22",
+    "offset": 0.2,
+    "width": 0.8,
+    "connects": [
+     "couloir",
+     "ch3"
+    ],
+    "swing": {
+     "into": "ch3",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-ch4",
+    "kind": "door",
+    "wallId": "p05-t5-m28",
+    "offset": 0.2,
+    "width": 0.8,
+    "connects": [
+     "couloir",
+     "ch4"
+    ],
+    "swing": {
+     "into": "ch4",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-sdb",
+    "kind": "door",
+    "wallId": "p05-t5-m18",
+    "offset": 0.4,
+    "width": 0.8,
+    "connects": [
+     "couloir",
+     "sdb"
+    ],
+    "swing": {
+     "into": "sdb",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-ch1",
+    "kind": "door",
+    "wallId": "p05-t5-m24",
+    "offset": 0.2,
+    "width": 0.8,
+    "connects": [
+     "couloir",
+     "ch1"
+    ],
+    "swing": {
+     "into": "ch1",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-ch2",
+    "kind": "door",
+    "wallId": "p05-t5-m30",
+    "offset": 0.2,
+    "width": 0.8,
+    "connects": [
+     "couloir",
+     "ch2"
+    ],
+    "swing": {
+     "into": "ch2",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "f-cuisine-s",
+    "kind": "window",
+    "wallId": "p05-t5-m02",
+    "offset": 1.1,
+    "width": 1.2,
+    "connects": [
+     "cuisine",
+     null
+    ],
+    "sillHeight": 1.1
+   },
+   {
+    "id": "f-cuisine-o",
+    "kind": "window",
+    "wallId": "p05-t5-m01",
+    "offset": 1.7,
+    "width": 1,
+    "connects": [
+     "cuisine",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "pf-sejour",
+    "kind": "french_window",
+    "wallId": "p05-t5-m05",
+    "offset": 1.6,
+    "width": 2.2,
+    "connects": [
+     "sejour",
+     null
+    ],
+    "sillHeight": 0,
+    "swing": null
+   },
+   {
+    "id": "f-sejour",
+    "kind": "window",
+    "wallId": "p05-t5-m03",
+    "offset": 1.3,
+    "width": 1.2,
+    "connects": [
+     "sejour",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-sdb",
+    "kind": "window",
+    "wallId": "p05-t5-m19",
+    "offset": 0.7,
+    "width": 0.8,
+    "connects": [
+     "sdb",
+     null
+    ],
+    "sillHeight": 1.4
+   },
+   {
+    "id": "f-ch1",
+    "kind": "window",
+    "wallId": "p05-t5-m25",
+    "offset": 0.65,
+    "width": 1.2,
+    "connects": [
+     "ch1",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-ch2-n",
+    "kind": "window",
+    "wallId": "p05-t5-m31",
+    "offset": 0.6,
+    "width": 1.2,
+    "connects": [
+     "ch2",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-ch2-e",
+    "kind": "window",
+    "wallId": "p05-t5-m34",
+    "offset": 1.4,
+    "width": 1,
+    "connects": [
+     "ch2",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-ch3",
+    "kind": "window",
+    "wallId": "p05-t5-m21",
+    "offset": 0.8,
+    "width": 1.2,
+    "connects": [
+     "ch3",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-ch4",
+    "kind": "window",
+    "wallId": "p05-t5-m27",
+    "offset": 0.75,
+    "width": 1.2,
+    "connects": [
+     "ch4",
+     null
+    ],
+    "sillHeight": 1
+   },
+   {
+    "id": "f-sde",
+    "kind": "window",
+    "wallId": "p05-t5-m14",
+    "offset": 0.5,
+    "width": 0.6,
+    "connects": [
+     "sde",
+     null
+    ],
+    "sillHeight": 1.6
+   }
+  ],
+  "fixtures": [
+   {
+    "kind": "gaine",
+    "roomId": "cuisine",
+    "position": [
+     3.275,
+     0.125
+    ],
+    "size": {
+     "w": 0.25,
+     "d": 0.25
+    },
+    "id": "p05-t5-f01"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "cuisine",
+    "position": [
+     1.7,
+     0.25
+    ],
+    "id": "p05-t5-f02"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "cuisine",
+    "position": [
+     1.9,
+     0.25
+    ],
+    "id": "p05-t5-f03"
+   },
+   {
+    "kind": "gaine",
+    "roomId": "p2",
+    "position": [
+     3.5,
+     0.05
+    ],
+    "id": "p05-t5-f04"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "p2",
+    "position": [
+     3.8,
+     0.15
+    ],
+    "id": "p05-t5-f05"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "p2",
+    "position": [
+     3.8,
+     0.25
+    ],
+    "id": "p05-t5-f06"
+   },
+   {
+    "kind": "gaine",
+    "roomId": "sde",
+    "position": [
+     5.525,
+     0.125
+    ],
+    "size": {
+     "w": 0.25,
+     "d": 0.25
+    },
+    "id": "p05-t5-f07"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "sde",
+    "position": [
+     6.4,
+     0.25
+    ],
+    "id": "p05-t5-f08"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "sde",
+    "position": [
+     6.6,
+     0.25
+    ],
+    "id": "p05-t5-f09"
+   },
+   {
+    "kind": "gaine",
+    "roomId": "sdb",
+    "position": [
+     5.525,
+     4.425
+    ],
+    "size": {
+     "w": 0.25,
+     "d": 0.25
+    },
+    "id": "p05-t5-f10"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "sdb",
+    "position": [
+     5.6,
+     6
+    ],
+    "id": "p05-t5-f11"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "sdb",
+    "position": [
+     5.6,
+     6.3
+    ],
+    "id": "p05-t5-f12"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "sejour",
+    "position": [
+     0.1,
+     6.2
+    ],
+    "size": {
+     "w": 0.1,
+     "d": 1
+    },
+    "id": "p05-t5-f13"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "cuisine",
+    "position": [
+     0.1,
+     2.2
+    ],
+    "size": {
+     "w": 0.1,
+     "d": 0.6
+    },
+    "id": "p05-t5-f14"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "ch1",
+    "position": [
+     8.85,
+     7.9
+    ],
+    "size": {
+     "w": 0.8,
+     "d": 0.1
+    },
+    "id": "p05-t5-f15"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "ch2",
+    "position": [
+     11.3,
+     7.9
+    ],
+    "size": {
+     "w": 0.8,
+     "d": 0.1
+    },
+    "id": "p05-t5-f16"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "ch3",
+    "position": [
+     8.4,
+     0.1
+    ],
+    "size": {
+     "w": 0.8,
+     "d": 0.1
+    },
+    "id": "p05-t5-f17"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "ch4",
+    "position": [
+     11.15,
+     0.1
+    ],
+    "size": {
+     "w": 0.8,
+     "d": 0.1
+    },
+    "id": "p05-t5-f18"
+   },
+   {
+    "kind": "radiateur",
+    "roomId": "sdb",
+    "position": [
+     7.5,
+     6
+    ],
+    "size": {
+     "w": 0.1,
+     "d": 0.5
+    },
+    "id": "p05-t5-f19"
+   },
+   {
+    "kind": "tableau_electrique",
+    "roomId": "entree",
+    "position": [
+     5.3,
+     1
+    ],
+    "id": "p05-t5-f20"
+   }
+  ]
+ },
+ "expectations": {
+  "roles": {
+   "cuisine": "cuisine",
+   "p2": "wc",
+   "entree": "entree",
+   "sejour": "sejour",
+   "couloir": "degagement",
+   "sde": "salle_d_eau",
+   "ch3": "chambre",
+   "ch4": "chambre",
+   "sdb": "salle_de_bain",
+   "ch1": "chambre_parentale",
+   "ch2": "chambre"
+  },
+  "requiredFunctions": {
+   "cuisine": [
+    "cuisson",
+    "evier",
+    "froid",
+    "plan_de_travail",
+    "rangement_cuisine",
+    "lavage_vaisselle",
+    "repas"
+   ],
+   "p2": [
+    "toilette"
+   ],
+   "entree": [
+    "rangement_entree"
+   ],
+   "sejour": [
+    "assise_salon",
+    "tv",
+    "repas"
+   ],
+   "couloir": [],
+   "sde": [
+    "douche",
+    "lavabo"
+   ],
+   "ch3": [
+    "dormir",
+    "rangement_vetements",
+    "chevet"
+   ],
+   "ch4": [
+    "dormir",
+    "rangement_vetements",
+    "chevet"
+   ],
+   "sdb": [
+    "bain",
+    "lavabo",
+    "lavage_linge"
+   ],
+   "ch1": [
+    "dormir_double",
+    "rangement_vetements",
+    "chevet"
+   ],
+   "ch2": [
+    "dormir",
+    "rangement_vetements",
+    "chevet"
+   ]
+  },
+  "notes": [
+   "La pièce p2 (1,00 × 1,40, avec gaine et évacuation) n'a ni nom ni rôle : c'est le WC.",
+   "Séjour 20 m² prolongé par la cuisine via un passe-plat ouvert de 1,20 m.",
+   "Chambres enfants 2,70–2,80 × 3,30 : lit 90 + bureau.",
+   "Porte entrée → séjour sans sens d'ouverture : supposition attendue vers le séjour."
+  ]
+ }
+}

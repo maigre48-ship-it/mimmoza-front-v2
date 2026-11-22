@@ -215,14 +215,73 @@ export const FALLBACK_CHAINS: string[][] = [
 
 const BY_ID = new Map(CATALOG.map((s) => [s.id, s]));
 
-/** Spec par id (undefined si inconnue). */
+/**
+ * 0.5.0 (INT-12b) — TAILLES RÉELLES DES MODÈLES 3D. Le Studio rend chaque meuble avec un modèle 3D certifié dont les
+ * dimensions mesurées diffèrent (un peu) de la spec nominale : placer à la taille nominale puis poser le modèle réel
+ * créerait des collisions ou des passages trop étroits. `tailles` (specId → {w, d, h}, m, avant rotation) remplace la
+ * taille de ces specs pour TOUTE la durée d'un appel (`amenager`, `solveLayout`, `insererPlacement`, `insererMeuble`,
+ * `critique` : option `tailles`). Entrée absente / vide : comportement strictement identique à 0.4.0.
+ * Une taille non finie ou ≤ 0 est ignorée (la spec garde sa taille). Pur : la surcharge est posée pendant l'appel
+ * synchrone puis restaurée (y compris en cas d'exception) ; les appels imbriqués se composent.
+ */
+export type TailleSpec = { readonly w: number; readonly d: number; readonly h: number };
+export type TaillesSpecs = ReadonlyMap<string, TailleSpec>;
+
+let surcharges: ReadonlyMap<string, FurnitureSpec> | null = null;
+
+const tailleValide = (t: TailleSpec | undefined): t is TailleSpec =>
+  t !== undefined && [t.w, t.d, t.h].every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0);
+
+/** Spec avec la taille surchargée (pur, sans état) — `tailles` absent : la spec du catalogue. */
+export function specAvecTailles(id: string, tailles?: TaillesSpecs): FurnitureSpec | undefined {
+  const s = getSpec(id);
+  const t = tailles?.get(id);
+  return s && tailleValide(t) ? { ...s, size: { w: t.w, d: t.d, h: t.h } } : s;
+}
+
+/** Exécute `f` avec les tailles surchargées (voir plus haut). */
+export function avecTailles<T>(tailles: TaillesSpecs | undefined, f: () => T): T {
+  if (!tailles || tailles.size === 0) return f();
+  const precedentes = surcharges;
+  const m = new Map(precedentes ?? []);
+  for (const [id, t] of tailles) {
+    const s = BY_ID.get(id);
+    if (s && tailleValide(t)) m.set(id, { ...s, size: { w: t.w, d: t.d, h: t.h } });
+  }
+  surcharges = m;
+  try {
+    return f();
+  } finally {
+    surcharges = precedentes;
+  }
+}
+
+/**
+ * 0.6.0 (INT-12c) — VARIANTE À TAILLE NOMINALE. `<id>@nominal` désigne la spec `<id>` à sa taille du CATALOGUE, même
+ * pendant `avecTailles` : le programmateur la propose en repli (règle R14) quand la taille réelle du modèle 3D ne tient
+ * pas dans la pièce — la fonction est gardée (jamais un meuble d'une autre fonction), le meuble est posé à la taille
+ * nominale et le Studio le sait « sans modèle » (aucun modèle n'est associé à `<id>@nominal`). `getSpec` rend alors la
+ * spec du catalogue (son `id` reste `<id>`).
+ */
+export const SUFFIXE_NOMINAL = '@nominal';
+export const estNominal = (id: string): boolean => id.endsWith(SUFFIXE_NOMINAL);
+export const idDeBase = (id: string): string => (estNominal(id) ? id.slice(0, -SUFFIXE_NOMINAL.length) : id);
+/** La spec a-t-elle, pendant l'appel en cours, une taille surchargée (modèle 3D) différente de la nominale ? */
+export function tailleSurchargee(id: string): boolean {
+  const s = surcharges?.get(id);
+  const n = BY_ID.get(id);
+  return !!s && !!n && (s.size.w !== n.size.w || s.size.d !== n.size.d || s.size.h !== n.size.h);
+}
+
+/** Spec par id (undefined si inconnue) ; pendant `avecTailles`, avec la taille du modèle 3D. */
 export function getSpec(id: string): FurnitureSpec | undefined {
-  return BY_ID.get(id);
+  if (estNominal(id)) return BY_ID.get(idDeBase(id));
+  return surcharges?.get(id) ?? BY_ID.get(id);
 }
 
 /** Specs fournissant une fonction, éventuellement restreintes à un rôle de pièce (ordre du catalogue, déterministe). */
 export function specsProviding(fn: UsageFunction, role?: RoomRole): FurnitureSpec[] {
-  return CATALOG.filter((s) => s.provides.includes(fn) && (role === undefined || s.allowedRoles.includes(role)));
+  return CATALOG.filter((s) => s.provides.includes(fn) && (role === undefined || s.allowedRoles.includes(role))).map((s) => getSpec(s.id)!);
 }
 
 /** Replis possibles d'une spec (variantes plus petites de sa chaîne), du plus proche au plus éloigné. */

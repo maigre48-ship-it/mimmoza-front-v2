@@ -74,7 +74,7 @@
  * échec ⇒ état restauré, item dans `unplaced` avec une raison chiffrée (compte des rejets par contrainte).
  */
 import type { AnalyzedRoom, Clearances, FurnitureSpec, InteriorBrief, LayoutPlan, Placement, PlanAnalysis, PlanInput, Repair, RoomProgram, Vec2 } from '../types';
-import { getSpec } from '../data/catalog';
+import { avecTailles, estNominal, getSpec, type TaillesSpecs } from '../data/catalog';
 import { FURNITURE_CATEGORIES } from '../data/schemas';
 import { area, centroid, clipPolygonHalfPlane, distPointSegment, frontDir, pointInPolygon, rectInPolygon, rectsOverlap, rng, round, zoneAvant, type Rect } from '../geometry';
 
@@ -495,7 +495,7 @@ function cercleOk(rc: RoomCtx, poses: Pose[]): boolean {
 interface Pose { pl: Placement; spec: FurnitureSpec; fp: Rect; clr: Clearances; prio: number; itemIdx: number; host?: string; zones: Zone[] }
 interface Cand { center: Vec2; rot: Placement['rotationDeg']; mirrored: boolean; runIdx: number | null; score: number; fp: Rect; assoc?: string; bonus?: number; zones?: Zone[]; ligne?: Ligne; famille?: 'flottant' }
 
-type Rejet = 'hors_piece' | 'collision' | 'fixture' | 'debattement' | 'fenetre' | 'degagement' | 'distance_technique' | 'passage' | 'satellites' | 'role_ou_eau' | 'pmr' | 'axe_salon';
+export type Rejet = 'hors_piece' | 'collision' | 'fixture' | 'debattement' | 'fenetre' | 'degagement' | 'distance_technique' | 'passage' | 'satellites' | 'role_ou_eau' | 'pmr' | 'axe_salon';
 const LIBELLE_REJET: Record<Rejet, string> = {
   hors_piece: 'hors pièce', collision: 'collision', fixture: 'sur équipement fixe', debattement: 'dans un débattement',
   fenetre: 'devant une fenêtre', degagement: 'dégagement insuffisant', distance_technique: 'distance technique',
@@ -1076,6 +1076,8 @@ export interface SolveInput {
    * Absent : toutes les pièces (comportement inchangé). L'aléa n'avance pas pour les pièces sautées.
    */
   pieces?: readonly string[];
+  /** 0.5.0 — tailles réelles des modèles 3D (specId → {w, d, h}) : voir `avecTailles` (data/catalog.ts). */
+  tailles?: TaillesSpecs;
 }
 
 function hash(s: string): number { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -1106,6 +1108,10 @@ function satellitesDe(s: FurnitureSpec): Array<{ cat: string; n: number }> {
 type Essai = { ok: true } | { ok: false; rejets: Partial<Record<Rejet, number>>; n: number };
 
 export function solveLayout(input: SolveInput): LayoutPlan {
+  return avecTailles(input.tailles, () => solveLayoutBrut(input));
+}
+
+function solveLayoutBrut(input: SolveInput): LayoutPlan {
   const { plan, analysis, programs, seed } = input;
   const variant = input.variant ?? 'base';
   const alea = rng((seed ^ hash(variant)) >>> 0);
@@ -1261,13 +1267,19 @@ export function solveLayout(input: SolveInput): LayoutPlan {
      * Ordre des essais : (1) spec puis replis conservant toutes les fonctions de la spec, avec satellites ;
      * (2) les mêmes, hôte seul ; (3) replis perdant une fonction, avec satellites ; (4) les mêmes, hôte seul.
      */
-    const placer = (t: Tache, autoriserSeul = true, sansPerte = false): { ok: boolean; detail: string } => {
+    const placer = (t: Tache, autoriserSeul = true, sansPerte = false, reelsSeulement = false): { ok: boolean; detail: string } => {
       const details: string[] = [];
       const orig = getSpec(t.specId)!;
       const ids = [t.specId, ...t.fallbacks];
       const garde = ids.filter((id) => orig.provides.every((f) => getSpec(id)!.provides.includes(f)));
       const perd = ids.filter((id) => !garde.includes(id));
-      const etapes: Array<{ ids: string[]; seul: boolean }> = [{ ids: garde, seul: false }, { ids: garde, seul: true }, ...(sansPerte ? [] : [{ ids: perd, seul: false }, { ids: perd, seul: true }])];
+      // 0.6.0 (INT-12c) : la variante à taille nominale (`<id>@nominal`, sans modèle 3D) ne passe qu'après TOUS les essais
+      // à taille réelle (avec puis sans satellites), et avant tout repli qui perd une fonction. Sans `@nominal` : inchangé.
+      const nominaux = garde.filter(estNominal);
+      const reels = nominaux.length ? garde.filter((id) => !estNominal(id)) : garde;
+      const etapes: Array<{ ids: string[]; seul: boolean }> = [{ ids: reels, seul: false }, { ids: reels, seul: true },
+        ...(nominaux.length && !reelsSeulement ? [{ ids: nominaux, seul: false }, { ids: nominaux, seul: true }] : []),
+        ...(sansPerte ? [] : [{ ids: perd, seul: false }, { ids: perd, seul: true }])];
       for (const { ids: lot, seul } of etapes) {
         if (seul && (!t.satellites.length || !autoriserSeul)) continue;
         for (const sid of lot) {
@@ -1303,7 +1315,10 @@ export function solveLayout(input: SolveInput): LayoutPlan {
       // Hôte obligatoire à satellites obligatoires : on tente d'abord la zone complète (y compris par
       // repositionnement d'un hôte déjà posé) avant d'accepter l'hôte seul.
       const zoneComplete = t.prio === 0 && t.satellites.some((u) => u.prio === 0);
-      let res = placer(t, !zoneComplete);
+      // 0.6.0 : avec une variante `@nominal`, la taille RÉELLE est d'abord tentée seule (sans repli qui perd une fonction),
+      // repositionnement compris ; la variante nominale, puis les replis qui perdent une fonction, viennent ensuite.
+      const aNominal = t.fallbacks.some(estNominal);
+      let res = aNominal ? placer(t, !zoneComplete, true, true) : placer(t, !zoneComplete);
       while (!res.ok && t.prio === 0 && pmrLeve < 2 && rctx.pmr && pmrConcerne(rctx, getSpec(t.specId)!)) {
         // Exigence PMR impossible dans la pièce désignée : on lève d'abord le cercle, puis le reste ; consigné.
         if (pmrLeve === 0 && rctx.cercle) {
@@ -1313,7 +1328,7 @@ export function solveLayout(input: SolveInput): LayoutPlan {
           pmrLeve = 2; rctx.cercle = null;
           repair('pmr_impossible', `Pièce ${room.id} : aucune position de « ${t.specId} » ne tient les exigences PMR de l'art. 13 (${res.detail}) ; élément posé sans ces exigences.`);
         }
-        res = placer(t, !zoneComplete);
+        res = aNominal ? placer(t, !zoneComplete, true, true) : placer(t, !zoneComplete);
       }
       if (res.ok) continue;
       let repare = false;
@@ -1326,7 +1341,7 @@ export function solveLayout(input: SolveInput): LayoutPlan {
           poses = poses.filter((p) => p !== victime && p.host !== victime.pl.id);
           const tv = file.find((x) => x.itemIdx === victime.itemIdx)!;
           // L'élément retiré doit être replacé sans perdre de fonction (sinon le repositionnement dégrade la pièce).
-          if (placer(t, !zoneComplete).ok && placer(tv, true, true).ok) {
+          if (placer(t, !zoneComplete, aNominal, aNominal).ok && placer(tv, true, true).ok) {
             repair('repositionnement', `« ${t.specId} » (obligatoire) ne tenait pas : « ${victime.pl.specId} » (${victime.pl.id}) retiré avec ses satellites, « ${t.specId} » placé, puis « ${tv.specId} » replacé.`, victime.pl.id);
             repare = true;
             break;
@@ -1339,6 +1354,11 @@ export function solveLayout(input: SolveInput): LayoutPlan {
         const r2 = placer(t, true);
         if (r2.ok) continue;
         res = r2;
+      }
+      if (!repare && aNominal && !zoneComplete) {
+        const r3 = placer(t, true);
+        if (r3.ok) continue;
+        res = r3;
       }
       if (!repare) {
         const prioTxt = ['obligatoire', 'souhaité', 'optionnel'][t.prio];
@@ -1409,4 +1429,103 @@ function resume(specId: string, r: Essai): string {
   if (r.ok) return '';
   const parts = (Object.entries(r.rejets) as Array<[Rejet, number]>).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${LIBELLE_REJET[k]}`);
   return `« ${specId} » : ${r.n} candidats${parts.length ? ` (${parts.join(', ')})` : ''}`;
+}
+
+// ─────────────── INT-09f — insertion d'UN meuble sans déplacer les autres ───────────────
+
+export interface InsertionInput {
+  plan: PlanInput;
+  analysis: PlanAnalysis;
+  /** Programmes du logement (sert à désigner le WC PMR, comme `solveLayout`). */
+  programs: RoomProgram[];
+  /** Implantation EXISTANTE : aucun de ses placements n'est déplacé. */
+  layout: LayoutPlan;
+  roomId: string;
+  specId: string;
+  /** Identifiant du nouveau placement (unique dans `layout`). */
+  id: string;
+  brief?: InteriorBrief;
+  /** 0.5.0 — tailles réelles des modèles 3D (voir `SolveInput.tailles`). */
+  tailles?: TaillesSpecs;
+}
+
+export type CodeRefusInsertion = 'piece_inconnue' | 'spec_inconnue' | 'id_pris' | 'role_ou_eau' | 'aucune_place';
+
+export type ResultatInsertion =
+  | {
+    ok: true;
+    placement: Placement;
+    /** Candidats générés / faisables. */
+    candidats: number;
+    faisables: number;
+    /**
+     * true : l'implantation existante de la pièce ne tenait déjà pas les passages (F9) ou le cercle PMR (F10) —
+     * typiquement après un déplacement manuel — ; ces contraintes ne pouvaient pas départager les candidats et
+     * n'ont pas été exigées. Le critique les signale ensuite.
+     */
+    contraintesPieceDejaEnDefaut: boolean;
+  }
+  | { ok: false; code: CodeRefusInsertion; raison: string; rejets: Partial<Record<Rejet, number>>; candidats: number };
+
+/**
+ * INT-09f — cherche la MEILLEURE position faisable d'un meuble dans une pièce déjà aménagée, SANS déplacer les
+ * autres (mode « insertion »). Mêmes candidats (`genererCandidats` : adossement, grille libre, associations à un
+ * hôte présent — chevet près du lit, chaise autour de la table…), mêmes contraintes dures (`faisableBase` F1 à F8,
+ * puis `contraintesOk` F9 / F10) et même score (`scoreCandidat`) que le solveur ; sans bruit de variante (le choix
+ * est déterministe : meilleur score, puis x, y, rotation, symétrie). Les variantes PMR du candidat sont essayées
+ * comme dans le solveur. Les RÉSERVES PMR des meubles déjà posés (zones exigées au moment de leur pose) ne sont pas
+ * reconstituées : le critique les contrôle ensuite. Pur.
+ */
+export function insererPlacement(input: InsertionInput): ResultatInsertion {
+  return avecTailles(input.tailles, () => insererPlacementBrut(input));
+}
+
+function insererPlacementBrut(input: InsertionInput): ResultatInsertion {
+  const { plan, analysis, layout, roomId, specId, id } = input;
+  const room = analysis.rooms.find((r) => r.id === roomId);
+  if (!room) return { ok: false, code: 'piece_inconnue', raison: `Pièce « ${roomId} » inconnue du plan.`, rejets: {}, candidats: 0 };
+  const s = getSpec(specId);
+  if (!s) return { ok: false, code: 'spec_inconnue', raison: `Meuble « ${specId} » inconnu du catalogue.`, rejets: {}, candidats: 0 };
+  if (layout.placements.some((p) => p.id === id)) return { ok: false, code: 'id_pris', raison: `Identifiant « ${id} » déjà utilisé.`, rejets: {}, candidats: 0 };
+  if (!s.allowedRoles.includes(room.role)) return { ok: false, code: 'role_ou_eau', raison: `« ${s.label} » n'a pas sa place dans une pièce de type ${room.role} (catalogue : ${s.allowedRoles.join(', ')}).`, rejets: {}, candidats: 0 };
+  if (s.needsWater && !room.hasWater) return { ok: false, code: 'role_ou_eau', raison: `« ${s.label} » demande une arrivée d'eau, absente de cette pièce.`, rejets: {}, candidats: 0 };
+
+  const pmr = planPMR(plan, analysis, input.programs, input.brief);
+  const rctx = construireCtx(plan, analysis, room, pmr);
+  const poses: Pose[] = [];
+  layout.placements.forEach((pl, k) => {
+    if (pl.roomId !== roomId) return;
+    const sp = getSpec(pl.specId);
+    if (!sp) return;
+    poses.push({ pl, spec: sp, fp: fpOf(pl.center, sp, pl.rotationDeg), clr: clrEff(sp, pl.mirrored === true), prio: 0, itemIdx: k, zones: [] });
+  });
+  const dejaEnDefaut = contraintesOk(rctx, poses) !== null;
+
+  const rejets: Partial<Record<Rejet, number>> = {};
+  const bruts = genererCandidats(rctx, s, poses, null, true);
+  const cands: Cand[] = [];
+  for (const c of bruts) { const v = variantesPMR(rctx, s, c); if (v) cands.push(...v); else cands.push(c); }
+  const ok: Cand[] = [];
+  for (const c of cands) {
+    const r = faisableBase(rctx, poses, s, c);
+    if (r) { rejets[r] = (rejets[r] ?? 0) + 1; continue; }
+    c.score = scoreCandidat(rctx, s, c, poses);
+    ok.push(c);
+  }
+  ok.sort((a, b) => b.score - a.score || a.center[0] - b.center[0] || a.center[1] - b.center[1] || a.rot - b.rot || Number(a.mirrored) - Number(b.mirrored));
+  for (const c of ok) {
+    const pl = mkPl(id, specId, roomId, c);
+    if (!dejaEnDefaut) {
+      const rc = contraintesOk(rctx, [...poses, { pl, spec: s, fp: c.fp, clr: clrEff(s, c.mirrored), prio: 2, itemIdx: -1, zones: c.zones ?? [] }]);
+      if (rc) { rejets[rc] = (rejets[rc] ?? 0) + 1; continue; }
+    }
+    return { ok: true, placement: pl, candidats: cands.length, faisables: ok.length, contraintesPieceDejaEnDefaut: dejaEnDefaut };
+  }
+  const parts = (Object.entries(rejets) as Array<[Rejet, number]>).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([k, v]) => `${v} ${LIBELLE_REJET[k]}`);
+  return {
+    ok: false, code: 'aucune_place', rejets, candidats: cands.length,
+    raison: cands.length === 0
+      ? `Aucune position possible pour « ${s.label} » dans cette pièce (aucun mur ni espace libre assez grand).`
+      : `Aucune place pour « ${s.label} » sans déplacer d'autres meubles : ${cands.length} positions essayées${parts.length ? ` (${parts.join(', ')})` : ''}.`,
+  };
 }

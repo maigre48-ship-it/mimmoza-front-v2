@@ -72,9 +72,23 @@
  * R12 — Entrée de distribution (≥ 3 baies, ≤ LARGEUR_ENTREE_TRANSIT = 1,20 m de large) : rangement d'entrée souhaité
  *   seulement (le passage de 0,90 m de l'art. 11 prime), note explicative.
  * R13 — Séjour < SURFACE_SEJOUR_FAUTEUILS (24 m²) : fauteuils au-delà du premier seulement souhaités, note explicative.
+ *
+ * 0.6.0 (INT-12c) — R14, CHOIX DANS CE QUI EXISTE (option `disponibles`, hypothèse Mimmoza) :
+ *   `disponibles` = identifiants de specs (ou de catégories) qui ont un modèle 3D photoréaliste certifié côté Studio.
+ *   Pour chaque élément, le programmateur retient, dans cet ordre :
+ *     1. la première préférence admise (rôle, gamme, interdits) ET disponible ;
+ *     2. sinon le premier repli admis ET disponible qui est ÉQUIVALENT à la première préférence : il fournit toutes
+ *        ses fonctions (`provides`) et au moins autant de couchages et de places (ex. lit 140 au lieu de 160) —
+ *        jamais un meuble d'une autre fonction, jamais un lit simple pour un couchage double ;
+ *     3. sinon la spec habituelle (étape R1–R13), GARDÉE et marquée `sansModele: true` + note « sans modèle
+ *        photoréaliste » (le Studio la signale et l'omet des images) : une fonction obligatoire n'est jamais retirée.
+ *   Replis (`fallbacks`) : équivalents disponibles, puis `<id>@nominal` (la même spec à la taille du catalogue, sans
+ *   modèle) si la taille réelle du modèle a été imposée par `tailles` — le solveur l'essaie AVANT tout repli qui perd
+ *   une fonction : une chambre trop petite pour le lit double réel garde un lit double (signalé sans modèle) —, puis
+ *   les autres équivalents, puis les replis qui perdent une fonction. `disponibles` absent : sortie identique à 0.5.0.
  */
 import type { AnalyzedRoom, FurnitureSpec, InteriorBrief, PlanAnalysis, ProgramItem, RoomProgram, RoomRole, UsageFunction } from '../types';
-import { fallbacksFor, getSpec } from '../data/catalog';
+import { estNominal, fallbacksFor, getSpec, SUFFIXE_NOMINAL, tailleSurchargee } from '../data/catalog';
 
 // ───────────────────────────── Constantes documentées ─────────────────────────────
 
@@ -145,6 +159,29 @@ interface Ctx {
   N: number;
   sobre: boolean;
   forbidden: Set<string>;
+  /** 0.6.0 — specs / catégories ayant un modèle 3D certifié (R14). undefined : aucune préférence (0.5.0). */
+  disponibles?: ReadonlySet<string>;
+}
+
+/** 0.6.0 — options du programmateur. */
+export interface OptionsProgramme {
+  /**
+   * Identifiants de specs (ou de catégories, ex. `lit`) ayant un modèle 3D photoréaliste certifié (R14).
+   * Absent : comportement strictement identique à 0.5.0.
+   */
+  disponibles?: ReadonlySet<string>;
+}
+
+/** 0.6.0 — la spec a-t-elle un modèle certifié ? (true si `disponibles` est absent). */
+const dispo = (ctx: Ctx, s: FurnitureSpec | undefined): boolean =>
+  !!s && (ctx.disponibles === undefined || ctx.disponibles.has(s.id) || ctx.disponibles.has(s.category));
+
+/** 0.6.0 — `sf` remplace `s0` sans perte d'usage : toutes ses fonctions, au moins ses couchages et ses places. */
+export function equivalente(s0: FurnitureSpec, sf: FurnitureSpec): boolean {
+  return s0.provides.every((f) => sf.provides.includes(f))
+    && (sf.sleeps ?? 0) >= (s0.sleeps ?? 0)
+    && (sf.seats ?? 0) >= (s0.seats ?? 0)
+    && (s0.provides.length > 0 || sf.category === s0.category);
 }
 
 // ───────────────────────────── Sélection de specs ─────────────────────────────
@@ -162,11 +199,30 @@ function replis(ctx: Ctx, id: string, role: RoomRole): string[] {
     const sf = getSpec(f);
     if (admise(ctx, sf, role) && (sf.seats ?? 0) >= minCouverts) out.push(f);
   }
+  // 0.6.0 (R14) : replis ÉQUIVALENTS disponibles, puis la spec elle-même à sa taille NOMINALE si la taille réelle de
+  // son modèle 3D ne tenait pas (`<id>@nominal`, sans modèle), puis les autres replis équivalents, puis ceux qui
+  // perdent une fonction (disponibles d'abord). Ordre du catalogue conservé dans chaque groupe.
+  if (ctx.disponibles !== undefined && s0) {
+    const eq = (f: string) => equivalente(s0, getSpec(f)!);
+    const d = (f: string) => dispo(ctx, getSpec(f));
+    const nominal = tailleSurchargee(id) ? [`${id}${SUFFIXE_NOMINAL}`] : [];
+    return [...out.filter((f) => eq(f) && d(f)), ...nominal, ...out.filter((f) => eq(f) && !d(f)), ...out.filter((f) => !eq(f) && d(f)), ...out.filter((f) => !eq(f) && !d(f))];
+  }
   return out;
 }
 
 /** Première spec admise d'une liste de préférences ; à défaut, premier repli admis de la première préférence. */
 function choisir(ctx: Ctx, role: RoomRole, prefs: string[]): string | null {
+  if (ctx.disponibles !== undefined) {
+    // 0.6.0 (R14) : d'abord ce qui existe en modèle 3D certifié, sans changer de fonction.
+    for (const id of prefs) { const s = getSpec(id); if (admise(ctx, s, role) && dispo(ctx, s)) return id; }
+    const s0 = prefs.map((id) => getSpec(id)).find((s): s is FurnitureSpec => !!s);
+    if (s0) {
+      for (const id of prefs) {
+        for (const f of replis(ctx, id, role)) { if (estNominal(f)) continue; const sf = getSpec(f)!; if (dispo(ctx, sf) && equivalente(s0, sf)) return f; }
+      }
+    }
+  }
   for (const id of prefs) if (admise(ctx, getSpec(id), role)) return id;
   for (const id of prefs) { const r = replis(ctx, id, role); if (r.length) return r[0]!; }
   return null;
@@ -186,7 +242,12 @@ class Prog {
       this.notes.push(`Aucun meuble admis (rôle ${this.room.role}, gamme ${this.ctx.brief.gamme}, hors interdits) pour ${quoi} : non programmé.`);
       return null;
     }
-    this.items.push({ specId: id, priority, reason, fallbacks: replis(this.ctx, id, this.room.role) });
+    const sansModele = this.ctx.disponibles !== undefined && !dispo(this.ctx, getSpec(id));
+    this.items.push({ specId: id, priority, reason, fallbacks: replis(this.ctx, id, this.room.role), ...(sansModele ? { sansModele: true } : {}) });
+    if (sansModele) {
+      const s = getSpec(id)!;
+      this.notes.push(`« ${s.label} »${fonction ? ` (fonction « ${fonction} »)` : ''} : sans modèle photoréaliste — aucune spec équivalente n'a de modèle 3D certifié ; spec gardée (${priority}), meuble signalé et omis des images.`);
+    }
     return id;
   }
 }
@@ -240,12 +301,13 @@ function litSimple(ctx: Ctx, r: AnalyzedRoom, etudiant = false): string[] {
 
 // ───────────────────────────── Programme ─────────────────────────────
 
-export function buildProgram(analysis: PlanAnalysis, brief: InteriorBrief): RoomProgram[] {
+export function buildProgram(analysis: PlanAnalysis, brief: InteriorBrief, options: OptionsProgramme = {}): RoomProgram[] {
   const N = brief.occupants.adults + brief.occupants.children;
   const ctx: Ctx = {
     brief, analysis, N,
     sobre: brief.target === 'investisseur_locatif',
     forbidden: new Set(brief.forbidden),
+    ...(options.disponibles !== undefined ? { disponibles: options.disponibles } : {}),
   };
   const t = brief.target, g = brief.gamme, pmr = brief.constraints.pmr;
   const senior = t === 'senior';

@@ -1,7 +1,7 @@
 // interior-architect-v1/pipeline.ts
 // Chaîne de calcul PURE (aucune I/O, aucun réseau, aucune horloge hors mesure
 // de durée injectable). Chaque variante est calculée par le point d'entrée
-// unique du moteur 0.3.0, `amenager(plan, brief, { seed, maxCandidats })` :
+// unique du moteur 0.6.0, `amenager(plan, brief, { seed, maxCandidats })` :
 // gaines supposées à la position optimale (évaluation de l'aménagement) →
 // analyse → programme → solveur (graine de la variante) → style → critique.
 // Le budget de calcul, le tri et le contrat de réponse sont ceux d'INT-10.
@@ -10,7 +10,7 @@ import { amenager, type ChoixGaine, type ResultatAmenager } from './moteur/pipel
 import type { Fixture, InteriorBrief, InteriorReport, LayoutPlan, PlanInput, Verdict } from './moteur/types.ts';
 import type { StyleSheet } from './moteur/style/types.ts';
 
-export const VERSION_MOTEUR = '0.3.0';
+export const VERSION_MOTEUR = '0.6.0';
 export const VERSION_FONCTION = 'interior-architect-v1 (INT-10b)';
 
 /**

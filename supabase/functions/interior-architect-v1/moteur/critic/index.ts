@@ -19,7 +19,7 @@ import type {
 } from '../types';
 import { BLOCKING_FAMILIES } from '../types';
 import { RULES } from '../data/rules';
-import { getSpec } from '../data/catalog';
+import { avecTailles, getSpec, type TaillesSpecs } from '../data/catalog';
 import { CHECK_KINDS, type CheckKind } from '../data/schemas';
 import { CHECKS, construireScene, type RawViolation } from './checks';
 
@@ -52,7 +52,15 @@ const r1 = (x: number) => Math.round(x * 10) / 10;
 
 interface Trace { rule: Rule; evaluatedRoomIds: string[]; violations: Violation[] }
 
-export function critique(input: CritiqueInput, options: { spec?: (id: string) => FurnitureSpec | undefined } = {}): InteriorReport {
+/**
+ * `options.tailles` (0.5.0) : tailles réelles des modèles 3D, comme pour le solveur (sans effet si `options.spec`
+ * est fourni : l'appelant résout alors lui-même les specs).
+ */
+export function critique(input: CritiqueInput, options: { spec?: (id: string) => FurnitureSpec | undefined; tailles?: TaillesSpecs } = {}): InteriorReport {
+  return avecTailles(options.tailles, () => critiqueBrut(input, options));
+}
+
+function critiqueBrut(input: CritiqueInput, options: { spec?: (id: string) => FurnitureSpec | undefined }): InteriorReport {
   const { plan, analysis, layout, brief } = input;
   const rules = input.rules ?? RULES;
   const scene = construireScene(plan, analysis, layout, brief, options.spec ?? getSpec);

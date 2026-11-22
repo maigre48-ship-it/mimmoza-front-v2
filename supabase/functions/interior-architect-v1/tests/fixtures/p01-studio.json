@@ -1,0 +1,437 @@
+{
+ "plan": {
+  "id": "p01-studio",
+  "label": "Studio 25 m² — résidence neuve, mono-orienté sud",
+  "typology": "studio",
+  "kind": "appartement",
+  "construction": "neuf",
+  "northDeg": 180,
+  "ceilingHeight": 2.5,
+  "walls": [
+   {
+    "id": "p01-studio-m01",
+    "a": [
+     0,
+     0
+    ],
+    "b": [
+     0,
+     2.1
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m02",
+    "a": [
+     0,
+     0
+    ],
+    "b": [
+     2,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m03",
+    "a": [
+     0,
+     2.1
+    ],
+    "b": [
+     0,
+     5
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m04",
+    "a": [
+     0,
+     2.1
+    ],
+    "b": [
+     2,
+     2.1
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m05",
+    "a": [
+     0,
+     5
+    ],
+    "b": [
+     5,
+     5
+    ],
+    "thickness": 0.2,
+    "loadBearing": true,
+    "exterior": true
+   },
+   {
+    "id": "p01-studio-m06",
+    "a": [
+     2,
+     0
+    ],
+    "b": [
+     2,
+     2.1
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m07",
+    "a": [
+     2,
+     0
+    ],
+    "b": [
+     3.3,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m08",
+    "a": [
+     2,
+     2.1
+    ],
+    "b": [
+     3.3,
+     2.1
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m09",
+    "a": [
+     3.3,
+     0
+    ],
+    "b": [
+     3.3,
+     2.1
+    ],
+    "thickness": 0.07,
+    "loadBearing": false,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m10",
+    "a": [
+     3.3,
+     0
+    ],
+    "b": [
+     5,
+     0
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   },
+   {
+    "id": "p01-studio-m11",
+    "a": [
+     5,
+     0
+    ],
+    "b": [
+     5,
+     5
+    ],
+    "thickness": 0.18,
+    "loadBearing": true,
+    "exterior": false
+   }
+  ],
+  "rooms": [
+   {
+    "id": "sde",
+    "name": "Salle d'eau",
+    "declaredRole": "salle_d_eau",
+    "polygon": [
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      0
+     ],
+     [
+      2,
+      2.1
+     ],
+     [
+      0,
+      2.1
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "entree",
+    "name": "Entrée",
+    "declaredRole": "entree",
+    "polygon": [
+     [
+      2,
+      0
+     ],
+     [
+      3.3,
+      0
+     ],
+     [
+      3.3,
+      2.1
+     ],
+     [
+      2,
+      2.1
+     ]
+    ],
+    "level": 0
+   },
+   {
+    "id": "piece",
+    "name": "Pièce principale",
+    "declaredRole": "sejour_cuisine",
+    "polygon": [
+     [
+      3.3,
+      0
+     ],
+     [
+      5,
+      0
+     ],
+     [
+      5,
+      5
+     ],
+     [
+      0,
+      5
+     ],
+     [
+      0,
+      2.1
+     ],
+     [
+      3.3,
+      2.1
+     ]
+    ],
+    "level": 0
+   }
+  ],
+  "openings": [
+   {
+    "id": "d-palier",
+    "kind": "door",
+    "wallId": "p01-studio-m07",
+    "offset": 0.2,
+    "width": 0.9,
+    "connects": [
+     "entree",
+     null
+    ],
+    "swing": {
+     "into": "entree",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "d-sde",
+    "kind": "door",
+    "wallId": "p01-studio-m06",
+    "offset": 1.05,
+    "width": 0.7,
+    "connects": [
+     "entree",
+     "sde"
+    ],
+    "swing": {
+     "into": "sde",
+     "hinge": "b"
+    }
+   },
+   {
+    "id": "d-piece",
+    "kind": "door",
+    "wallId": "p01-studio-m08",
+    "offset": 0.25,
+    "width": 0.8,
+    "connects": [
+     "entree",
+     "piece"
+    ],
+    "swing": {
+     "into": "piece",
+     "hinge": "a"
+    }
+   },
+   {
+    "id": "f-1",
+    "kind": "window",
+    "wallId": "p01-studio-m05",
+    "offset": 0.6,
+    "width": 1.2,
+    "connects": [
+     "piece",
+     null
+    ],
+    "sillHeight": 0.95
+   },
+   {
+    "id": "pf-1",
+    "kind": "french_window",
+    "wallId": "p01-studio-m05",
+    "offset": 2.9,
+    "width": 1.4,
+    "connects": [
+     "piece",
+     null
+    ],
+    "sillHeight": 0,
+    "swing": null
+   }
+  ],
+  "fixtures": [
+   {
+    "kind": "gaine",
+    "roomId": "sde",
+    "position": [
+     1.875,
+     0.125
+    ],
+    "size": {
+     "w": 0.25,
+     "d": 0.25
+    },
+    "id": "p01-studio-f01"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "sde",
+    "position": [
+     0.5,
+     0.25
+    ],
+    "id": "p01-studio-f02"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "sde",
+    "position": [
+     0.7,
+     0.25
+    ],
+    "id": "p01-studio-f03"
+   },
+   {
+    "kind": "bouche_vmc",
+    "roomId": "sde",
+    "position": [
+     1,
+     1
+    ],
+    "id": "p01-studio-f04"
+   },
+   {
+    "kind": "gaine",
+    "roomId": "piece",
+    "position": [
+     4.875,
+     0.125
+    ],
+    "size": {
+     "w": 0.25,
+     "d": 0.25
+    },
+    "id": "p01-studio-f05"
+   },
+   {
+    "kind": "arrivee_eau",
+    "roomId": "piece",
+    "position": [
+     4.8,
+     1
+    ],
+    "id": "p01-studio-f06"
+   },
+   {
+    "kind": "evacuation",
+    "roomId": "piece",
+    "position": [
+     4.8,
+     1.2
+    ],
+    "id": "p01-studio-f07"
+   },
+   {
+    "kind": "tableau_electrique",
+    "roomId": "entree",
+    "position": [
+     3.2,
+     1
+    ],
+    "id": "p01-studio-f08"
+   }
+  ]
+ },
+ "expectations": {
+  "roles": {
+   "sde": "salle_d_eau",
+   "entree": "entree",
+   "piece": "sejour_cuisine"
+  },
+  "requiredFunctions": {
+   "sde": [
+    "douche",
+    "lavabo",
+    "toilette"
+   ],
+   "entree": [
+    "rangement_entree"
+   ],
+   "piece": [
+    "dormir_double",
+    "rangement_vetements",
+    "assise_salon",
+    "repas",
+    "cuisson",
+    "evier",
+    "froid",
+    "plan_de_travail",
+    "rangement_cuisine"
+   ]
+  },
+  "notes": [
+   "Studio : la pièce principale cumule séjour, coin nuit (lit 140 ou canapé-lit) et kitchenette.",
+   "Kitchenette contre le mur est (gaine + arrivée/évacuation), en second jour.",
+   "WC intégré à la salle d'eau.",
+   "Pas de radiateur : chauffage par plancher / PAC collective (choix du banc)."
+  ]
+ }
+}

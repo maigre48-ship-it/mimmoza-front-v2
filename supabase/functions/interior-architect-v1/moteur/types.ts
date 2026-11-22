@@ -276,6 +276,11 @@ export interface ProgramItem {
   reason: string;
   /** Spec de repli si l'élément ne tient pas (ex. lit 140 au lieu de 160). */
   fallbacks: string[];
+  /**
+   * 0.6.0 (INT-12c) — présent (true) seulement si l'option `disponibles` est fournie et qu'aucune spec équivalente
+   * n'a de modèle 3D photoréaliste certifié : la spec est gardée et signalée « sans modèle photoréaliste ».
+   */
+  sansModele?: true;
 }
 
 export interface RoomProgram {

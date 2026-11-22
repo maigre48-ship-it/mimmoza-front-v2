@@ -26,12 +26,13 @@
  */
 import type { Fixture, InteriorBrief, InteriorReport, LayoutPlan, PlanAnalysis, PlanInput, RoomProgram } from './types';
 import { analyzePlan } from './analyzer';
-import { buildProgram } from './programmer';
+import { buildProgram, type OptionsProgramme } from './programmer';
 import { solveLayout } from './solver';
 import { critique } from './critic';
 import { applyStyle, buildStyleSheet } from './style';
 import type { StyleSheet } from './style/types';
 import { candidatsPointsEau, MAX_CANDIDATS_PIECE, type CandidatPointEau } from './hypotheses/pointsEau';
+import { avecTailles, type TaillesSpecs } from './data/catalog';
 
 /** Nombre maximal de critiques (≈ 20 à 60 ms chacune) par pièce humide évaluée. */
 export const MAX_CRITIQUES_PIECE = 10;
@@ -46,6 +47,16 @@ export interface OptionsAmenager {
   variant?: string;
   /** Positions candidates évaluées par pièce (défaut MAX_CANDIDATS_PIECE). 1 = choix R3 d'origine seul. */
   maxCandidats?: number;
+  /**
+   * 0.5.0 (INT-12b) — tailles RÉELLES des modèles 3D qui seront rendus (specId → {w, d, h}, m, avant rotation) :
+   * programme, solveur, style et critique voient ces specs à la taille du modèle. Absent / vide : identique à 0.4.0.
+   */
+  tailles?: TaillesSpecs;
+  /**
+   * 0.6.0 (INT-12c) — specs (ou catégories) ayant un modèle 3D photoréaliste certifié : le programmateur préfère
+   * une spec disponible équivalente (règle R14 du programmateur). Absent : identique à 0.5.0.
+   */
+  disponibles?: ReadonlySet<string>;
 }
 
 export interface ChoixGaine {
@@ -100,9 +111,9 @@ const nbBloquantes = (report: InteriorReport, roomId?: string) =>
 
 interface Chaine { plan: PlanInput; analysis: PlanAnalysis; programs: RoomProgram[]; feuilleDeStyle: StyleSheet; layout: LayoutPlan; report: InteriorReport }
 
-function chaine(plan: PlanInput, brief: InteriorBrief, seed: number, variant: string | undefined, brut?: { analysis: PlanAnalysis; programs: RoomProgram[]; layout: LayoutPlan }): Chaine {
+function chaine(plan: PlanInput, brief: InteriorBrief, seed: number, variant: string | undefined, brut?: { analysis: PlanAnalysis; programs: RoomProgram[]; layout: LayoutPlan }, optProg: OptionsProgramme = {}): Chaine {
   const analysis = brut?.analysis ?? analyzePlan(plan);
-  const programs = brut?.programs ?? buildProgram(analysis, brief);
+  const programs = brut?.programs ?? buildProgram(analysis, brief, optProg);
   const feuilleDeStyle = buildStyleSheet(brief, analysis);
   const solved = brut?.layout ?? solveLayout({ plan, analysis, programs, seed, brief, ...(variant !== undefined ? { variant } : {}) });
   const layout = applyStyle(solved, feuilleDeStyle, seed);
@@ -124,10 +135,15 @@ function composer(courant: LayoutPlan, room: string, partiel: LayoutPlan): Layou
 }
 
 export function amenager(plan: PlanInput, brief: InteriorBrief, options: OptionsAmenager = {}): ResultatAmenager {
+  return avecTailles(options.tailles, () => amenagerBrut(plan, brief, options));
+}
+
+function amenagerBrut(plan: PlanInput, brief: InteriorBrief, options: OptionsAmenager): ResultatAmenager {
   const seed = options.seed ?? 1;
   const variant = options.variant;
   const max = Math.max(1, options.maxCandidats ?? MAX_CANDIDATS_PIECE);
   const cand = candidatsPointsEau(plan, analyzePlan(plan), { max });
+  const optProg: OptionsProgramme = options.disponibles !== undefined ? { disponibles: options.disponibles } : {};
   const pieces = cand.pieces;
   const choixIdx = new Map<string, number>(pieces.map((p) => [p.roomId, 0]));
   const avec = (idx: Map<string, number>): PlanInput => ({
@@ -140,7 +156,7 @@ export function amenager(plan: PlanInput, brief: InteriorBrief, options: Options
   // Point de départ : positions R3 d'origine (= supposerPointsEau), implantation brute complète.
   const planDefaut = avec(choixIdx);
   const anDefaut = analyzePlan(planDefaut);
-  const progDefaut = buildProgram(anDefaut, brief);
+  const progDefaut = buildProgram(anDefaut, brief, optProg);
   rangPiece = new Map(anDefaut.rooms.map((r, i) => [r.id, i]));
   const brutDefaut = solve(planDefaut, anDefaut, progDefaut);
   let courant: LayoutPlan = brutDefaut;
@@ -159,7 +175,7 @@ export function amenager(plan: PlanInput, brief: InteriorBrief, options: Options
       const idx = new Map(choixIdx).set(room, j);
       const p = avec(idx);
       const analysis = analyzePlan(p);
-      const programs = buildProgram(analysis, brief);
+      const programs = buildProgram(analysis, brief, optProg);
       if (j === (choixIdx.get(room) ?? 0)) return { j, c, p, analysis, programs, layout: courant, oblig: obligatoiresNonPlaces(programs, courant), nonPlaces: courant.unplaced.length };
       const partiel = solve(p, analysis, programs, [room]);
       const layout = composer(courant, room, partiel);
@@ -197,7 +213,7 @@ export function amenager(plan: PlanInput, brief: InteriorBrief, options: Options
   if ([...choixIdx.values()].some((j) => j !== 0)) {
     const planOpt = avec(choixIdx);
     const anOpt = analyzePlan(planOpt);
-    const progOpt = buildProgram(anOpt, brief);
+    const progOpt = buildProgram(anOpt, brief, optProg);
     const options = [
       final,
       { plan: planOpt, analysis: anOpt, programs: progOpt, layout: solve(planOpt, anOpt, progOpt) },
@@ -215,7 +231,7 @@ export function amenager(plan: PlanInput, brief: InteriorBrief, options: Options
       if (bat) { final = c; kf = k; optimise = true; }
     }
   }
-  const habille = chaine(final.plan, brief, seed, variant, final);
+  const habille = chaine(final.plan, brief, seed, variant, final, optProg);
   const idxFinal = optimise ? choixIdx : new Map(pieces.map((p) => [p.roomId, 0]));
   if (!optimise) for (const c of choix) c.rangR3 = 0;
 

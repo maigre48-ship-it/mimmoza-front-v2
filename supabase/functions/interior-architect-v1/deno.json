@@ -12,6 +12,8 @@
     "./moteur/data/catalog": "./moteur/data/catalog.ts",
     "./moteur/data/rules": "./moteur/data/rules.ts",
     "./moteur/data/schemas": "./moteur/data/schemas.ts",
+    "./moteur/edition": "./moteur/edition/index.ts",
+    "./moteur/edition/index": "./moteur/edition/index.ts",
     "./moteur/geometry": "./moteur/geometry/index.ts",
     "./moteur/geometry/index": "./moteur/geometry/index.ts",
     "./moteur/hypotheses/pointsEau": "./moteur/hypotheses/pointsEau.ts",
