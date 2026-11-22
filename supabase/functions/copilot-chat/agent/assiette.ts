@@ -44,6 +44,8 @@ export interface ParcelleAssiette {
   surface_calculee_m2: number;
   /** Écart contenance / contour, en % de la contenance ; null sans contenance. */
   ecart_pct: number | null;
+  /** SUITE-1 : centre du contour (WGS84), pour lire la zone PLU de CETTE parcelle. Absent d'une assiette antérieure. */
+  centre?: { lat: number; lon: number };
 }
 
 export interface AssietteFonciere {
@@ -56,6 +58,8 @@ export interface AssietteFonciere {
   contigue: true;
   /** Phrase de contrôle, lisible telle quelle. */
   controle: string;
+  /** SUITE-1 : zone PLU par parcelle et hypothèse retenue (voir zonage-assiette.ts). */
+  zonage?: { hypothese?: string | null; [cle: string]: unknown };
 }
 
 export type IssueAssiette =

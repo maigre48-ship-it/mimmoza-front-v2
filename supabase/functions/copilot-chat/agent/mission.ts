@@ -56,6 +56,8 @@ import { lireTexteExtrait, planifierLecture } from '../../_shared/documents/piec
 // VIS-15 : assiette foncière groupée (plusieurs parcelles contiguës).
 import { assemblerAssiette, idusDeLaDemande, RE_IDU_ASSIETTE, type IssueAssiette } from './assiette.ts';
 import { mettreEnForme } from '../../_shared/texte/miseEnForme.ts';
+// SUITE-1 : zonage PLU d'une assiette multi-parcelles (zone par parcelle, règle la plus contraignante).
+import { appliquerZonageAuxRegles, enregistrerLectureZone, lireZonageStocke, lireZonesAssiette, noterTentative, zoneALire, type ZonageAssiette } from './zonage-assiette.ts';
 import { normaliserCodeZone, plagesLisibles } from '../../_shared/documents/lectureCiblee.ts';
 import {
   ajouterZonages, alertesZonage, assemblerRapportV2, calculerChargeFonciere, chargerBrouillon, fusionnerHypotheses, lireHypothesesPartielles,
@@ -629,6 +631,13 @@ export function normaliserRapport(
     const lectures = k.idu ? zonagesLus(etat)[k.idu] ?? [] : [];
     const az = k.idu ? alertesZonage(k.idu, zoneProspection(k, m), 'la prospection d’origine', lectures) : [];
     (r.conception as Record<string, unknown>).alertes_zonage = az;
+    // SUITE-1 : assiette multi-zones — zone par parcelle et hypothèse retenue, dites dans le rapport.
+    const za = zonageDeLaConception(k);
+    if (za) (r.conception as Record<string, unknown>).zonage_assiette = { parcelles: za.parcelles, zones: za.zones, retenues: za.retenues ?? null, hypothese: za.hypothese };
+    if (za?.hypothese) {
+      (r.limites as string[]).push(za.hypothese);
+      r.alertes_verification = [...((r.alertes_verification as string[] | undefined) ?? []), za.hypothese];
+    }
     if (az.length) {
       (r.limites as string[]).push(...az);
       r.alertes_verification = [...((r.alertes_verification as string[] | undefined) ?? []), ...az];
@@ -986,6 +995,11 @@ async function executerOutilMission(
         if (manquantes.length) return `Contour cadastral introuvable (API Carto IGN) pour ${manquantes.join(', ')} : assiette groupée NON enregistrée. Ne déduis aucune surface ; dis-le à l'utilisateur.`;
         const a = assemblerAssiette(lus as ParcelleConception[]);
         if (!a.ok) { const ko = a as Extract<IssueAssiette, { ok: false }>; return `ASSIETTE NON ENREGISTRÉE : ${ko.raison} N'invente pas d'assiette : pose MAINTENANT cette question à l'utilisateur (poser_question) : « ${ko.question} »`; }
+        // SUITE-1 : centre de chaque parcelle gardé dans l'assiette (zone PLU lue parcelle par parcelle).
+        a.parcelle.assiette.parcelles = a.parcelle.assiette.parcelles.map((p, i) => {
+          const ce = centroideParcelle(lus[i] as ParcelleConception);
+          return ce ? { ...p, centre: { lat: Math.round(ce.lat * 1e7) / 1e7, lon: Math.round(ce.lon * 1e7) / 1e7 } } : p;
+        });
         k.idu = a.parcelle.idu; k.parcelle = a.parcelle as ParcelleConception;
         const ko = await persisterConceptionSure(c, k, 'regles');
         c.etat.conception = k;
@@ -1234,6 +1248,15 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     // attendre un appel enregistrer_regles_conception du modèle), secteurs déclarés appliqués.
     const f = fusionnerRegles(k.regles, lues, 'reglement');
     k.regles = f.regles;
+    // SUITE-1 : assiette multi-zones — règles gardées par zone ; dès deux zones lues, la plus contraignante
+    // s'applique règle par règle ; puis une lecture complémentaire au plus par zone encore non lue.
+    const za = zonageDeLaConception(k);
+    let noteZonage = '';
+    if (za?.mixte && enregistrerLectureZone(za, lecture?.zone ?? null, lues)) {
+      k.regles = appliquerZonageAuxRegles(k.regles, za);
+      (k.parcelle as unknown as { assiette: { zonage: unknown } }).assiette.zonage = za;
+      noteZonage = ` ${za.hypothese ?? ''}`;
+    }
     const conflit = noterConflits(k, f.conflits);
     const secteurs = appliquerSecteursConnus(k, c.m);
     // Lot C9 : stationnement / mixité restés manquants → la raison donnée par plu-reglement-v1 (dispositions
@@ -1241,6 +1264,11 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     const communes = appliquerDispositionsCommunes(k.regles, lecture?.dispositions, lecture?.libelle ?? 'Règlement lu');
     if (communes.notes.length) k.regles = communes.regles;
     k.lecture = null;
+    const zoneSuivante = za?.mixte && lecture ? zoneALire(za) : null;
+    if (zoneSuivante && lecture) {
+      k.lecture = { chemin: lecture.chemin, zone: zoneSuivante, ...(lecture.source ? { source: lecture.source } : {}), ...(lecture.fichier ? { fichier: lecture.fichier } : {}) };
+      noteZonage += ` Lecture complémentaire programmée par le moteur : zone ${zoneSuivante} (assiette multi-zones).`;
+    }
     c.etat.conception = k;
     const ko = await persisterConceptionSure(c, k);
     c.etat.conception = k;
@@ -1249,7 +1277,7 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
       ? `Règlement lu (${quoi}) : ${lues.map(decrireRegle).join(' ; ')}.`
       : `Règlement lu (${quoi}) : aucune règle clé trouvée pour cette zone.`) +
       (secteurs.length ? ` Secteur(s) déclaré(s) par l'utilisateur appliqué(s) par le moteur : ${secteurs.join(' ; ')}.` : '') +
-      (communes.notes.length ? ` Dispositions communes : ${communes.notes.join(' ')}` : '') +
+      (communes.notes.length ? ` Dispositions communes : ${communes.notes.join(' ')}` : '') + noteZonage +
       (ko ? ' (Dossier de conception non mis à jour en base pour l’instant : règles conservées dans la mission.)' : '');
     // Lot Q1 (A) : règle par secteur → la question du secteur est obligatoire avant toute conclusion.
     const qs = questionSecteur(k.regles);
@@ -1388,7 +1416,11 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
   };
   const docTexte = (texteDoc: string, titre: string, contexte: string) =>
     ({ type: 'document', source: { type: 'text', media_type: 'text/plain', data: texteDoc }, title: titre, context: contexte });
-  const zone = lec.zone ?? await zoneDeLaParcelle(c, k);
+  // SUITE-1 : assiette groupée → zone lue parcelle par parcelle ; zones différentes → la principale d'abord,
+  // puis une lecture complémentaire au plus par autre zone (programmée après chaque lecture).
+  const za = await zonageAssiette(c, k);
+  const zone = lec.zone ?? (za ? (za.mixte ? zoneALire(za) : za.zone_principale) : null) ?? await zoneDeLaParcelle(c, k);
+  if (za?.mixte && zone) noterTentative(za, zone);
   let contenu: unknown[];
   let libelle: string;
 
@@ -1493,6 +1525,38 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
 
 /** Extractions serveur « en cours » tolérées avant d'abandonner la lecture (≈ un tick chacune). */
 export const ESSAIS_EXTRACTION_MAX = 4;
+
+/** SUITE-1 : zonage stocké dans l'assiette de la conception (parcelle.assiette.zonage), ou null. */
+export function zonageDeLaConception(k: Pick<EtatConception, 'parcelle'>): ZonageAssiette | null {
+  const a = (k.parcelle as { assiette?: { zonage?: unknown } } | null)?.assiette;
+  return a ? lireZonageStocke(a.zonage) : null;
+}
+
+/**
+ * SUITE-1 : zone de CHAQUE parcelle d'une assiette groupée (get_zonage_plu au centre de chacune), lue une fois
+ * et gardée dans parcelle.assiette.zonage. null : parcelle seule ou assiette antérieure au lot (ancien comportement).
+ */
+async function zonageAssiette(c: CtxEtape, k: EtatConception): Promise<ZonageAssiette | null> {
+  const a = (k.parcelle as { assiette?: { parcelles?: unknown; zonage?: unknown } } | null)?.assiette;
+  if (!a || !Array.isArray(a.parcelles) || a.parcelles.length < 2) return null;
+  const deja = lireZonageStocke(a.zonage);
+  if (deja) { a.zonage = deja; return deja; }
+  const z = await lireZonesAssiette(a.parcelles, async (idu, pt) => {
+    try {
+      const r = await appelAvecFile(c, 'get_zonage_plu', () =>
+        avecDelai(c.deps.executeTool('get_zonage_plu', { lat: pt.lat, lng: pt.lon }, contexteMission(c.m)), TIMEOUT_OUTIL_MS, 'get_zonage_plu'));
+      noterZonage(c, 'get_zonage_plu', { idu }, r);
+      return normaliserCodeZone((r?.data as { zone_principale?: { zone?: unknown } } | undefined)?.zone_principale?.zone);
+    } catch { return null; }
+  });
+  if (!z) return null;
+  a.zonage = z;
+  if (z.hypothese) {
+    c.etat.carnet.push(texte(z.hypothese, 600));
+    await c.depot.journal(c.m.id, 'outil', 'get_zonage_plu', { zones: z.zones }, z.hypothese, 0).catch(() => {});
+  }
+  return z;
+}
 
 /** Zone PLU au point de la parcelle (get_zonage_plu, GPU) ; null si inconnue. Jamais bloquant. */
 async function zoneDeLaParcelle(c: CtxEtape, k: EtatConception): Promise<string | null> {

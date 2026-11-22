@@ -421,6 +421,9 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
   if (ecart) { resume.gabarit_retenu = ecart; resume.alertes = [ecart, ...resume.alertes.filter((a) => a !== ecart)].slice(0, 8); }
   const a = assietteDeLaParcelle(c.parcelle);
   if (a && a.idus.length > 1) resume.assiette = libelleAssiette(a);
+  // SUITE-1 : assiette multi-zones → l'hypothèse de zonage retenue est dite sur la carte du Dossier 3D.
+  const hz = a && typeof a.zonage?.hypothese === 'string' ? a.zonage.hypothese : null;
+  if (hz) resume.alertes = [hz, ...resume.alertes.filter((x) => x !== hz)].slice(0, 8);
   return { ok: true, entree, volume, resume, empreinte };
 }
 
