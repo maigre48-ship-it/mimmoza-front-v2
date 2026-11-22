@@ -1,4 +1,7 @@
 // NUIT-1 — non-régression du moteur embarqué sur le banc (studio, T2–T5) : passage 0.3.0 → 0.6.0.
+// SUITE-2 — passage 0.6.0 → 0.7.0 (VIS-12 nu intérieur, VIS-13 douche si baignoire impossible) : banc INCHANGÉ
+// (aucun plan du banc n'a `nuInterieur` ; toutes les salles de bains du banc reçoivent leur baignoire), et
+// placements / non placés / scores identiques octet pour octet à 0.6.0 (empreinte vérifiée, journal SUITE-2).
 // Attendus RELEVÉS avec le moteur 0.3.0 (avant la recopie) : graine, verdict, score de tri, meubles placés, non placés
 // de chaque variante (seed 1, 3 variantes). Sans `tailles` ni `disponibles`, la 0.6.0 doit les reproduire à l'identique.
 import { strict as assert } from 'node:assert';
@@ -16,8 +19,8 @@ const ATTENDU_03: Record<string, Array<[number, string, number, number, number]>
   'p05-t5': [[3, "favorable", 99.6, 47, 0], [1, "favorable", 99.3, 47, 0], [2, "favorable", 99, 47, 0]],
 };
 
-Deno.test('moteur embarqué : version 0.6.0', () => {
-  assert.equal(VERSION_MOTEUR, '0.6.0');
+Deno.test('moteur embarqué : version 0.7.0', () => {
+  assert.equal(VERSION_MOTEUR, '0.7.0');
 });
 
 for (const [cas, attendu] of Object.entries(ATTENDU_03)) {

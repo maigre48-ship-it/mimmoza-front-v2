@@ -115,5 +115,5 @@ de lancer la recherche dépend du temps mesuré, donc de la machine.
 
 ## Moteur
 
-Copie figée IDENTIQUE de `@mimmoza/interior-core` 0.6.0 (`src/**`, NUIT-1) dans `moteur/` (voir `moteur/VERSION.md` :
+Copie figée IDENTIQUE de `@mimmoza/interior-core` 0.7.0 (`src/**`, SUITE-2 ; 0.6.0 par NUIT-1) dans `moteur/` (voir `moteur/VERSION.md` :
 empreintes sha256). Point d'entrée utilisé : `amenager` (`moteur/pipeline.ts`).

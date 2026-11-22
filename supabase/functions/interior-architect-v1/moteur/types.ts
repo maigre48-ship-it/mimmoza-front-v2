@@ -105,6 +105,12 @@ export interface PlanInput {
   rooms: RoomInput[];
   openings: Opening[];
   fixtures: Fixture[];
+  /**
+   * VIS-12 — aménager au NU intérieur (analyzer/nuInterieur.ts) : les pièces sont réduites de la demi-épaisseur des
+   * cloisons portées par leur contour (contour d'axe) ; `facadeM` = part du mur de façade à l'intérieur du contour
+   * (0 : contour au nu intérieur de la façade). Absent : analyse inchangée (contour = surface aménageable).
+   */
+  nuInterieur?: { facadeM?: number };
 }
 
 // ───────────────────────────── Brief ─────────────────────────────

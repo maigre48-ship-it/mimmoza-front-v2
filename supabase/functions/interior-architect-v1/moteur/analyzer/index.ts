@@ -20,6 +20,7 @@ import type { AnalyzedRoom, Fixture, FixtureKind, Opening, PlanAnalysis, PlanInp
 import {
   area as aireAbs, bbox, clipPolygonHalfPlane, cross, dot, len, normalize, pointInPolygon, round, signedArea, sub, subtractIntervals, type Interval,
 } from '../geometry';
+import { auNuInterieur } from './nuInterieur';
 
 // ───────────────────────────── Constantes ─────────────────────────────
 
@@ -273,7 +274,8 @@ export function analyzePlan(plan: PlanInput): PlanAnalysis {
   }
 
   const totalArea = round(travaux.filter((t) => t.role !== 'exterieur').reduce((s, t) => s + t.area, 0), 2);
-  return { planId: plan.id, rooms, adjacency, totalArea, missing, assumptions };
+  // VIS-12 — pièces au nu intérieur si le plan le demande (analyzer/nuInterieur.ts) ; sinon analyse inchangée.
+  return auNuInterieur({ planId: plan.id, rooms, adjacency, totalArea, missing, assumptions }, plan);
 }
 
 // ───────────────────────────── Portions de murs utilisables ─────────────────────────────

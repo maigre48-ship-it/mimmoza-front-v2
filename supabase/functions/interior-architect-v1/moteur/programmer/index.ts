@@ -144,6 +144,11 @@ export const ALTERNATIVES: Record<string, string[]> = {
   table_4_couverts: ['table_ronde_4', 'table_2_couverts'],
   etagere_rangement_90: ['etagere_basse_160'],
   frigo_combine_60: ['frigo_table_top'],
+  /**
+   * VIS-13 — dernière baignoire : à défaut (le solveur ne la loge pas : porte, vasque, gaine), une douche 90 × 90 puis
+   * 80 × 80 — repli qui PERD la fonction « bain » (dit par le solveur), jamais une salle de bains sans bain ni douche.
+   */
+  baignoire_160x70: ['douche_90x90', 'douche_80x80'],
 };
 
 const CHAMBRES: RoomRole[] = ['chambre', 'chambre_parentale'];
@@ -280,6 +285,25 @@ function runMax(r: AnalyzedRoom): number {
   return best;
 }
 const fr = (x: number, d = 2) => x.toFixed(d).replace('.', ',');
+
+/** VIS-13 — passage libre visé devant une baignoire (m) : son dégagement au catalogue (0,70 m). */
+export const PASSAGE_BAIN = 0.7;
+
+/**
+ * VIS-13 — une des baignoires `ids` tient-elle dans la boîte de la pièce (NETTE quand le plan est au nu, VIS-12) avec
+ * son passage devant ? Contre un grand côté (longueur ≤ grand côté, profondeur + passage ≤ petit côté) ou en travers
+ * (longueur ≤ petit côté, profondeur + passage ≤ grand côté). Le solveur reste juge ensuite (portes, vasque, gaines).
+ */
+export function bainTient(r: AnalyzedRoom, ids: readonly string[]): boolean {
+  const { long, court } = dims(r);
+  return ids.some((id) => {
+    const s = getSpec(id);
+    if (!s) return false;
+    const passage = Math.max(PASSAGE_BAIN, s.clearances.front);
+    const tient = (a: number, b: number) => s.size.w <= a + 1e-9 && s.size.d + passage <= b + 1e-9;
+    return tient(long, court) || tient(court, long);
+  });
+}
 
 /** Lit double le plus grand compatible avec la pièce (ECH-05 + passages). */
 function litDouble(ctx: Ctx, r: AnalyzedRoom): string[] {
@@ -508,7 +532,20 @@ export function buildProgram(analysis: PlanAnalysis, brief: InteriorBrief, optio
       }
       case 'salle_de_bain': case 'salle_d_eau': {
         p.exige('lavabo');
-        if (r.role === 'salle_de_bain' && !pmr) {
+        /*
+         * VIS-13 — REPLI BAIGNOIRE → DOUCHE. Une salle de bains dont la boîte NETTE (au nu des cloisons, VIS-12) ne
+         * reçoit aucune baignoire du programme avec son passage devant (`bainTient`) reçoit une DOUCHE à la place du
+         * bain, dite en note : jamais de salle de bains sans bain ni douche (A204 : 1,27 m nets ; studio 2984205a :
+         * 1,47 m). AVANT : baignoire programmée quand même, puis omise par le solveur (« ne tient pas »).
+         */
+        const bainImpossible = r.role === 'salle_de_bain' && !pmr && !bainTient(r, r.area >= 6 ? ['baignoire_170x70', 'baignoire_160x70'] : ['baignoire_160x70']);
+        if (bainImpossible) {
+          const { long, court } = dims(r);
+          p.exige('douche');
+          p.ajoute(['douche_90x90', 'douche_90x120', 'douche_80x80'], 'obligatoire',
+            `Salle de bains de ${fr(court)} × ${fr(long)} m nets : la baignoire 160 × 70 et son passage de ${fr(PASSAGE_BAIN)} m ne tiennent pas — douche à la place du bain (VIS-13).`, 'douche');
+          p.notes.push(`Salle de bains de ${fr(court)} × ${fr(long)} m nets : baignoire impossible (160 × 70 + ${fr(PASSAGE_BAIN)} m de passage), douche programmée à la place (VIS-13).`);
+        } else if (r.role === 'salle_de_bain' && !pmr) {
           p.exige('bain');
           p.ajoute(r.area >= 6 ? ['baignoire_170x70', 'baignoire_160x70'] : ['baignoire_160x70'], 'obligatoire', 'Salle de bains : baignoire.', 'bain');
           if (r.area >= SURFACE_SDB_DOUCHE) { p.exige('douche'); p.ajoute(['douche_90x90', 'douche_80x80'], 'obligatoire', `Salle de bains de ${fr(r.area, 1)} m² ≥ ${fr(SURFACE_SDB_DOUCHE, 1)} m² : douche en plus du bain.`, 'douche'); }

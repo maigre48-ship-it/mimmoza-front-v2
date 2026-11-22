@@ -4,6 +4,7 @@
     "./moteur": "./moteur/index.ts",
     "./moteur/analyzer": "./moteur/analyzer/index.ts",
     "./moteur/analyzer/index": "./moteur/analyzer/index.ts",
+    "./moteur/analyzer/nuInterieur": "./moteur/analyzer/nuInterieur.ts",
     "./moteur/critic": "./moteur/critic/index.ts",
     "./moteur/critic/checks": "./moteur/critic/checks.ts",
     "./moteur/critic/geo": "./moteur/critic/geo.ts",
