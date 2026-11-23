@@ -28,6 +28,9 @@ export interface EtatParcoursEcran {
   typeChoisi: TypeParcours | null;
   choisirType: (t: TypeParcours) => void;
   rafraichir: () => void;
+  /** 23/11 — missions de la conversation lues au moins une fois : avant, le parcours n'est pas fiable (étapes 1-2
+   *  vues « à faire » le temps du chargement → champ terrain / programme proposés à tort). */
+  charge: boolean;
 }
 
 function briefDe(conversationId: string | null): BriefProjet | null {
@@ -40,6 +43,7 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
   const [missions, setMissions] = useState<MissionEcran[]>([]);
   const [travaux, setTravaux] = useState<unknown[]>([]);
   const [temoin, setTemoin] = useState<EtatTemoinParcours | null>(null);
+  const [charge, setCharge] = useState<string | null>(null);
   const [preparationBase, setPreparationBase] = useState<{ resume: string | null } | null>(null);
   const [jeton, setJeton] = useState(0);
   const rafraichir = useCallback(() => setJeton((j) => j + 1), []);
@@ -52,7 +56,8 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
   useEffect(() => {
     if (!actif || !conversationId || enCours) { if (!conversationId) { setMissions([]); setTravaux([]); setPreparationBase(null); } return; }
     let vivant = true;
-    void listerMissions(30).then((l) => { if (vivant) setMissions(l.filter((m) => m.conversation_id === conversationId) as MissionEcran[]); }).catch(() => undefined);
+    void listerMissions(30).then((l) => { if (vivant) { setMissions(l.filter((m) => m.conversation_id === conversationId) as MissionEcran[]); setCharge(conversationId); } })
+      .catch(() => { if (vivant) setCharge(conversationId); });
     void listerTravaux(conversationId, 12).then((r) => { if (vivant) setTravaux(r.disponible ? r.valeur : []); }).catch(() => undefined);
     // 23/11 : 3D préparée en base (action directe, hors messages) → étape 3 faite.
     void Promise.resolve(supabase.from('studio_preparations').select('resume').eq('conversation_id', conversationId)
@@ -109,5 +114,5 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
   useEffect(() => { publierInstantaneParcours(conversationId, instantaneDepuisSources(sources, memoire.type, memoire.fond ?? null)); }, [conversationId, sources, memoire.type, memoire.fond]);
 
   const choisirType = useCallback((t: TypeParcours) => majMemoireParcours(conversationId, { type: t }), [conversationId]);
-  return { parcours, sources, typeChoisi: memoire.type, choisirType, rafraichir };
+  return { parcours, sources, typeChoisi: memoire.type, choisirType, rafraichir, charge: !conversationId || charge === conversationId };
 }

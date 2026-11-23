@@ -72,6 +72,8 @@ export function ReglageTerrain({ onSend, conversationId, carteDisponible, onOuvr
   const [occupe, setOccupe] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => { if (ouvert) setDeplie(true); }, [ouvert]);
+  // 23/11 : étape devenue FAITE (données chargées après l'affichage) → le champ se replie (« Changer de… »).
+  useEffect(() => { if (fait && !ouvert) setDeplie(false); }, [fait]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ouvrirCarte = async () => {
     if (!carteDisponible) { onOuvrirCarte?.(); return; }
@@ -132,6 +134,8 @@ export function ReglageProgramme({ onSend, textesUtilisateur, fait, ouvert }: {
   const [typologies, setTypologies] = useState(initial.typologies.join(', '));
   const [touche, setTouche] = useState(false);
   useEffect(() => { if (ouvert) setDeplie(true); }, [ouvert]);
+  // 23/11 : étape devenue FAITE (données chargées après l'affichage) → le champ se replie (« Changer de… »).
+  useEffect(() => { if (fait && !ouvert) setDeplie(false); }, [fait]); // eslint-disable-line react-hooks/exhaustive-deps
   // Pré-remplissage suivi tant que l'utilisateur n'a rien modifié (la demande peut arriver après l'affichage).
   useEffect(() => {
     if (touche) return;

@@ -51,5 +51,9 @@ export const CONSIGNE_RESTER_DANS_LE_CHAT = [
   '  (type « conception », idu ou parcel_ids, programme connu dans les critères) ; s’il manque l’essentiel du programme (nombre de',
   '  logements ou niveaux), pose UNE question courte, puis propose la mission.',
   '· Étape 2 : la mission de conception se propose et se valide ICI (devis dans le chat), jamais sur la page Programmation.',
+  '· JAMAIS DEUX FOIS : si le bloc PARCOURS ou l’ÉTAT RÉEL DES MISSIONS indique qu’une étape est FAITE (terrain connu, conception',
+  '  terminée, 3D préparée), ne la refais pas et ne redemande ni confirmation du terrain ni validation du programme. Une confirmation',
+  '  de terrain identique au terrain de la conception terminée = rien à refaire : dis-le en une phrase et passe à la PROCHAINE étape',
+  '  non faite du parcours (ex. 4 — Style & façades). Ne repropose la conception que si l’utilisateur change de terrain ou de programme.',
   '---',
 ].join('\n');

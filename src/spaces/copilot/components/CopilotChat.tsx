@@ -379,7 +379,7 @@ export function CopilotChat({
           </header>
           <div className="mzia-fen3d__contenu">
             <JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} onSend={(texte) => handleSend(texte)} habillage={habillageConversation} onHabillage={changerHabillage}
-              parcours={parcoursEcran.parcours} onParcours={actionnerParcours} onTypeParcours={parcoursEcran.choisirType} commandeParcours={commandeConversation}
+              parcours={parcoursEcran.charge ? parcoursEcran.parcours : undefined} onParcours={actionnerParcours} onTypeParcours={parcoursEcran.choisirType} commandeParcours={commandeConversation}
               noticeParcours={noticeParcours} onValiderApercu={validerApercu} apercuValide={parcoursEcran.sources.apercuValide} />
           </div>
         </section>
@@ -418,7 +418,7 @@ export function CopilotChat({
             }
             const message = <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} onRemplirSaisie={remplirSaisie} onOuvrirHabillage={showStudioDraft ? ouvrirHabillage : undefined} />;
             // VIS-17 : UNE carte « Votre parcours » par conversation, sous la dernière réponse qui touche au parcours, mise à jour en place.
-            if (m.id !== ancreParcours || m.status === 'streaming') return message;
+            if (m.id !== ancreParcours || m.status === 'streaming' || !parcoursEcran.charge) return message;
             return <Fragment key={m.id}>{message}<CarteParcours parcours={parcoursEcran.parcours} onAction={actionnerParcours}
               onType={parcoursEcran.choisirType} onDetail={() => commanderPanneau('parcours')} notice={noticeParcours}
               reglage={(e) => reglageDeLEtape(e, { conversationId: currentConversationId ?? null, messages: messages as never, onSend: (t) => handleSend(t), dansLeChat: true, onOuvrirCarte: () => commanderPanneau('terrain-carte') })} /></Fragment>;
