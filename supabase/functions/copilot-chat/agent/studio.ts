@@ -1608,10 +1608,14 @@ export const MESSAGE_EXTENSION_SANS_DOSSIER =
 
 async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // LOT G10b — maison neuve du parcours : aucune 3D préparée (jamais un volume d'immeuble présenté au client).
-  if (!env.mission && env.userId && await maisonDeLaConversation(env, env.userId)) return erreur(MESSAGE_MAISON_SANS_3D, 'partial');
+  // 23/11 : conception d'une MISSION désignée (bouton « Ouvrir mon projet en 3D » / étape 3 « Préparer ») — la 3D demandée
+  // est celle de cette conception, même si la conversation a porté plus tôt un parcours d'extension ou de maison neuve
+  // (Ascain a7cca310 : extension refusée le 17/11, conception collective terminée le 23/11 → « RIEN N'A ÉTÉ LANCÉ »).
+  const conceptionDesignee = estUuid(input.mission_id);
+  if (!conceptionDesignee && !env.mission && env.userId && await maisonDeLaConversation(env, env.userId)) return erreur(MESSAGE_MAISON_SANS_3D, 'partial');
   // LOT X10 — conversation d'EXTENSION : la 3D préparée n'est que le SUPPORT DE PARCELLE de l'image (la machine de rendu
   // dessine la maison conservée et l'extension du parcours) ; jamais un immeuble ni des logements présentés au client.
-  const ext = !env.mission && env.userId ? await projetExtensionConversation(env, env.userId) : null;
+  const ext = !conceptionDesignee && !env.mission && env.userId ? await projetExtensionConversation(env, env.userId) : null;
   if (ext && !ext.placee) return erreur(MESSAGE_EXTENSION_NON_PLACEE, 'partial');
   // LOT G3 — extension : sans parcelle désignée, d'abord le dossier de la parcelle du parcours d'extension (et non le
   // dossier le plus récent du compte).
@@ -1774,7 +1778,11 @@ export function fondDuRenduPrecedent(options: unknown): Obj | null {
 /** LOT X3 : projet d'extension VALIDE de la conversation (dernier parcours terminé), ou null. Ne lève jamais. */
 async function projetExtensionConversation(env: EnvStudio, uid: string): Promise<ReturnType<typeof projetDesSorties>> {
   if (!env.depot.sortiesExtension || !env.conversationId) return null;
-  try { return projetDesSorties(await env.depot.sortiesExtension(uid, env.conversationId)); } catch { return null; }
+  try {
+    // 23/11 : le parcours d'extension ne vaut que s'il est le DERNIER parcours de la conversation (voir dernierParcours).
+    if (env.depot.dernierParcours && (await env.depot.dernierParcours(uid, env.conversationId)) !== 'extension_maison') return null;
+    return projetDesSorties(await env.depot.sortiesExtension(uid, env.conversationId));
+  } catch { return null; }
 }
 
 /** LOT G3 — parcelle du parcours d'extension de la conversation (dernière sortie qui la porte) ; null sinon. */
@@ -2698,12 +2706,21 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
       });
     },
     async dernierParcours(userId, conversationId) {
-      const { data, error } = await admin.from('copilot_tool_calls').select('tool_name')
+      const { data, error } = await admin.from('copilot_tool_calls').select('tool_name,created_at')
         .eq('user_id', userId).eq('conversation_id', conversationId).in('tool_name', ['extension_maison', 'maison_neuve'])
         .order('created_at', { ascending: false }).limit(1);
       if (error || !Array.isArray(data) || !data.length) return null;
       const n = (data[0] as { tool_name?: unknown }).tool_name;
-      return n === 'extension_maison' || n === 'maison_neuve' ? n : null;
+      if (n !== 'extension_maison' && n !== 'maison_neuve') return null;
+      // 23/11 : une mission de CONCEPTION terminée APRÈS le dernier pas du parcours maison / extension = la conversation
+      // porte désormais ce projet-là (Ascain : extension du 17/11, conception collective du 23/11) → plus de parcours actif.
+      const quand = (data[0] as { created_at?: unknown }).created_at;
+      if (typeof quand === 'string') {
+        const m = await admin.from('agent_missions').select('id').eq('user_id', userId).eq('conversation_id', conversationId)
+          .eq('type', 'conception').in('statut', ['terminee', 'budget_atteint']).gt('termine_le', quand).limit(1);
+        if (!m.error && Array.isArray(m.data) && m.data.length) return null;
+      }
+      return n;
     },
     async briefsMessages(userId, conversationId) {
       // Lecture serveur (service) bornée à l'utilisateur ET à la conversation ; le bloc est revalidé par briefDuMessage.

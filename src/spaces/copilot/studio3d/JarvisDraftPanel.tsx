@@ -208,9 +208,9 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jetonParcours]);
   const parcoursUi = parcours && onParcours ? <div ref={refParcours}>
-    <ParcoursPanneau parcours={parcours} onAction={onParcours} onType={onTypeParcours}
+    <ParcoursPanneau parcours={parcours} onAction={onParcours} onType={onTypeParcours} notice={noticeParcours ?? null}
       reglage={(e) => reglageDeLEtape(e, { conversationId, messages: messages as never, onSend, ouvert: reglageOuvert })} />
-    {(noteParcours || noticeParcours) && <p role="status" className="jarvis-dossier__proposal">{noteParcours ?? noticeParcours}</p>}
+    {noteParcours && <p role="status" className="jarvis-dossier__proposal">{noteParcours}</p>}
     {reglagesOuverts && etude && <div ref={refReglages} style={{ margin: '0 0 12px' }}>
       <BriefProjetRenduSection studyId={etude} source="parcours" />
       <button type="button" className="jarvis-dossier__link" onClick={() => setReglagesOuverts(false)}>Fermer les réglages</button>

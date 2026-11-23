@@ -316,3 +316,15 @@ Deno.test('X10-8 : extension placée mais aucun dossier de parcelle → rien n�
   na.equal(p!.message, MESSAGE_EXTENSION_SANS_DOSSIER);
   na.equal(d.preparations.length, 0);
 });
+
+Deno.test('23/11 (Ascain a7cca310) : extension refusée PUIS conception d’une mission désignée → la 3D de la conception est préparée (bouton « Préparer » / « Ouvrir mon projet en 3D »)', async () => {
+  const d = depotAvecConception();
+  d.sorties = [sortie('refus')];
+  // Sans mission désignée : le parcours d'extension refusé bloque toujours.
+  na.equal((await executerOutilStudio('studio_preparer_3d', {}, env(d, 'P1')))!.message, MESSAGE_EXTENSION_NON_PLACEE);
+  // Conception d'une mission désignée : préparation habituelle (volume), jamais « RIEN N'A ÉTÉ LANCÉ ».
+  const p = await executerOutilStudio('studio_preparer_3d', { mission_id: '55555555-5555-4555-8555-555555555555' }, env(d, 'P2'));
+  na.equal(p?.status, 'ok', p?.message);
+  na.equal((p!.data as { support_extension?: unknown }).support_extension, undefined, 'pas un support d’extension');
+  na.equal(d.preparations.length, 1);
+});

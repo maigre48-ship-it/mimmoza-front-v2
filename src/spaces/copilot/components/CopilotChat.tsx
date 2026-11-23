@@ -420,7 +420,7 @@ export function CopilotChat({
             // VIS-17 : UNE carte « Votre parcours » par conversation, sous la dernière réponse qui touche au parcours, mise à jour en place.
             if (m.id !== ancreParcours || m.status === 'streaming') return message;
             return <Fragment key={m.id}>{message}<CarteParcours parcours={parcoursEcran.parcours} onAction={actionnerParcours}
-              onType={parcoursEcran.choisirType} onDetail={() => commanderPanneau('parcours')}
+              onType={parcoursEcran.choisirType} onDetail={() => commanderPanneau('parcours')} notice={noticeParcours}
               reglage={(e) => reglageDeLEtape(e, { conversationId: currentConversationId ?? null, messages: messages as never, onSend: (t) => handleSend(t), dansLeChat: true, onOuvrirCarte: () => commanderPanneau('terrain-carte') })} /></Fragment>;
           })
         )}

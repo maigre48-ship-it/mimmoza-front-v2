@@ -43,8 +43,10 @@ function cliquer(p: Parcours, e: EtapeParcours, onAction: ActionnerParcours) {
   onAction(cible, cible.action);
 }
 
-export function ParcoursPanneau({ parcours, onAction, onType, reglage }: {
+export function ParcoursPanneau({ parcours, onAction, onType, reglage, notice }: {
   parcours: Parcours; onAction: ActionnerParcours; onType?: (t: TypeParcours) => void;
+  /** 23/11 — retour de la dernière action (en cours, erreur), affiché EN HAUT du parcours, toujours visible. */
+  notice?: string | null;
   /** VIS-18b — petit réglage affiché dans l'étape (cible, gamme, fond de l'image) ; null : aucun. */
   reglage?: (e: EtapeParcours) => ReactNode;
 }) {
@@ -58,6 +60,7 @@ export function ParcoursPanneau({ parcours, onAction, onType, reglage }: {
       </div>
       <SelecteurType type={parcours.type} onType={onType} />
     </header>
+    {notice && <p className="mz-parcours__notice" role="status">{notice}</p>}
     <ol className="mz-parcours__liste">
       {parcours.etapes.map((e) => {
         const courante = e.cle === parcours.courante;
@@ -83,8 +86,10 @@ export function ParcoursPanneau({ parcours, onAction, onType, reglage }: {
   </section>;
 }
 
-export function CarteParcours({ parcours, onAction, onType, onDetail, reglage }: {
+export function CarteParcours({ parcours, onAction, onType, onDetail, reglage, notice }: {
   parcours: Parcours; onAction: ActionnerParcours; onType?: (t: TypeParcours) => void;
+  /** 23/11 — retour de la dernière action (en cours, erreur), affiché sous le bouton de la prochaine étape. */
+  notice?: string | null;
   /** VIS-20 — champ de la prochaine étape affiché DANS la carte du chat (terrain, programme) ; null : aucun. */
   reglage?: (e: EtapeParcours) => ReactNode;
   /** Ouvre l'Espace 3D sur le parcours détaillé. */
@@ -115,6 +120,7 @@ export function CarteParcours({ parcours, onAction, onType, onDetail, reglage }:
         ? <span className="mz-parcours__renvoi" role="note">{prochaine.carteDansLeFil}</span>
         : <button type="button" className="is-primaire" onClick={() => onAction(prochaine, prochaine.action)}>{prochaine.action.libelle} <ChevronRight size={14} aria-hidden="true" /></button>}
     </div> : <p className="mz-parcours__fini"><Circle size={10} aria-hidden="true" /> Toutes les étapes sont faites.</p>}
+    {notice && <p className="mz-parcours__notice" role="status">{notice}</p>}
     {prochaine && (prochaine.reglage === 'terrain' || prochaine.reglage === 'programme') && reglage?.(prochaine)}
     {onDetail && <button type="button" className="mz-parcours__detail" onClick={onDetail}>Voir le détail dans l’Espace 3D</button>}
   </aside>;
