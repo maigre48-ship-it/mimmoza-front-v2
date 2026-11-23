@@ -14,7 +14,8 @@ import type { BriefProjet } from '@/lib/studio/briefProjet';
 import type { ChatMessage } from '../types/copilot.types';
 import { parcelleRetenue } from './parcelleConfirmee';
 import { parcelId } from './parcelFromGps';
-import { assemblerSourcesEcran, instantaneDepuisSources, resumePreparationBase, type MissionEcran } from './parcoursEcran';
+import { assemblerSourcesEcran, instantaneDepuisSources, type MissionEcran } from './parcoursEcran';
+import { usePreparationCourante } from './preparationBase';
 import { lireMemoireParcours, majMemoireParcours, PARCOURS_EVENT, publierInstantaneParcours } from './parcours.store';
 import type { SourcesParcours } from '@/lib/studio/parcours';
 // VIS-18a / VIS-18b : logement témoin personnalisé dans le Studio (copie locale immédiate, puis base studio_temoins).
@@ -44,7 +45,7 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
   const [travaux, setTravaux] = useState<unknown[]>([]);
   const [temoin, setTemoin] = useState<EtatTemoinParcours | null>(null);
   const [charge, setCharge] = useState<string | null>(null);
-  const [preparationBase, setPreparationBase] = useState<{ resume: string | null } | null>(null);
+  const preparationRef = usePreparationCourante(messages as never, conversationId);
   const [jeton, setJeton] = useState(0);
   const rafraichir = useCallback(() => setJeton((j) => j + 1), []);
   const enCours = messages.some((m) => m.status === 'streaming');
@@ -54,19 +55,11 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
 
   // Base : missions et rendus de la conversation (jamais bloquant).
   useEffect(() => {
-    if (!actif || !conversationId || enCours) { if (!conversationId) { setMissions([]); setTravaux([]); setPreparationBase(null); } return; }
+    if (!actif || !conversationId || enCours) { if (!conversationId) { setMissions([]); setTravaux([]); } return; }
     let vivant = true;
     void listerMissions(30).then((l) => { if (vivant) { setMissions(l.filter((m) => m.conversation_id === conversationId) as MissionEcran[]); setCharge(conversationId); } })
       .catch(() => { if (vivant) setCharge(conversationId); });
     void listerTravaux(conversationId, 12).then((r) => { if (vivant) setTravaux(r.disponible ? r.valeur : []); }).catch(() => undefined);
-    // 23/11 : 3D préparée en base (action directe, hors messages) → étape 3 faite.
-    void Promise.resolve(supabase.from('studio_preparations').select('resume').eq('conversation_id', conversationId)
-      .order('maj_le', { ascending: false }).limit(1))
-      .then(({ data, error }) => {
-        if (!vivant || error) return;
-        const l = Array.isArray(data) && data.length ? data[0] as { resume?: unknown } : null;
-        setPreparationBase(l ? { resume: resumePreparationBase(l.resume) } : null);
-      }).catch(() => undefined);
     // VIS-18a : témoin du Studio — copie locale d'abord (immédiat), puis la base (la plus récente l'emporte).
     void (async () => {
       const { data } = await supabase.auth.getUser();
@@ -107,8 +100,8 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
 
   const sources = useMemo(() => assemblerSourcesEcran({
     messages: messages as never, conversationId, typeChoisi: memoire.type, missions, travaux, parcelle, brief, film: memoire.film, visite: memoire.visite,
-    fond: memoire.fond ?? null, projet: memoire.projet ?? null, temoinStudio: temoin, preparationBase,
-  }), [messages, conversationId, memoire, missions, travaux, parcelle, brief, temoin, preparationBase]);
+    fond: memoire.fond ?? null, projet: memoire.projet ?? null, temoinStudio: temoin, preparationRef,
+  }), [messages, conversationId, memoire, missions, travaux, parcelle, brief, temoin, preparationRef]);
   const parcours = useMemo(() => calculerParcours(sources), [sources]);
 
   useEffect(() => { publierInstantaneParcours(conversationId, instantaneDepuisSources(sources, memoire.type, memoire.fond ?? null)); }, [conversationId, sources, memoire.type, memoire.fond]);

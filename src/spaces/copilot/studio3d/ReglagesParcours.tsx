@@ -101,7 +101,7 @@ export function reglageDeLEtape(e: EtapeParcours, p: {
   const ouvert = p.ouvert?.cle === e.cle;
   if (e.reglage === 'terrain') return <ReglageTerrain key={`terrain-${String(ouvert ? p.ouvert?.jeton : 0)}`} onSend={p.onSend} conversationId={p.conversationId}
     carteDisponible={!p.dansLeChat} onOuvrirCarte={p.onOuvrirCarte} fait={e.statut === 'fait'} ouvert={ouvert} carteOuverte={ouvert && !!p.ouvert?.carte} />;
-  if (e.reglage === 'programme') return <ReglageProgramme onSend={p.onSend} fait={e.statut === 'fait'} ouvert={ouvert}
+  if (e.reglage === 'programme') return <ReglageProgramme key={`programme-${String(ouvert ? p.ouvert?.jeton : 0)}`} onSend={p.onSend} fait={e.statut === 'fait'} ouvert={ouvert}
     textesUtilisateur={(p.messages as readonly { role?: string; text?: string }[]).filter((m) => m.role === 'user').map((m) => m.text ?? '')} />;
   if (!p.conversationId) return null;
   if (e.reglage === 'fond') return <ChoixFondParcours conversationId={p.conversationId} messages={p.messages} onSend={p.onSend} />;

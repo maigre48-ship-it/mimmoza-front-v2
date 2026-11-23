@@ -24,7 +24,8 @@ import { lireMissionParId } from './agent/agentApi';
 // VIS-15 : ouverture du projet en 3D à la fin d'une mission de conception.
 import { corpsPreparation3D, EVENEMENT_OUVRIR_PROJET_3D, lireIssuePreparation3D } from './agent/projet3DMission';
 import type { DemandeOuvertureProjet3D } from './agent/BoutonProjet3D';
-import { dernierePreparation, lirePreparationStockee, ouverturePreparation } from './studio3d/preparationStudio';
+import { lirePreparationStockee, ouverturePreparation } from './studio3d/preparationStudio';
+import { chargerPreparationBase, preparationCourante } from './studio3d/preparationBase';
 // VIS-17 : une étape du parcours ouvre le Studio intégré sur la bonne étape (Bâtiment, Aménagement → Intérieur).
 import { EVENEMENT_PARCOURS_STUDIO, preparerEtapeStudio, type DemandeParcoursStudio } from './studio3d/parcours.store';
 // VIS-18a : Studio DÉJÀ ouvert (cadre ou autre onglet) → il passe sur l'étape cliquée (accusé) ; témoin personnalisé reçu.
@@ -602,6 +603,8 @@ export default function MimmozIAPage() {
         if (error) return { ok: false as const, message: 'La 3D n’a pas pu être préparée (service indisponible). Réessayez dans un instant.' };
         const issue = lireIssuePreparation3D(data);
         if (!issue.ok) return issue;
+        // 23/11 : la 3D vient d'être préparée → tous les écrans (parcours, fiche, rendus) la relisent en base.
+        void chargerPreparationBase(conversationId).catch(() => undefined);
         const lu = await supabase.from('studio_preparations').select('id,idu,entree,volume').eq('id', issue.preparationId).maybeSingle();
         const p = lu.error ? null : lirePreparationStockee(lu.data);
         if (!p) return { ok: false as const, message: 'La 3D préparée est illisible : réessayez.' };
@@ -696,7 +699,7 @@ export default function MimmozIAPage() {
           // VIS-18a — Studio ouvert dans un AUTRE onglet sur ce projet : il passe sur l'étape, rien n'est ouvert ici.
           const ailleurs = await ouvrirEtapeStudio({ etapeStudio: d.etape, sousOnglet: d.sous }, { cadre: null, projetId: projetIdChat(conversationId), delaiMs: 600 });
           if (ailleurs.etat === 'ok') { d.repondre(ailleurs.message); return; }
-          const ref = dernierePreparation(state.messages as never);
+          const ref = preparationCourante(state.messages as never, conversationId) ?? await chargerPreparationBase(conversationId);
           if (ref) {
             const lu = await supabase.from('studio_preparations').select('id,idu,entree,volume').eq('id', ref.preparationId).maybeSingle();
             const p = lu.error ? null : lirePreparationStockee(lu.data);

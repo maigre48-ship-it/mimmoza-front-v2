@@ -68,22 +68,40 @@ export function dernierePreparation(messages: readonly MessageOutils[]): Referen
       const id = typeof d.preparation_id === 'string' && RE_UUID.test(d.preparation_id) ? d.preparation_id : null;
       const idu = txt(d.idu, 40);
       if (!id || !idu) continue;
-      const v = estObj(d.volume) ? d.volume : {};
-      const controles = (Array.isArray(v.controles) ? v.controles : []).filter(estObj).flatMap((c): ControleAnnonce[] => {
-        const verdict = VERDICTS.find((x) => x === c.verdict);
-        const libelle = txt(c.libelle, 80);
-        return verdict && libelle ? [{ libelle, verdict, explication: txt(c.explication, 400) ?? '' }] : [];
-      });
-      return {
-        preparationId: id, conceptionId: typeof d.conception_id === 'string' && RE_UUID.test(d.conception_id) ? d.conception_id : null,
-        idu, commune: txt(d.commune, 120),
-        batiments: fini(v.batiments) ? v.batiments : null, gabarit: txt(v.gabarit, 20), sdpM2: fini(v.sdp_estimee_m2) ? v.sdp_estimee_m2 : null,
-        logementsPlaces: fini(v.logements_places) ? v.logements_places : null, logementsVises: fini(v.logements_vises) ? v.logements_vises : null,
-        controles, alertes: (Array.isArray(v.alertes) ? v.alertes : []).map((x) => txt(x, 300)).filter((x): x is string => !!x).slice(0, 4),
-      };
+      return referenceDepuisResume(id, d.conception_id, idu, d.commune, d.volume);
     }
   }
   return null;
+}
+
+/** Référence d'une préparation depuis son résumé (sortie de l'outil `data.volume`, ou colonne studio_preparations.resume). */
+function referenceDepuisResume(id: string, conceptionId: unknown, idu: string, commune: unknown, resume: unknown): ReferencePreparation {
+  const v = estObj(resume) ? resume : {};
+  const controles = (Array.isArray(v.controles) ? v.controles : []).filter(estObj).flatMap((c): ControleAnnonce[] => {
+    const verdict = VERDICTS.find((x) => x === c.verdict);
+    const libelle = txt(c.libelle, 80);
+    return verdict && libelle ? [{ libelle, verdict, explication: txt(c.explication, 400) ?? '' }] : [];
+  });
+  return {
+    preparationId: id, conceptionId: typeof conceptionId === 'string' && RE_UUID.test(conceptionId) ? conceptionId : null,
+    idu, commune: txt(commune, 120),
+    batiments: fini(v.batiments) ? v.batiments : null, gabarit: txt(v.gabarit, 20), sdpM2: fini(v.sdp_estimee_m2) ? v.sdp_estimee_m2 : null,
+    logementsPlaces: fini(v.logements_places) ? v.logements_places : null, logementsVises: fini(v.logements_vises) ? v.logements_vises : null,
+    controles, alertes: (Array.isArray(v.alertes) ? v.alertes : []).map((x) => txt(x, 300)).filter((x): x is string => !!x).slice(0, 4),
+  };
+}
+
+/**
+ * 23/11 — ligne `studio_preparations` (id, conception_id, idu, commune, resume) → même référence que celle lue dans les
+ * messages. La BASE fait foi : une 3D préparée par l'action directe (« Préparer », « Ouvrir mon projet en 3D ») n'a pas
+ * de message. null si la ligne est inexploitable ou si c'est un simple support de parcelle (extension).
+ */
+export function referenceDepuisLigne(ligne: unknown): ReferencePreparation | null {
+  if (!estObj(ligne)) return null;
+  const id = typeof ligne.id === 'string' && RE_UUID.test(ligne.id) ? ligne.id : null;
+  const idu = txt(ligne.idu, 40);
+  if (!id || !idu || !estObj(ligne.resume)) return null;
+  return referenceDepuisResume(id, ligne.conception_id, idu, ligne.commune, ligne.resume);
 }
 
 /** Vrai si un rendu a été lancé (ou devisé) par Mimmo dans la conversation : le suivi des rendus est alors affiché. */

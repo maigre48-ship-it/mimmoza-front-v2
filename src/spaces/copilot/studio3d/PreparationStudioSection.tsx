@@ -12,6 +12,7 @@
 // suivi en direct, liens du résultat) quand Mimmo en a devisé ou lancé un et que
 // le panneau Film / visite 360° n'est pas affiché.
 // =============================================================================
+import { usePreparationCourante } from './preparationBase';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpRight, Box } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
@@ -41,7 +42,7 @@ export function PreparationStudioSection({ messages, conversationId, onOpenStudi
   /** Afficher le suivi des rendus (faux quand le panneau Film / visite 360° est déjà affiché). */
   suiviRendus: boolean;
 }) {
-  const ref = useMemo(() => dernierePreparation(messages), [messages]);
+  const ref = usePreparationCourante(messages, conversationId);
   const rendus = useMemo(() => suiviRendus && renduDemande(messages), [messages, suiviRendus]);
   const extension = useMemo(() => derniereVueExtension(messages), [messages]);
   const [ouverture, setOuverture] = useState(false);

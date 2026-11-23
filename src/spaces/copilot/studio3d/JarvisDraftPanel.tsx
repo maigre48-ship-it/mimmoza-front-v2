@@ -144,7 +144,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   // Appelé avant le retour anticipé (règle des hooks) : parcelle, programme et règles PLU de la conversation.
   const volume = useContexteVolume(messages, conversationId, draft);
   // Lot fiche-3d : volume préparé par Mimmo (moteur) — préremplit programme et dimensions, jamais le texte du modèle.
-  const fiche3d = useFiche3D(messages);
+  const fiche3d = useFiche3D(messages, conversationId);
   const ficheOk = fiche3d.etat === 'ok' ? fiche3d : null;
   const styleFiche = <StyleFiche messages={messages} apercu={ficheOk ? apercuDepuisEvaluation(ficheOk.ev) : null}
     limites={limitesDossier(ficheOk?.ev.corps)} onSend={onSend} habillage={habillage ?? null} onHabillage={onHabillage} />;

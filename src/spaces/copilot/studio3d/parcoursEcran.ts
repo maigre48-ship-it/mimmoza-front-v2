@@ -17,7 +17,7 @@ import {
   type InstantaneParcours, type ReglagesFilm, type ReglagesVisite, type SourcesParcours, type TravailParcours, type TypeParcours,
 } from '../../../lib/studio/parcours.ts';
 import { fondDe, type OptionsFond } from '../../../lib/studio/fondImage.ts';
-import { dernierePreparation, lignesCarte, type MessageOutils } from './preparationStudio.ts';
+import { dernierePreparation, lignesCarte, type MessageOutils, type ReferencePreparation } from './preparationStudio.ts';
 import { briefCourant, demandeEnCours, recapitulatif } from './briefCreatif.ts';
 import { latestJarvisDraft } from './jarvisDraft.ts';
 
@@ -43,26 +43,8 @@ export interface EntreeEcran {
   projet?: { gamme: string | null; cible: string | null } | null;
   /** VIS-18a — logement témoin personnalisé dans le Studio (temoinStudio.ts : lireTemoinPersonnalise / etatTemoinConversation). */
   temoinStudio?: { fait: boolean; resume: string | null } | null;
-  /** 23/11 — 3D préparée EN BASE pour la conversation (action directe « Préparer » / « Ouvrir mon projet en 3D »,
-   *  absente des messages) : studio_preparations la plus récente. */
-  preparationBase?: { resume: string | null } | null;
-}
-
-/** 23/11 — une ligne lisible depuis studio_preparations.resume (bâtiments, gabarit, SDP, logements). */
-export function resumePreparationBase(r: unknown): string | null {
-  if (!r || typeof r !== 'object') return null;
-  const o = r as Record<string, unknown>;
-  const n = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : null;
-  const nf = (v: number) => v.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
-  const bat = n(o.batiments); const gab = typeof o.gabarit === 'string' ? o.gabarit : null;
-  const sdp = n(o.sdp_estimee_m2); const lg = n(o.logements_places);
-  const parts = [
-    bat !== null && gab ? `${nf(bat)} bâtiment${bat > 1 ? 's' : ''} en ${gab}` : null,
-    sdp !== null ? `≈ ${nf(sdp)} m² de surface de plancher` : null,
-    lg !== null ? `${nf(lg)} logements` : null,
-    typeof o.gabarit_retenu === 'string' && o.gabarit_retenu.trim() ? o.gabarit_retenu.trim() : null,
-  ].filter((x): x is string => !!x);
-  return parts.length ? parts.join(' · ') : null;
+  /** 23/11 — préparation courante de la conversation (preparationBase.ts : la base fait foi) ; absente : lue dans les messages. */
+  preparationRef?: ReferencePreparation | null;
 }
 
 const ROLES_HABILLAGE = ['facade', 'menuiseries', 'garde_corps', 'soubassement', 'toiture'];
@@ -79,7 +61,7 @@ export function assemblerSourcesEcran(e: EntreeEcran): SourcesParcours {
   const s = sourcesVides(type);
 
   // Volume / terrain : 3D préparée par Mimmo (moteur), sinon fiche du projet décrite et complète.
-  const prep = dernierePreparation(e.messages);
+  const prep = e.preparationRef ?? dernierePreparation(e.messages);
   const fiche = latestJarvisDraft(e.messages);
   const ficheDimensionnee = !!fiche && !!fiche.dimensions?.trim() && !!fiche.programme?.trim();
   const terrain = e.parcelle ?? (prep ? `${prep.idu}${prep.commune ? ` · ${prep.commune}` : ''}` : null);
@@ -108,8 +90,7 @@ export function assemblerSourcesEcran(e: EntreeEcran): SourcesParcours {
     terrain: terrainFinal,
     conception,
     volume: prep
-      ? { pret: true, resume: lignes.length ? lignes.join(' · ') : '3D préparée par Mimmo.' }
-      : e.preparationBase ? { pret: true, resume: e.preparationBase.resume ?? '3D préparée.' }
+      ? { pret: true, resume: lignes.length ? [...lignes, ...prep.alertes.slice(0, 1)].join(' · ') : '3D préparée par Mimmo.' }
       : ficheDimensionnee ? { pret: true, resume: `Projet décrit : ${fiche!.dimensions}` } : { pret: false, resume: null },
     habillage: { resume: habillage, attenduParMimmo: !!demandeEnCours(e.messages) },
     interieurs: interieursDe(e),

@@ -182,8 +182,10 @@ test('rendu : étape 1 dans le panneau ET dans la carte du chat (champ, carte) ;
     assert.match(html2, /value="5"/);
     assert.match(html2, /value="T1, T3"/);
     assert.match(texte(html2), /Proposer la mission/);
-    // Terrain déjà choisi : dans le panneau, le champ reste replié derrière « Changer de terrain ».
+    // 23/11 — terrain déjà choisi : champ replié, UN SEUL bouton (« Modifier » de l'étape), plus de « Changer de terrain » en double.
     const replie = texte(rendre(h(m.ParcoursPanneau, { parcours: etape2, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: 'c', messages: fil as never, onSend: () => undefined }) })));
-    assert.match(replie, /Changer de terrain/);
+    assert.doesNotMatch(replie, /Changer de terrain/);
+    assert.doesNotMatch(replie, /Adresse, ou parcelle/);
+    assert.match(replie, /1\. Terrain Fait .* Modifier/);
   } finally { delete (globalThis as { window?: unknown }).window; }
 });

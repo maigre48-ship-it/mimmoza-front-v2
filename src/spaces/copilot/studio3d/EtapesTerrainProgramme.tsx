@@ -89,7 +89,8 @@ export function ReglageTerrain({ onSend, conversationId, carteDisponible, onOuvr
   useEffect(() => { if (carteOuverte && carteDisponible) { setDeplie(true); void ouvrirCarte(); } }, [carteOuverte]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!onSend) return null;
-  if (!deplie) return <div style={STYLE_BLOC}><div style={STYLE_LIGNE}><button type="button" style={STYLE_BOUTON} onClick={() => setDeplie(true)}>Changer de terrain</button></div></div>;
+  // 23/11 : étape faite et repliée → rien (le bouton « Modifier » de l'étape l'ouvre : un seul bouton par action).
+  if (!deplie) return fait ? null : <div style={STYLE_BLOC}><div style={STYLE_LIGNE}><button type="button" style={STYLE_BOUTON} onClick={() => setDeplie(true)}>Changer de terrain</button></div></div>;
   const message = messageTerrainParcours(saisie);
   const envoyer = () => { if (message) { onSend(message); setSaisie(''); } };
   const assiette = resumeAssiette(selection);
@@ -104,7 +105,10 @@ export function ReglageTerrain({ onSend, conversationId, carteDisponible, onOuvr
         {occupe ? <Loader2 size={12} className="mz-parcours__tourne" aria-hidden="true" /> : <MapPin size={12} aria-hidden="true" />} Choisir sur la carte
       </button>
     </div>
-    <p style={STYLE_NOTE}>Plusieurs parcelles = une assiette. Mimmo les retrouve, vous les fait confirmer ici, puis passe à l’étape 2.</p>
+    <p style={STYLE_NOTE}>{fait
+      ? 'Le terrain est déjà confirmé. N’envoyez une adresse ou des parcelles que pour CHANGER de terrain (la conception sera à refaire).'
+      : 'Plusieurs parcelles = une assiette. Mimmo les retrouve, vous les fait confirmer ici, puis passe à l’étape 2.'}
+      {fait && <> <button type="button" style={STYLE_BOUTON} onClick={() => setDeplie(false)}>Fermer</button></>}</p>
     {note && <p style={STYLE_NOTE} role="status">{note}</p>}
     {carte && centre && <div style={{ display: 'grid', gap: 6 }}>
       <Suspense fallback={<p style={STYLE_NOTE} role="status">Chargement de la carte cadastrale…</p>}><ParcelMapSelector communeInsee={centre.insee} selectedIds={selection.map((p) => p.id)} selectedParcels={[]}
@@ -144,7 +148,7 @@ export function ReglageProgramme({ onSend, textesUtilisateur, fait, ouvert }: {
     setTypologies(initial.typologies.join(', '));
   }, [initial, touche]);
   if (!onSend) return null;
-  if (!deplie) return <div style={STYLE_BLOC}><div style={STYLE_LIGNE}><button type="button" style={STYLE_BOUTON} onClick={() => setDeplie(true)}>Modifier le programme</button></div></div>;
+  if (!deplie) return fait ? null : <div style={STYLE_BLOC}><div style={STYLE_LIGNE}><button type="button" style={STYLE_BOUTON} onClick={() => setDeplie(true)}>Modifier le programme</button></div></div>;
   const nombre = (v: string) => { const n = Number.parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : null; };
   const envoyer = () => onSend(messageProgrammeParcours({ logements: nombre(logements), niveaux: nombre(niveaux), typologies: lireTypologies(typologies) }));
   const champ = (libelle: string, valeur: string, maj: (v: string) => void, largeur: number, aide: string) => <label style={{ display: 'grid', gap: 2, fontSize: 11.5, color: '#475569' }}>
@@ -156,8 +160,11 @@ export function ReglageProgramme({ onSend, textesUtilisateur, fait, ouvert }: {
       {champ('Logements', logements, setLogements, 78, 'ex. 28')}
       {champ('Niveaux (RDC compris)', niveaux, setNiveaux, 78, 'ex. 5')}
       {champ('Typologies', typologies, setTypologies, 120, 'ex. T2, T3')}
-      <button type="button" style={STYLE_PRIMAIRE} onClick={envoyer}><Send size={12} aria-hidden="true" /> Proposer la mission</button>
+      <button type="button" style={STYLE_PRIMAIRE} onClick={envoyer}><Send size={12} aria-hidden="true" /> {fait ? 'Refaire la conception' : 'Proposer la mission'}</button>
+      {fait && <button type="button" style={STYLE_BOUTON} onClick={() => setDeplie(false)}>Fermer</button>}
     </div>
-    <p style={STYLE_NOTE}>Pré-rempli depuis votre demande. Mimmo vous propose la mission de conception (devis) ici, dans le chat.</p>
+    <p style={STYLE_NOTE}>{fait
+      ? 'La conception est déjà faite. Changer le programme = une nouvelle mission de conception (nouveau devis), à ne lancer que si le programme change vraiment.'
+      : 'Pré-rempli depuis votre demande. Mimmo vous propose la mission de conception (devis) ici, dans le chat.'}</p>
   </div>;
 }

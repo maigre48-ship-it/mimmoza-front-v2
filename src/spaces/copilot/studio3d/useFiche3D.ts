@@ -4,7 +4,8 @@
 // (ficheDimensions.ts) et brief courant (briefCreatif.ts). Aucune autre logique ici.
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { dernierePreparation, lirePreparationStockee, type MessageOutils, type PreparationStockee } from './preparationStudio';
+import { lirePreparationStockee, type MessageOutils, type PreparationStockee } from './preparationStudio';
+import { usePreparationCourante } from './preparationBase';
 import {
   appliquerFormeDetail, comparerFormes, evaluerSaisie, modifierAile, modifierCorps, modifierDecalage, saisieDepuisVolume,
   type EvaluationFiche, type Forme, type FormeComparee, type SaisieDimensions,
@@ -27,8 +28,9 @@ export type EtatFiche3D =
     raisonForme: string | null };
 
 /** Volume préparé par Mimmo pour la conversation (relu en base), saisie de l'utilisateur et évaluation du moteur. */
-export function useFiche3D(messages: readonly MessageFiche[]): EtatFiche3D {
-  const ref = useMemo(() => dernierePreparation(messages), [messages]);
+export function useFiche3D(messages: readonly MessageFiche[], conversationId: string | null = null): EtatFiche3D {
+  // 23/11 : la préparation de la BASE fait foi (action directe sans message), sinon celle des messages.
+  const ref = usePreparationCourante(messages, conversationId);
   const brief = useMemo(() => briefCourant(messages), [messages]);
   const [lu, setLu] = useState<{ id: string; prep: PreparationStockee | null; erreur: string | null } | null>(null);
   const [saisie, setSaisie] = useState<SaisieDimensions | null>(null);
