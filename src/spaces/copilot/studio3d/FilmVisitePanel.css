@@ -150,3 +150,13 @@
   .jarvis-dossier .mzia-rendu__choix { grid-template-columns: 1fr; }
   .jarvis-dossier .mzia-rendu__choix button { min-height: 64px; }
 }
+
+/* 23/11 — image en grand : clic sur la vignette → plein écran par-dessus toute la page (portail sur <body>). */
+.mzia-rendu__agrandir { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: 8px; overflow: hidden; }
+.mzia-rendu__agrandir img { display: block; }
+.mzia-rendu__agrandir span { position: absolute; right: 8px; bottom: 8px; padding: 3px 9px; border-radius: 999px; background: rgba(15, 23, 42, .72); color: #ffffff; font-size: 12px; font-weight: 600; }
+.mzia-grand { position: fixed; inset: 0; z-index: 3000; display: grid; grid-template-rows: 1fr auto; place-items: center; gap: 10px; padding: 16px; background: rgba(2, 6, 23, .94); cursor: zoom-out; }
+.mzia-grand img { max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; border-radius: 6px; cursor: default; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); }
+.mzia-grand__barre { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; color: #e2e8f0; font-size: 13px; cursor: default; }
+.mzia-grand__barre button, .mzia-grand__barre a { padding: 6px 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #f8fafc; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.mzia-grand__barre button:hover, .mzia-grand__barre a:hover { background: #334155; }

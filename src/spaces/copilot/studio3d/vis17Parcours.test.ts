@@ -142,17 +142,19 @@ const texte = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#
 
 // 23/11 — le chat est la trame principale : le panneau est un récapitulatif EN LECTURE SEULE (aucun bouton), la carte du
 // chat porte TOUTES les étapes, chacune avec sa couleur et son unique bouton.
-test('Espace 3D : récapitulatif en lecture seule — 8 étapes, couleurs, statuts, AUCUNE commande', async () => {
+test('Espace 3D : en-tête par étape — pastilles colorées (navigation), résumé de l’étape affichée, AUCUNE commande du parcours', async () => {
   const { m, h, rendre } = await chargerComposants();
   const p = calculerParcours(assemblerSourcesEcran(entree()));
   const html = rendre(h(m.ParcoursPanneau, { parcours: p }));
   const t = texte(html);
-  for (const titre of ['1. Terrain', '2. Programme & conception', '3. Volume 3D', '4. Style & façades', '5. Intérieurs', '6. Vues & ambiance', '7. Aperçu', '8. Images finales & livraison']) assert.ok(t.includes(titre), titre);
-  assert.match(t, /3 étapes sur 8 · prochaine : 4\. Style & façades/);
-  assert.match(t, /les actions sont dans le chat/);
-  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
-  assert.equal((html.match(/<button/g) ?? []).length, 0, 'aucun bouton dans le récapitulatif');
-  assert.match(t, /Validez d’abord l’aperçu\. → étape 7/);
+  assert.equal((html.match(/role="tab"/g) ?? []).length, 8, 'une pastille par étape');
+  assert.equal((html.match(/aria-selected="true"/g) ?? []).length, 1);
+  assert.match(t, /4\. Style & façades/); // étape courante affichée par défaut
+  assert.doesNotMatch(t, /1\. Terrain|8\. Images finales/, 'une seule étape détaillée à la fois');
+  assert.doesNotMatch(html, /mz-parcours__action/, 'aucune commande du parcours');
+  const final = texte(rendre(h(m.ParcoursPanneau, { parcours: p, active: 'final' })));
+  assert.match(final, /8\. Images finales & livraison/);
+  assert.match(final, /Validez d’abord l’aperçu\. → étape 7/);
   // Code couleur : une couleur par étape, la même que dans la carte du chat.
   assert.match(html, /--etape:\s*#15803d/); assert.match(html, /--etape:\s*#7c3aed/); assert.match(html, /--etape:\s*#b91c1c/);
   assert.doesNotMatch(t, /studio_|preparation_id|mimmoza-/); // pas de jargon technique

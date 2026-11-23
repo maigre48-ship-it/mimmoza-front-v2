@@ -324,7 +324,8 @@ export function calculerParcours(s: SourcesParcours): Parcours {
         : requis ? 'Vos choix montrent l’intérieur d’un logement : choisissez la gamme du logement témoin (ou ajustez-le dans le Studio).'
         : 'Facultatif : utile seulement pour une vue intérieure (séjour, chambre…).',
       raison: requis && !gamme && !perso ? 'Vue intérieure prévue : le logement témoin doit être défini.' : null, debloquePar: null,
-      action: { cible: 'studio-interieur', libelle: gamme || perso ? 'Modifier' : 'Ouvrir' },
+      // 23/11 : libellé explicite — c'est ICI que s'ouvre l'atelier d'aménagement (plan, meubles, sols, murs) du Studio.
+      action: { cible: 'studio-interieur', libelle: 'Personnaliser l’intérieur (Studio)' },
       // VIS-18b : « Gamme » mène au brief de l'étude quand il y en a une ; sinon petit réglage dans l'étape.
       ...(s.rendu.etudeRattachee ? { actionSecondaire: { cible: 'reglages-rendu' as const, libelle: 'Gamme' } } : { reglage: 'gamme' as const }),
     });

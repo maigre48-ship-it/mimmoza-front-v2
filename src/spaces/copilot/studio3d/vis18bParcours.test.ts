@@ -177,7 +177,7 @@ test('témoin personnalisé dans le Studio : l’étape « Intérieurs » est fa
   const avec = calculerParcours({ ...s, temoinStudio: { fait: true, resume: 'T3 A204 · séjour scandinave · 18 meubles' } }).etapes[4];
   assert.equal(avec.statut, 'fait'); assert.equal(avec.raison, null);
   assert.match(avec.resume, /^Logement témoin personnalisé dans le Studio : T3 A204/);
-  assert.equal(avec.action.libelle, 'Modifier');
+  assert.equal(avec.action.libelle, 'Personnaliser l’intérieur (Studio)');
   assert.equal(calculerParcours({ ...s, temoinStudio: { fait: false, resume: null } }).etapes[4].statut, 'a_faire');
   // Branché sur la lecture RÉELLE de VIS-18a : rien de personnalisé → étape inchangée ; écran → sources.
   assert.equal(calculerParcours(assemblerSourcesEcran(entree({ temoinStudio: lireTemoinPersonnalise(null) }))).etapes[4].statut, 'a_faire');
@@ -218,7 +218,7 @@ test('carte du chat (23/11 : seule à porter les réglages) : cible (étape 4), 
     const s = assemblerSourcesEcran(entree({ projet: { gamme: 'standard', cible: 'Seniors' }, fond: { fond: 'photo_rue' } }));
     const p = calculerParcours(s);
     const html = rendre(h(m.CarteParcours, { parcours: p, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: CONV, messages: fil }) }));
-    assert.equal((rendre(h(m.ParcoursPanneau, { parcours: p })).match(/<button/g) ?? []).length, 0, 'récapitulatif de l’Espace 3D : aucun réglage, aucun bouton');
+    assert.doesNotMatch(rendre(h(m.ParcoursPanneau, { parcours: p })), /mz-parcours__action|mz-parcours__reglage/, 'en-tête de l’Espace 3D : aucun réglage, aucune commande');
     const t = texte(html);
     assert.match(t, /Pour qui : Primo-accédants Familles Investisseurs Seniors/);
     assert.match(t, /Gamme : Standard Confort Premium/);

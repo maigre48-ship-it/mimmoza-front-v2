@@ -50,33 +50,34 @@ function TexteEtape({ p, e }: { p: Parcours; e: EtapeParcours }) {
   </span>;
 }
 
-/** Récapitulatif en lecture seule de l'Espace 3D : mêmes étapes, mêmes couleurs, AUCUNE commande (elles sont dans le chat). */
-export function ParcoursPanneau({ parcours, notice, detail }: {
+/**
+ * En-tête de l'Espace 3D : une pastille colorée par étape (navigation : quelle étape l'Espace 3D détaille) et le résumé
+ * de l'étape AFFICHÉE. Aucune commande du parcours ici (elles sont dans la carte du chat).
+ */
+export function ParcoursPanneau({ parcours, active, onChoisir, notice, detail }: {
   parcours: Parcours;
+  /** Étape détaillée par l'Espace 3D (défaut : la courante). */
+  active?: string | null;
+  onChoisir?: (cle: EtapeParcours['cle']) => void;
   /** Retour de la dernière action (en cours, erreur). */
   notice?: string | null;
-  /** Détail affiché sous une étape (ex. carte cadastrale ouverte depuis le chat) ; null : rien. */
+  /** Détail affiché sous l'étape (ex. carte cadastrale ouverte depuis le chat) ; null : rien. */
   detail?: (e: EtapeParcours) => ReactNode;
 }) {
-  const { faites, total } = avancement(parcours);
-  const prochaine = prochaineEtape(parcours);
-  return <section className="mz-parcours mz-parcours--recap" aria-label="Votre parcours (récapitulatif)">
-    <header className="mz-parcours__tete">
-      <div>
-        <h2>Votre parcours · {LIBELLES_TYPE_PARCOURS[parcours.type]}</h2>
-        <p>{parcours.termine ? 'Tout est fait.' : `${String(faites)} étape${faites > 1 ? 's' : ''} sur ${String(total)} · prochaine : ${prochaine ? `${String(prochaine.numero)}. ${prochaine.titre}` : '—'}`} — les actions sont dans le chat.</p>
-      </div>
-    </header>
+  const e = parcours.etapes.find((x) => x.cle === active) ?? prochaineEtape(parcours) ?? parcours.etapes[0];
+  return <section className="mz-parcours mz-parcours--recap" aria-label="Étape affichée dans l’Espace 3D" style={styleEtape(e)}>
+    <nav className="mz-parcours__onglets" role="tablist" aria-label="Étapes du parcours">
+      {parcours.etapes.map((x) => <button key={x.cle} type="button" role="tab" aria-selected={x.cle === e.cle} style={styleEtape(x)}
+        className={`mz-parcours__onglet is-${x.statut}${x.cle === e.cle ? ' is-actif' : ''}`} title={`${String(x.numero)}. ${x.titre} — ${LIBELLES_STATUT_ETAPE[x.statut]}`}
+        aria-label={`Afficher l’étape ${String(x.numero)} — ${x.titre}`} onClick={() => onChoisir?.(x.cle)}>
+        <IconeStatut statut={x.statut} numero={x.numero} />
+      </button>)}
+    </nav>
+    <div className={`mz-parcours__etape is-${e.statut} is-courante`}>
+      <div className="mz-parcours__ligne"><TexteEtape p={parcours} e={e} /></div>
+      {detail?.(e)}
+    </div>
     {notice && <p className="mz-parcours__notice" role="status">{notice}</p>}
-    <ol className="mz-parcours__liste">
-      {parcours.etapes.map((e) => {
-        const courante = e.cle === parcours.courante;
-        return <li key={e.cle} style={styleEtape(e)} className={`mz-parcours__etape is-${e.statut}${courante ? ' is-courante' : ''}`} aria-current={courante ? 'step' : undefined}>
-          <div className="mz-parcours__ligne"><IconeStatut statut={e.statut} numero={e.numero} /><TexteEtape p={parcours} e={e} /></div>
-          {detail?.(e)}
-        </li>;
-      })}
-    </ol>
   </section>;
 }
 

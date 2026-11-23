@@ -172,7 +172,7 @@ test('rendu : étape 1 dans la carte du chat (champ, carte) ; étape 2 pré-remp
     // 23/11 : le terrain se désigne DANS LA CARTE DU CHAT ; le récapitulatif de l'Espace 3D n'a ni champ ni bouton
     // (seule la carte cadastrale s'y ouvre, à la demande du chat).
     const panneau = rendre(h(m.ParcoursPanneau, { parcours: vide }));
-    assert.doesNotMatch(panneau, /<button|<input/);
+    assert.doesNotMatch(panneau, /mz-parcours__action|<input/);
     const carte = texte(rendre(h(m.CarteParcours, { parcours: vide, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: null, messages: fil as never, onSend: () => undefined }) })));
     assert.match(carte, /Envoyer à Mimmo/);
     assert.match(carte, /Choisir sur la carte/);

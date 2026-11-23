@@ -55,7 +55,7 @@ type Field = keyof typeof LABELS;
 /** R2 — résultat de l'ouverture : `parcelle-requise` = poser la question minimale dans le dossier. */
 export type IssueOuvertureStudio = void | 'parcelle-requise';
 
-export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, commandeParcours, noticeParcours, onValiderApercu, apercuValide }: {
+export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, commandeParcours, etapeDemandee, noticeParcours, onValiderApercu, apercuValide }: {
   messages: readonly ChatMessage[];
   conversationId: string | null;
   /** VIS-17 : parcours calculé (CopilotChat), actions des étapes, commande d'une étape cliquée (panneau ou carte du chat). */
@@ -63,6 +63,8 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   onParcours?: ActionnerParcours;
   onTypeParcours?: (t: TypeParcours) => void;
   commandeParcours?: CommandeParcours | null;
+  /** 23/11 — étape cliquée dans la carte du chat : l'Espace 3D affiche l'écran de CETTE étape (et rien d'autre). */
+  etapeDemandee?: { cle: string; jeton: number } | null;
   noticeParcours?: string | null;
   onValiderApercu?: (travailId: string) => void;
   apercuValide?: string | null;
@@ -207,13 +209,37 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jetonParcours]);
-  // 23/11 : récapitulatif en LECTURE SEULE (les commandes sont dans la carte du chat) ; seul détail : la carte
-  // cadastrale de l'étape 1, quand le chat la demande (« Choisir sur la carte »).
+  // 23/11 — UN ÉCRAN PAR ÉTAPE : l'Espace 3D n'affiche que le contenu de l'étape active (celle cliquée dans le chat,
+  // sinon l'étape courante du parcours) ; les pastilles de l'en-tête changent l'étape affichée.
+  const [etapeChoisie, setEtapeChoisie] = useState<string | null>(null);
+  const jetonEtape = etapeDemandee?.jeton ?? 0;
+  // L'étape choisie retombe sur l'étape courante quand la conversation change ou que le parcours avance (pas au montage :
+  // le panneau peut s'ouvrir justement parce qu'une étape vient d'être cliquée).
+  const repereEtape = useRef(`${String(conversationId)}|${String(parcours?.courante)}`);
+  useEffect(() => {
+    const r = `${String(conversationId)}|${String(parcours?.courante)}`;
+    if (r !== repereEtape.current) { repereEtape.current = r; setEtapeChoisie(null); }
+  }, [conversationId, parcours?.courante]);
+  useEffect(() => { if (etapeDemandee && jetonEtape > 0) setEtapeChoisie(etapeDemandee.cle); }, [jetonEtape]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (habillage?.ouverte) setEtapeChoisie('style'); }, [habillage?.jeton, habillage?.ouverte]);
+  const clesEtapes = parcours?.etapes.map((e) => e.cle as string) ?? [];
+  const etapeActive = parcours ? (etapeChoisie && clesEtapes.includes(etapeChoisie) ? etapeChoisie : parcours.courante ?? clesEtapes[clesEtapes.length - 1] ?? null) : null;
+  /** Vrai si l'écran de l'une de ces étapes est affiché (sans parcours : tout est affiché, comme avant). */
+  const vu = (...cles: string[]) => !etapeActive || cles.includes(etapeActive);
+  const cache = (...cles: string[]) => (vu(...cles) ? undefined : { display: 'none' as const });
+  const ETAPE_6 = ['vues', 'scenario', 'pieces'];
+  const RENDUS = [...ETAPE_6, 'apercu', 'final'];
+  const infoEtape = etapeActive === 'terrain' ? 'Le terrain se désigne dans le chat (adresse, numéros de parcelles ou « Choisir sur la carte »).'
+    : etapeActive === 'interieurs' ? 'Le logement témoin (plan, meubles, sols, murs) se personnalise dans le Studio : bouton « Personnaliser l’intérieur » de l’étape 5, dans le chat. La gamme se choisit sous l’étape.'
+    : null;
+  // Récapitulatif SANS commande du parcours (elles sont dans la carte du chat) ; seul détail : la carte cadastrale de
+  // l'étape 1, quand le chat la demande (« Choisir sur la carte »).
   const parcoursUi = parcours ? <div ref={refParcours}>
-    <ParcoursPanneau parcours={parcours} notice={noticeParcours ?? null}
+    <ParcoursPanneau parcours={parcours} active={etapeActive} onChoisir={(cle) => setEtapeChoisie(cle)} notice={noticeParcours ?? null}
       detail={(e) => (e.cle === 'terrain' && reglageOuvert?.cle === 'terrain' && reglageOuvert.carte
         ? reglageDeLEtape(e, { conversationId, messages: messages as never, onSend, ouvert: reglageOuvert }) : null)} />
     {noteParcours && <p role="status" className="jarvis-dossier__proposal">{noteParcours}</p>}
+    {infoEtape && <p className="mz-ecran-etape__vide">{infoEtape}</p>}
     {reglagesOuverts && etude && <div ref={refReglages} style={{ margin: '0 0 12px' }}>
       <BriefProjetRenduSection studyId={etude} source="parcours" />
       <button type="button" className="jarvis-dossier__link" onClick={() => setReglagesOuverts(false)}>Fermer les réglages</button>
@@ -224,17 +250,19 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
 
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
     {parcoursUi}
-    <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus={!rendu} />
-    {panneauRendu()}
-    {ficheOk && <dl className="jarvis-dossier__fields">
-      <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>Programme</dt><dd><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
-      <div className="jarvis-dossier__field jarvis-dossier__field--large" ref={refDimensions}><dt>{LABELS.dimensions}</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} onSend={onSend} /></dd></div>
+    <div style={cache('volume', ...(rendu ? [] : RENDUS))}><PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus={!rendu} /></div>
+    <div style={cache(...RENDUS)}>{panneauRendu()}</div>
+    {ficheOk && <dl className="jarvis-dossier__fields" style={cache('conception', 'volume', 'style')}>
+      <div style={cache('conception')} className="jarvis-dossier__field jarvis-dossier__field--large"><dt>Programme</dt><dd><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
+      <div style={cache('volume')} className="jarvis-dossier__field jarvis-dossier__field--large" ref={refDimensions}><dt>{LABELS.dimensions}</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} onSend={onSend} /></dd></div>
+      <div style={cache('style')} className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.style}</dt><dd>{styleFiche}</dd></div>
+    </dl>}
+    {habillageSansFiche && <dl className="jarvis-dossier__fields" style={cache('style')}>
       <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.style}</dt><dd>{styleFiche}</dd></div>
     </dl>}
-    {habillageSansFiche && <dl className="jarvis-dossier__fields">
-      <div className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.style}</dt><dd>{styleFiche}</dd></div>
-    </dl>}
-    {parcelleConnue ? <>
+    {parcours ? (parcelleConnue ? <div style={cache('volume')}>
+      <VolumeParcelleSection {...volume} conversationId={conversationId} fiche={null} onOpenStudio={onOpenStudio} />
+    </div> : null) : parcelleConnue ? <>
       <h2>Parcelle et volume d’étude</h2>
       <p>Mimmo pose un volume simple sur la parcelle de la conversation pour voir l’ordre de grandeur. Précisez le programme dans la conversation pour l’ajuster.</p>
       <VolumeParcelleSection {...volume} conversationId={conversationId} fiche={null} onOpenStudio={onOpenStudio} />
@@ -243,11 +271,11 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     <h2>Aucun projet pour l’instant</h2>
     <p>Décrivez votre projet dans la conversation : Mimmo prépare le dossier 3D ici, puis vous le voyez en volume.</p>
     </>}
-    <ol>
+    {!parcours && <ol>
       <li><div>Décrivez le projet<span>Adresse, nombre de logements, étages, style…</span></div></li>
       <li><div>Vérifiez la fiche<span>Mimmo la remplit ; vous corrigez si besoin.</span></div></li>
       <li><div>Cliquez sur « Voir en 3D »<span>La maquette s’ouvre dans le Studio.</span></div></li>
-    </ol>
+    </ol>}
   </aside>;
   const newSuggestion = Boolean(saved && proposal && proposalMessage
     && Date.parse(proposalMessage.createdAt) > Date.parse(saved.updatedAt)
@@ -347,38 +375,38 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   return (
     <aside aria-label="Dossier de préparation 3D" className="jarvis-dossier">
       {parcoursUi}
-      <div className="jarvis-dossier__heading">
+      <div className="jarvis-dossier__heading" style={cache('conception')}>
         <div><h2>Votre projet</h2><p>Repris de la conversation</p></div>
         <span className={`jarvis-dossier__status ${saved?.status === 'validated' && diagnostic.pret ? 'is-validated' : ''}`}>
           {editing ? 'En édition' : saved?.status === 'validated' && diagnostic.pret ? 'Validé' : 'À vérifier'}
         </span>
       </div>
-      <div className="jarvis-dossier__mobile-toggle"><button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>{expanded ? 'Réduire le dossier' : 'Afficher le dossier'}</button></div>
+      <div className="jarvis-dossier__mobile-toggle" style={cache('conception')}><button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>{expanded ? 'Réduire le dossier' : 'Afficher le dossier'}</button></div>
       {/* Lot fiche-3d : avec un volume préparé par le moteur, le diagnostic et « Voir en 3D » tirés du texte du modèle
           sont remplacés par la carte « 3D préparée » et les champs Programme / Dimensions ci-dessous. */}
-      {!editing && !ficheOk && <section aria-label="Préparation du projet 3D" style={{ marginBottom: 12 }}>
+      {!editing && !ficheOk && <section aria-label="Préparation du projet 3D" style={{ marginBottom: 12, ...cache('conception', 'volume') }}>
         <p>Les informations ci-dessous viennent de la fiche du copilote ; elles ne valent pas confirmation par vous ni validation réglementaire.</p>
         <ul>{diagnostic.informations.map(i => <li key={i.cle}><strong>{i.libelle}</strong> — {i.statut === 'fourni-dans-fiche' ? 'Présent dans la fiche' : i.statut === 'hypothese' ? 'Hypothèse à vérifier' : 'À préciser'} : {i.detail}</li>)}</ul>
         {!diagnostic.pret && <><p role="status">Avant de générer : {diagnostic.questions.join(' ')}</p><button type="button" className="jarvis-dossier__link" onClick={() => beginEdit(draft)}>Compléter la fiche</button></>}
         <p>La parcelle est confirmée séparément. Sans relief mesuré au transfert, la position d’implantation précise ne sera pas transmise ; le rendu ne prouve pas la conformité au terrain.</p>
       </section>}
       {!editing && !ficheOk && conversationId && onOpenStudio && <button
-        type="button" className="jarvis-dossier__launch" disabled={opening || !draft.objectif?.trim() || !diagnostic.pret} onClick={() => void voirEn3D()}>
+        type="button" className="jarvis-dossier__launch" style={cache('volume')} disabled={opening || !draft.objectif?.trim() || !diagnostic.pret} onClick={() => void voirEn3D()}>
         <Box size={16} /> {opening ? 'Ouverture de Studio…' : nombreBatiments > 1 ? `Voir les ${String(nombreBatiments)} bâtiments en 3D` : 'Voir en 3D'} <ArrowUpRight size={17} />
       </button>}
-      {!editing && <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio}
-        suiviRendus={!rendu} />}
+      {!editing && <div style={cache('volume', ...(rendu ? [] : RENDUS))}><PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio}
+        suiviRendus={!rendu} /></div>}
       {demandeParcelle && !editing && conversationId && diagnostic.pret && <ConfirmerParcelle adresseInitiale={draft.localisation}
         onConfirmer={terrain => void voirEn3D(terrain)} onAnnuler={() => setDemandeParcelle(false)} />}
       {/* Fiche sans volume chiffré (dimensions ou R+N manquants) : volume d'étude calculé sur la parcelle, en hypothèse. */}
-      {!editing && !draftMassing && parcelleConnue && <VolumeParcelleSection {...volume} conversationId={conversationId} fiche={draft} onOpenStudio={onOpenStudio} />}
-      {!editing && panneauRendu(draftPret ? assurerValidation : undefined)}
-      <div className={`jarvis-dossier__body ${expanded ? 'is-expanded' : ''}`}>
+      {!editing && !draftMassing && parcelleConnue && <div style={cache('volume')}><VolumeParcelleSection {...volume} conversationId={conversationId} fiche={draft} onOpenStudio={onOpenStudio} /></div>}
+      {!editing && <div style={cache(...RENDUS)}>{panneauRendu(draftPret ? assurerValidation : undefined)}</div>}
+      <div className={`jarvis-dossier__body ${expanded ? 'is-expanded' : ''}`} style={editing ? undefined : cache('conception', 'volume', 'style')}>
       {currentStudioVolume && <p className="jarvis-dossier__proposal">Aperçu actualisé depuis Studio sur cet appareil. Les corrections se font dans l’onglet Studio.</p>}
       {newSuggestion && !editing && <p className="jarvis-dossier__proposal">Nouvelle proposition de Mimmo : l’aperçu montre les changements à examiner avant le transfert.</p>}
       {/* Volume du moteur affiché dans « Dimensions » : l'esquisse tirée du texte du modèle n'est plus montrée. */}
-      {diagnostic.pret && massing && !ficheOk && <JarvisMassingPreview light massing={massing} terrain={measuredTerrain} />}
-      {diagnostic.pret && massing && !ficheOk && <PhotoTerrainImplantation massing={massing} onContinue={onOpenStudio && conversationId
+      {diagnostic.pret && massing && !ficheOk && <div style={cache('volume')}><JarvisMassingPreview light massing={massing} terrain={measuredTerrain} /></div>}
+      {diagnostic.pret && massing && !ficheOk && vu('volume') && <PhotoTerrainImplantation massing={massing} onContinue={onOpenStudio && conversationId
         ? terrain => onOpenStudio(draft, conversationId, terrain).then(() => undefined) : undefined} onTerrainMeasured={setMeasuredTerrain} />}
       {massing?.buildings && !ficheOk && <p className="jarvis-dossier__proposal">Les {String(massing.buildings.length)} bâtiments seront créés dans Studio avec leurs dimensions et hauteurs propres. Leur position reste indicative jusqu’à la vérification du terrain.</p>}
       {editing && form ? (
@@ -408,6 +436,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
         <>
           <dl className="jarvis-dossier__fields">
             {(Object.entries(LABELS) as [Field, string][]).map(([key, label], index) => <div key={key} ref={key === 'dimensions' ? refDimensions : undefined}
+              style={cache(key === 'dimensions' ? 'volume' : key === 'style' ? 'style' : 'conception')}
               className={`jarvis-dossier__field${(key === 'style' || ((key === 'programme' || key === 'dimensions') && ficheOk)) ? ' jarvis-dossier__field--large' : ''}`}>
               <dt><span>{String(index + 1).padStart(2, '0')}</span> {label}</dt>
               {key === 'programme' && ficheOk ? <dd><ProgrammeFiche fiche={ficheOk} texteModele={draft.programme} /></dd>
@@ -416,10 +445,10 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
                 : <dd className={draft[key] ? '' : 'is-missing'}>{draft[key] ?? 'À préciser'}{key === 'dimensions' && fiche3d.etat === 'chargement' ? ' · lecture du volume calculé…' : ''}</dd>}
             </div>)}
           </dl>
-          {draft.questions.length > 0 && <p style={{ margin: '6px 0' }}>
+          {draft.questions.length > 0 && <p style={{ margin: '6px 0', ...cache('conception') }}>
             <strong>À préciser :</strong> {draft.questions.join(' · ')}
           </p>}
-          <div className="jarvis-dossier__actions">
+          <div className="jarvis-dossier__actions" style={cache('conception')}>
             <button type="button" disabled={loading || !conversationId} onClick={() => beginEdit(draft)}>Relire ou corriger</button>
           </div>
           {newSuggestion && proposal && <p style={{ margin: '8px 0 0' }}>
@@ -427,16 +456,16 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
           </p>}
         </>
       )}
-      {files.length > 0 && <p style={{ margin: '8px 0 4px' }}>
+      {files.length > 0 && <p style={{ margin: '8px 0 4px', ...cache('conception') }}>
         <strong>Fichiers enregistrés :</strong> {files.join(' · ')}
       </p>}
-      {draft.pieces.length > 0 && <p style={{ margin: '4px 0' }}>
+      {draft.pieces.length > 0 && <p style={{ margin: '4px 0', ...cache('conception') }}>
         <strong>Pièces mentionnées dans l’échange :</strong> {draft.pieces.join(' · ')}
       </p>}
       {fileError && <p role="status">{fileError}</p>}
       {notice && <p role="status">{notice}</p>}
-      {files.length > 0 && <div className="jarvis-dossier__file-count"><FileStack size={14} /> {files.length} pièce{files.length > 1 ? 's' : ''} conservée{files.length > 1 ? 's' : ''}</div>}
-      <small>« Voir en 3D » ouvre Studio dans cette page, avec la parcelle, le relief et le bâtiment déjà générés.{onPrepareDetailed && conversationId ? <> Photos de façade, plans ou 360° à classer : <button type="button" className="jarvis-dossier__link" onClick={() => void onPrepareDetailed(draft, conversationId)}>préparer en détail</button>.</> : null}</small>
+      {files.length > 0 && <div className="jarvis-dossier__file-count" style={cache('conception')}><FileStack size={14} /> {files.length} pièce{files.length > 1 ? 's' : ''} conservée{files.length > 1 ? 's' : ''}</div>}
+      <small style={cache('volume')}>« Voir en 3D » ouvre Studio dans cette page, avec la parcelle, le relief et le bâtiment déjà générés.{onPrepareDetailed && conversationId ? <> Photos de façade, plans ou 360° à classer : <button type="button" className="jarvis-dossier__link" onClick={() => void onPrepareDetailed(draft, conversationId)}>préparer en détail</button>.</> : null}</small>
       </div>
     </aside>
   );

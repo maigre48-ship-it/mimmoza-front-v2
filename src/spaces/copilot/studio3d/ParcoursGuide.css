@@ -38,9 +38,16 @@
 .mz-parcours__fini { margin: 0; padding: 8px 12px; color: #15803d; font-size: 12px; }
 .mz-parcours__detail { margin: 10px 12px; border-style: dashed; border-color: #cbd5e1; color: #334155; font-weight: 500; }
 .mz-parcours--carte { margin: 10px 0; max-width: 720px; }
-/* Récapitulatif de l'Espace 3D : plus dense, sans commande. */
-.mz-parcours--recap .mz-parcours__ligne { padding: 6px 10px; }
-.mz-parcours--recap .mz-parcours__pastille { width: 20px; height: 20px; font-size: 10px; }
+/* En-tête de l'Espace 3D : pastilles des étapes (navigation) + résumé de l'étape affichée, à sa couleur. */
+.mz-parcours--recap { border-color: var(--etape); border-width: 1px 1px 1px 5px; }
+.mz-parcours--recap .mz-parcours__etape { border-left: 0; border-bottom: 0; }
+.mz-parcours__onglets { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.mz-parcours__onglet { padding: 2px; border: 2px solid transparent; border-radius: 999px; background: transparent; cursor: pointer; line-height: 0; }
+.mz-parcours__onglet.is-actif { border-color: var(--etape); background: #ffffff; }
+.mz-parcours__onglet:hover { background: color-mix(in srgb, var(--etape) 12%, #ffffff); }
+/* Écran de l'étape : seul le contenu de l'étape affichée est visible. */
+.mz-ecran-etape[hidden] { display: none !important; }
+.mz-ecran-etape__vide { margin: 8px 2px; color: #64748b; font-size: 13px; }
 @media (max-width: 520px) {
   .mz-parcours__ligne { flex-wrap: wrap; }
   .mz-parcours__boutons { max-width: 100%; margin-left: 33px; justify-content: flex-start; }

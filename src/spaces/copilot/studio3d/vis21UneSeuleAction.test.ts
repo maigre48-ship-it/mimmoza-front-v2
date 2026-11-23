@@ -171,7 +171,7 @@ test('rendu : carte « Votre parcours » sous un devis → aucun bouton concurre
   assert.doesNotMatch(chat, />(Valider|Lancer la mission)</);
   // 23/11 : le récapitulatif de l'Espace 3D n'a aucune commande (la carte du devis, dans le fil, est la seule).
   const panneau = rendre(h(m.ParcoursPanneau, { parcours: p }));
-  assert.doesNotMatch(panneau, /<button/);
+  assert.doesNotMatch(panneau, /mz-parcours__action|>Lancer la mission</);
 });
 
 // ── 3. Conception terminée puis devis postérieurs non lancés (données réelles du 23/11, agent_missions) ────────────────

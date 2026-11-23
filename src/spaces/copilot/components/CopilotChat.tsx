@@ -210,6 +210,7 @@ export function CopilotChat({
   const parcoursEcran = useParcours(messages, currentConversationId ?? null, showStudioDraft);
   const [commandeParcours, setCommandeParcours] = useState<CommandeParcours & { conversation: string | null } | null>(null);
   const [noticeParcours, setNoticeParcours] = useState<string | null>(null);
+  const [etapePanneau, setEtapePanneau] = useState<{ cle: string; jeton: number } | null>(null);
   const ancreParcours = useMemo(() => (showStudioDraft ? ancreCarteParcours(messages as never, parcoursEcran.sources) : null), [showStudioDraft, messages, parcoursEcran.sources]);
   const montrerPanneau3D = () => {
     setFenetre3D((etat) => {
@@ -223,8 +224,10 @@ export function CopilotChat({
     montrerPanneau3D();
     setCommandeParcours((p) => ({ cible, type: parcoursEcran.parcours.type, jeton: (p?.jeton ?? 0) + 1, conversation: currentConversationId ?? null }));
   };
-  const actionHabituelle: ActionnerParcours = (_etape, action) => {
+  const actionHabituelle: ActionnerParcours = (etape, action) => {
     setNoticeParcours(null);
+    // 23/11 : l'Espace 3D affiche l'écran de l'étape cliquée (et seulement celui-là).
+    setEtapePanneau((p) => ({ cle: etape.cle, jeton: (p?.jeton ?? 0) + 1 }));
     if (action.cible === 'chat') { if (action.message) handleSend(action.message); return; }
     // VIS-21 : devis de mission en attente → la MÊME fonction que « Lancer la mission » de la carte du devis ; mission en
     // cours → son suivi. Jamais de message à Mimmo (qui reproposait une mission).
@@ -359,7 +362,7 @@ export function CopilotChat({
           </header>
           <div className="mzia-fen3d__contenu">
             <JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} onSend={(texte) => handleSend(texte)} habillage={habillageConversation} onHabillage={changerHabillage}
-              parcours={parcoursEcran.charge ? parcoursEcran.parcours : undefined} onParcours={actionnerParcours} onTypeParcours={parcoursEcran.choisirType} commandeParcours={commandeConversation}
+              parcours={parcoursEcran.charge ? parcoursEcran.parcours : undefined} onParcours={actionnerParcours} onTypeParcours={parcoursEcran.choisirType} commandeParcours={commandeConversation} etapeDemandee={etapePanneau}
               noticeParcours={noticeParcours} onValiderApercu={validerApercu} apercuValide={parcoursEcran.sources.apercuValide} />
           </div>
         </section>

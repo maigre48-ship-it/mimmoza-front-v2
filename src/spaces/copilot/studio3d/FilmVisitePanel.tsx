@@ -14,6 +14,7 @@
 // Si la file n'existe pas encore en base : « Bientôt disponible », sans erreur.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Camera, Check, Clapperboard, Copy, ExternalLink, Image as IconeImage, Loader2, Orbit, Play, X } from 'lucide-react';
 import type { JarvisDraft } from './jarvisDraft';
 import { parcelleRetenue, retenirParcelle } from './parcelleConfirmee';
@@ -97,6 +98,19 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   // VIS-14 (I2) : l'ambiance n'est envoyée que si l'utilisateur l'a CHOISIE ; sinon le worker applique celle du brief.
   const [ambianceChoisie, setAmbianceChoisie] = useState(false);
   const [visionneuse, setVisionneuse] = useState<{ id: string; images: { libelle: string; url: string; jpeg: string; png: string | null; vue: VueImage }[]; avertissements: string[]; resultat: ResultatImage } | null>(null);
+  // 23/11 — image vue EN GRAND (plein écran, par-dessus toute la page) : index dans la visionneuse ; Échap, ← → .
+  const [grand, setGrand] = useState<number | null>(null);
+  useEffect(() => {
+    if (grand === null) return;
+    const n = visionneuse?.images.length ?? 0;
+    const surTouche = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setGrand(null);
+      else if (e.key === 'ArrowRight' && n > 1) setGrand((g) => (g === null ? g : (g + 1) % n));
+      else if (e.key === 'ArrowLeft' && n > 1) setGrand((g) => (g === null ? g : (g - 1 + n) % n));
+    };
+    window.addEventListener('keydown', surTouche);
+    return () => window.removeEventListener('keydown', surTouche);
+  }, [grand, visionneuse]);
   const [terrainManquant, setTerrainManquant] = useState(false);
   const [lancement, setLancement] = useState(false);
   const [message, setMessage] = useState('');
@@ -401,9 +415,23 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
           : <p className="mzia-rendu__estimation">C’est bon ? <button type="button" className="is-primaire" onClick={() => onValiderApercu(lecteur.id)}>Valider cet aperçu</button> — sinon, corrigez l’étape voulue (style, scénario…) et relancez un aperçu.</p>)}
       </div>}
 
+      {visionneuse && grand !== null && visionneuse.images[grand] && createPortal(
+        <div className="mzia-grand" role="dialog" aria-modal="true" aria-label="Image en grand" onClick={() => setGrand(null)}>
+          <img src={visionneuse.images[grand].url} alt={`Image du projet — vue ${visionneuse.images[grand].libelle}`} onClick={(e) => e.stopPropagation()} />
+          <div className="mzia-grand__barre" onClick={(e) => e.stopPropagation()}>
+            {visionneuse.images.length > 1 && <button type="button" onClick={() => setGrand((grand - 1 + visionneuse.images.length) % visionneuse.images.length)}>← Précédente</button>}
+            <strong>{visionneuse.images[grand].libelle}{visionneuse.images.length > 1 ? ` · ${String(grand + 1)} / ${String(visionneuse.images.length)}` : ''}</strong>
+            {visionneuse.images.length > 1 && <button type="button" onClick={() => setGrand((grand + 1) % visionneuse.images.length)}>Suivante →</button>}
+            <a href={visionneuse.images[grand].url} target="_blank" rel="noreferrer">Ouvrir dans un onglet</a>
+            <button type="button" onClick={() => setGrand(null)}>Fermer (Échap)</button>
+          </div>
+        </div>, document.body)}
       {visionneuse && <div className="mzia-rendu__lecteur mzia-rendu__images">
-        {visionneuse.images.map(i => <figure key={i.url}>
-          <img src={i.url} alt={`Image du projet — vue ${i.libelle}`} loading="lazy" />
+        {visionneuse.images.map((i, n) => <figure key={i.url}>
+          <button type="button" className="mzia-rendu__agrandir" onClick={() => setGrand(n)} title="Voir en grand" aria-label={`Voir en grand — vue ${i.libelle}`}>
+            <img src={i.url} alt={`Image du projet — vue ${i.libelle}`} loading="lazy" />
+            <span>Voir en grand</span>
+          </button>
           {/* VIS-14 : badge PAR VUE et définition réellement livrée. */}
           <figcaption>{i.libelle} <BadgeRealisme resultat={visionneuse.resultat} image={visionneuse.resultat.images.find(x => x.vue === i.vue)} /><DefinitionLivree image={visionneuse.resultat.images.find(x => x.vue === i.vue)} /> — <a href={i.jpeg} download>JPEG</a>{i.png && <> · <a href={i.png} download>PNG</a></>}</figcaption>
         </figure>)}
