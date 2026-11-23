@@ -20,6 +20,8 @@ import { lireMemoireParcours, majMemoireParcours, patcherInstantaneFond, PARCOUR
 import { contourDeParcelle, devisDeLEtape, devisImageEnAttente, fondDuChoix, messageFondParcours, resumeFond } from './reglagesParcoursLogique';
 import type { MessageOutils } from './preparationStudio';
 import './ChoixFondImage.css';
+// VIS-20 : étapes 1 et 2 dans le chat (champ adresse / parcelles, carte cadastrale du panneau, programme).
+import { ReglageProgramme, ReglageTerrain } from './EtapesTerrainProgramme';
 
 /** Mémoire du parcours de la conversation, relue à chaque mise à jour. */
 function useMemoire(conversationId: string): MemoireParcours {
@@ -86,9 +88,22 @@ export function ChoixFondParcours({ conversationId, messages, onSend }: { conver
   </div>;
 }
 
-/** Réglage à afficher sous une étape du panneau (null : aucun). */
-export function reglageDeLEtape(e: EtapeParcours, p: { conversationId: string | null; messages: readonly MessageOutils[]; onSend?: (texte: string) => void }) {
-  if (!e.reglage || !p.conversationId || e.statut === 'bloquee') return null;
+/**
+ * Réglage à afficher sous une étape du panneau (null : aucun).
+ * VIS-20 : étapes 1 (terrain) et 2 (programme) — champs dans l'étape, aussi dans la carte du chat (`dansLeChat` :
+ * pas de carte cadastrale, « Choisir sur la carte » ouvre le panneau Espace 3D) ; utilisables sans conversation.
+ */
+export function reglageDeLEtape(e: EtapeParcours, p: {
+  conversationId: string | null; messages: readonly MessageOutils[]; onSend?: (texte: string) => void;
+  dansLeChat?: boolean; onOuvrirCarte?: () => void; ouvert?: { cle: string; carte: boolean; jeton: number } | null;
+}) {
+  if (!e.reglage || e.statut === 'bloquee') return null;
+  const ouvert = p.ouvert?.cle === e.cle;
+  if (e.reglage === 'terrain') return <ReglageTerrain key={`terrain-${String(ouvert ? p.ouvert?.jeton : 0)}`} onSend={p.onSend} conversationId={p.conversationId}
+    carteDisponible={!p.dansLeChat} onOuvrirCarte={p.onOuvrirCarte} fait={e.statut === 'fait'} ouvert={ouvert} carteOuverte={ouvert && !!p.ouvert?.carte} />;
+  if (e.reglage === 'programme') return <ReglageProgramme onSend={p.onSend} fait={e.statut === 'fait'} ouvert={ouvert}
+    textesUtilisateur={(p.messages as readonly { role?: string; text?: string }[]).filter((m) => m.role === 'user').map((m) => m.text ?? '')} />;
+  if (!p.conversationId) return null;
   if (e.reglage === 'fond') return <ChoixFondParcours conversationId={p.conversationId} messages={p.messages} onSend={p.onSend} />;
   return <ReglageCibleGamme conversationId={p.conversationId} quoi={e.reglage} />;
 }

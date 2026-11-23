@@ -46,8 +46,9 @@ test('conversation vide : terrain à faire, la suite bloquée avec la raison et 
   assert.equal(conception.debloquePar, 'terrain');
   assert.match(conception.raison ?? '', /terrain/);
   assert.equal(p.etapes[7].debloquePar, 'apercu');
-  assert.equal(p.etapes[0].action.cible, 'chat');
-  assert.match(p.etapes[0].action.message ?? '', /terrain/);
+  // VIS-20 : le terrain se désigne dans l'étape (champ + carte du panneau), plus par un message générique.
+  assert.equal(p.etapes[0].action.cible, 'terrain');
+  assert.equal(p.etapes[0].reglage, 'terrain');
 });
 
 test('cas réel Ascain : 1–3 faits, prochaine étape = Style & façades, résumés tirés de l’état', () => {

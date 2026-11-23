@@ -25,6 +25,8 @@ import './CopilotFenetres.css';
 // VIS-17 — parcours guidé (image / film / visite) : calculé une fois ici, montré dans l'Espace 3D et dans le chat.
 import { useParcours } from '../studio3d/useParcours';
 import { CarteParcours, type ActionnerParcours } from '../studio3d/ParcoursGuide';
+// VIS-20 : champs des étapes 1 (terrain) et 2 (programme) aussi dans la carte du chat.
+import { reglageDeLEtape } from '../studio3d/ReglagesParcours';
 import { ancreCarteParcours } from '../studio3d/parcoursEcran';
 import type { CommandeParcours } from '../studio3d/JarvisDraftPanel';
 import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from '../studio3d/parcours.store';
@@ -380,7 +382,8 @@ export function CopilotChat({
             // VIS-17 : UNE carte « Votre parcours » par conversation, sous la dernière réponse qui touche au parcours, mise à jour en place.
             if (m.id !== ancreParcours || m.status === 'streaming') return message;
             return <Fragment key={m.id}>{message}<CarteParcours parcours={parcoursEcran.parcours} onAction={actionnerParcours}
-              onType={parcoursEcran.choisirType} onDetail={() => commanderPanneau('parcours')} /></Fragment>;
+              onType={parcoursEcran.choisirType} onDetail={() => commanderPanneau('parcours')}
+              reglage={(e) => reglageDeLEtape(e, { conversationId: currentConversationId ?? null, messages: messages as never, onSend: (t) => handleSend(t), dansLeChat: true, onOuvrirCarte: () => commanderPanneau('terrain-carte') })} /></Fragment>;
           })
         )}
       </div>

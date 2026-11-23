@@ -81,8 +81,10 @@ export function ParcoursPanneau({ parcours, onAction, onType, reglage }: {
   </section>;
 }
 
-export function CarteParcours({ parcours, onAction, onType, onDetail }: {
+export function CarteParcours({ parcours, onAction, onType, onDetail, reglage }: {
   parcours: Parcours; onAction: ActionnerParcours; onType?: (t: TypeParcours) => void;
+  /** VIS-20 — champ de la prochaine étape affiché DANS la carte du chat (terrain, programme) ; null : aucun. */
+  reglage?: (e: EtapeParcours) => ReactNode;
   /** Ouvre l'Espace 3D sur le parcours détaillé. */
   onDetail?: () => void;
 }) {
@@ -108,6 +110,7 @@ export function CarteParcours({ parcours, onAction, onType, onDetail }: {
       <p><strong>Prochaine étape : {String(prochaine.numero)}. {prochaine.titre}</strong><br />{prochaine.raison ?? prochaine.resume}</p>
       <button type="button" className="is-primaire" onClick={() => onAction(prochaine, prochaine.action)}>{prochaine.action.libelle} <ChevronRight size={14} aria-hidden="true" /></button>
     </div> : <p className="mz-parcours__fini"><Circle size={10} aria-hidden="true" /> Toutes les étapes sont faites.</p>}
+    {prochaine && (prochaine.reglage === 'terrain' || prochaine.reglage === 'programme') && reglage?.(prochaine)}
     {onDetail && <button type="button" className="mz-parcours__detail" onClick={onDetail}>Voir le détail dans l’Espace 3D</button>}
   </aside>;
 }

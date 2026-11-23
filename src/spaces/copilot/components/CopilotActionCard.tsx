@@ -7,7 +7,9 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+// VIS-20 : sur la page MimmozIA, le parcours ne quitte jamais le chat.
+import { messageSansNavigation, navigationPermise } from '../actions/resterDansLeChat';
 import { ArrowRight, Check, Loader2, Play, X } from 'lucide-react';
 import {
   buildActionRun, executeAction, needsConfirmation,
@@ -31,6 +33,7 @@ interface Props {
 
 export function CopilotActionCard({ action, messageId, run: past }: Props) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const rememberActionRun = useCopilotStore((s) => s.rememberActionRun);
 
   // Une action déjà tranchée s'affiche dans son état final, sans bouton.
@@ -51,14 +54,17 @@ export function CopilotActionCard({ action, messageId, run: past }: Props) {
 
   const run = useCallback(async (decidedBy: 'user' | 'auto') => {
     setPhase('running');
-    const res = await executeAction(action);
+    const brut = await executeAction(action);
+    // VIS-20 : navigation retenue sur la page MimmozIA (Foncier, Programmation… ) : on reste dans le chat.
+    const navigue = brut.ok && navigationPermise(action.kind, brut.navigateTo, pathname);
+    const res: ActionResult = brut.ok && brut.navigateTo && !navigue ? { ...brut, message: messageSansNavigation(brut.message), navigateTo: undefined } : brut;
     setResult(res);
     setPhase(res.ok ? 'done' : 'failed');
     // La trace part avant la navigation : sinon le démontage du composant
     // emporterait l'enregistrement avec lui.
     settle(res.ok ? 'done' : 'failed', decidedBy, res);
-    if (res.ok && res.navigateTo) navigate(res.navigateTo);
-  }, [action, navigate, settle]);
+    if (navigue && res.navigateTo) navigate(res.navigateTo);
+  }, [action, navigate, settle, pathname]);
 
   const refuse = useCallback(() => {
     setPhase('refused');

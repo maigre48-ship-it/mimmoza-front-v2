@@ -71,6 +71,8 @@ import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
 import { etatMissionsUtile } from './agent/etat-missions.ts';
 // VIS-17 : parcours guidé (image / film / visite) — bloc « PARCOURS — FAIT FOI » relu à chaque message.
+// VIS-20 : sur la page MimmozIA, le parcours ne quitte jamais le chat (outils et pages retirés, consigne).
+import { CONSIGNE_RESTER_DANS_LE_CHAT, estPageMimmozIA, outilHorsChat, refusRouteHorsChat } from './agent/rester-dans-le-chat.ts';
 import { blocParcoursServeur, fusionnerTextesUtilisateur, MESSAGES_BLOCS_PARCOURS, MESSAGES_RECENTS_PARCOURS, MOTIFS_BLOCS_PARCOURS } from './agent/parcours-chat.ts';
 // VIS-18b : fond de l'image choisi dans l'étape 6 du parcours (instantané de l'écran), repris par le devis d'image.
 import { fondDuParcours } from '../../../src/lib/studio/parcours.ts';
@@ -4868,6 +4870,9 @@ function toolActionOuvrirPage(input: Record<string, unknown>, ctx: MimmozaContex
   if (!route.startsWith('/')) {
     return { status: 'error', source: 'copilot', message: 'Route interne invalide.' };
   }
+  // VIS-20 : depuis la page MimmozIA, Foncier / Implantation / Programmation ne s'ouvrent pas (tout se fait dans le chat).
+  const refusChat = refusRouteHorsChat(route, ctx.route);
+  if (refusChat) return { status: 'error', source: 'copilot', message: refusChat };
   const path = route.split('?')[0];
   const known = readChain(ctx).steps.find((s) => s.route === route || s.route?.split('?')[0] === path);
 
@@ -10982,9 +10987,12 @@ async function runOrchestrator(params: {
   const systemBase = params.priorToolResults
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
     : buildSystemPrompt(ctx, mode);
-  const system = consigneCarte ? `${systemBase}\n\n${consigneCarte}` : systemBase;
+  // VIS-20 : page MimmozIA → consigne « le parcours ne quitte jamais le chat » et outils de sortie retirés.
+  const consigneChat = estPageMimmozIA(ctx.route) ? CONSIGNE_RESTER_DANS_LE_CHAT : '';
+  const system = [systemBase, consigneCarte, consigneChat].filter(Boolean).join('\n\n');
   const availableTools = toolsForMode(mode)
-    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE));
+    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE))
+    .filter((tool) => !outilHorsChat(tool.name, ctx.route));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
   // Lot E1 : outils Studio proposés quand le tour (ou la réponse précédente : devis à confirmer) parle de 3D / rendu.

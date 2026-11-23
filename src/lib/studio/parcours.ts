@@ -33,7 +33,11 @@ export type CleEtape = 'terrain' | 'conception' | 'volume' | 'style' | 'interieu
 
 /**
  * Où mène le clic sur une étape — TOUJOURS un outil existant :
- *   chat             : message envoyé à Mimmo (terrain, conception, préparation de la 3D) ;
+ *   chat             : message envoyé à Mimmo (valider / suivre la conception, préparation de la 3D) ;
+ *   terrain          : VIS-20 — champ « adresse ou parcelle(s) » de l'étape 1 et carte cadastrale du panneau Espace 3D
+ *                      (sélection multiple = assiette) ; la confirmation part en message à Mimmo, DANS le chat ;
+ *   programme        : VIS-20 — champs de l'étape 2 (logements, niveaux, typologies) → mission de conception proposée
+ *                      par Mimmo dans le chat (jamais la page Programmation) ;
  *   dimensions       : fiche « Forme et dimensions » de l'Espace 3D (volume du moteur, modifiable) ;
  *   studio-batiment  : Studio intégré, étape « Bâtiment » (édition du volume, façades, matériaux) ;
  *   habillage        : section « Style et habillage » de l'Espace 3D (carte Brief créatif) ;
@@ -43,7 +47,7 @@ export type CleEtape = 'terrain' | 'conception' | 'volume' | 'style' | 'interieu
  *   apercu           : feuille image en « aperçu rapide » ;   final : feuille du rendu final ;
  *   resultats        : rendus déjà réalisés (voir, valider l'aperçu, télécharger).
  */
-export type CibleParcours = 'chat' | 'dimensions' | 'studio-batiment' | 'habillage' | 'studio-interieur' | 'reglages-rendu'
+export type CibleParcours = 'chat' | 'terrain' | 'programme' | 'dimensions' | 'studio-batiment' | 'habillage' | 'studio-interieur' | 'reglages-rendu'
   | 'feuille-image' | 'feuille-film' | 'feuille-visite' | 'apercu' | 'final' | 'resultats';
 
 export interface ActionParcours { cible: CibleParcours; libelle: string; message?: string }
@@ -66,7 +70,7 @@ export interface EtapeParcours {
    * VIS-18b — petit réglage affiché DANS l'étape (pas de nouvel écran) : `cible` (étape 4) et `gamme` (étape 5) quand
    * aucune étude Style & tendances n'est rattachée ; `fond` (étape 6 du parcours Images : étude / photo de rue / photo).
    */
-  reglage?: 'cible' | 'gamme' | 'fond';
+  reglage?: 'cible' | 'gamme' | 'fond' | 'terrain' | 'programme';
 }
 
 export interface Parcours {
@@ -206,7 +210,9 @@ export function calculerParcours(s: SourcesParcours): Parcours {
     cle: 'terrain', titre: 'Terrain', statut: s.terrain ? 'fait' : 'a_faire',
     resume: s.terrain ?? 'Parcelle ou assiette de plusieurs parcelles, à choisir avec Mimmo.',
     raison: null, debloquePar: null,
-    action: { cible: 'chat', libelle: s.terrain ? 'Modifier' : 'Choisir', message: MESSAGES_PARCOURS.terrain },
+    // VIS-20 : le terrain se désigne DANS l'étape (champ + carte du panneau), jamais sur une autre page.
+    action: { cible: 'terrain', libelle: s.terrain ? 'Modifier' : 'Choisir' },
+    reglage: 'terrain',
   });
 
   // 2 — Programme & conception
@@ -224,9 +230,13 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       cle: 'conception', titre: 'Programme & conception', statut, resume,
       raison: statut === 'bloquee' ? 'Choisissez d’abord le terrain.' : null,
       debloquePar: statut === 'bloquee' ? 'terrain' : null,
-      action: statut === 'fait'
-        ? { cible: 'chat', libelle: 'Modifier', message: MESSAGES_PARCOURS.conceptionModifier }
-        : { cible: 'chat', libelle: c?.statut === 'devis' ? 'Valider' : statut === 'en_cours' ? 'Suivre' : 'Lancer', message: MESSAGES_PARCOURS.conception },
+      // VIS-20 : lancer / modifier = champs du programme de l'étape (mission proposée dans le chat) ; valider un devis ou
+      // suivre une mission en cours = message à Mimmo.
+      action: statut === 'fait' ? { cible: 'programme', libelle: 'Modifier' }
+        : c?.statut === 'devis' || statut === 'en_cours'
+          ? { cible: 'chat', libelle: c?.statut === 'devis' ? 'Valider' : 'Suivre', message: MESSAGES_PARCOURS.conception }
+          : { cible: 'programme', libelle: 'Lancer' },
+      ...(statut === 'en_cours' || c?.statut === 'devis' ? {} : { reglage: 'programme' as const }),
     });
   }
 

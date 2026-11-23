@@ -39,7 +39,7 @@ import { BriefProjetRenduSection } from '@/spaces/promoteur/pages/BriefProjetRen
 import { etudeDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
 
 /** VIS-17 — commande d'une étape du parcours vers le panneau (jeton : une valeur par clic). */
-export interface CommandeParcours { cible: CibleParcours | 'parcours'; type: TypeParcours; jeton: number }
+export interface CommandeParcours { cible: CibleParcours | 'parcours' | 'terrain-carte'; type: TypeParcours; jeton: number }
 const FEUILLE_DU_TYPE = { image: 'image', film: 'film', visite: 'visite360' } as const;
 
 const LABELS = {
@@ -165,6 +165,8 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   const refReglages = useRef<HTMLDivElement | null>(null);
   const [reglagesOuverts, setReglagesOuverts] = useState(false);
   const [noteParcours, setNoteParcours] = useState<string | null>(null);
+  // VIS-20 : étape 1 / 2 ouverte par une commande (carte du chat ou bouton de l'étape) ; `carte` : carte cadastrale ouverte.
+  const [reglageOuvert, setReglageOuvert] = useState<{ cle: string; carte: boolean; jeton: number } | null>(null);
   const [commandeRendu, setCommandeRendu] = useState<CommandeRendu | null>(null);
   const etude = useMemo(() => (conversationId ? etudeDeLaConversation(conversationId) : null), [conversationId]);
   const jetonParcours = commandeParcours?.jeton ?? 0;
@@ -182,6 +184,10 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     };
     switch (c.cible) {
       case 'parcours': defiler(refParcours); break;
+      // VIS-20 : terrain et programme se font DANS l'étape (champ, carte cadastrale), jamais sur une autre page.
+      case 'terrain': setReglageOuvert({ cle: 'terrain', carte: false, jeton: jetonParcours }); defiler(refParcours); break;
+      case 'terrain-carte': setReglageOuvert({ cle: 'terrain', carte: true, jeton: jetonParcours }); defiler(refParcours); break;
+      case 'programme': setReglageOuvert({ cle: 'conception', carte: false, jeton: jetonParcours }); defiler(refParcours); break;
       case 'dimensions':
         if (ficheOk) defiler(refDimensions);
         else { setNoteParcours('Le volume s’ajuste ici une fois la 3D préparée par Mimmo ; sinon, ouvrez-le dans le Studio.'); defiler(refParcours); }
@@ -203,7 +209,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   }, [jetonParcours]);
   const parcoursUi = parcours && onParcours ? <div ref={refParcours}>
     <ParcoursPanneau parcours={parcours} onAction={onParcours} onType={onTypeParcours}
-      reglage={(e) => reglageDeLEtape(e, { conversationId, messages: messages as never, onSend })} />
+      reglage={(e) => reglageDeLEtape(e, { conversationId, messages: messages as never, onSend, ouvert: reglageOuvert })} />
     {(noteParcours || noticeParcours) && <p role="status" className="jarvis-dossier__proposal">{noteParcours ?? noticeParcours}</p>}
     {reglagesOuverts && etude && <div ref={refReglages} style={{ margin: '0 0 12px' }}>
       <BriefProjetRenduSection studyId={etude} source="parcours" />
