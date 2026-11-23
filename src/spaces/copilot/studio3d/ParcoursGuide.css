@@ -57,3 +57,21 @@
 .mz-parcours__fond { padding: 0 10px 8px 41px; font-size: 12px; }
 .mz-parcours__fond > small { color: #334155; }
 .mz-parcours__fond .mz-fond-image__tuiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin: 6px 0; }
+/* 23/11 — Le parcours est aussi affiché dans l'état vide de l'Espace 3D, dont les listes sont des grilles numérotées
+   (.mzia-fen3d__vide li : grille 24px + 1fr, puce ::before, li span en bloc gris) : neutralisé ici, sinon double
+   numérotation et réglages (Pour qui, Gamme, Fond) écrasés dans une colonne de 24 px. */
+.mzia-fen3d__vide .mz-parcours li { display: block; grid-template-columns: none; gap: 0; color: inherit; }
+.mzia-fen3d__vide .mz-parcours li::before { content: none; display: none; }
+.mzia-fen3d__vide .mz-parcours li span { display: inline; color: inherit; font-size: inherit; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__texte { display: flex; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille { display: inline-grid; font-size: 11px; color: #5b21b6; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-fait { color: #15803d; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-en_cours { color: #ffffff; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-bloquee,
+.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-facultative { color: #94a3b8; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__titre { color: #1e1b4b; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__resume { color: #334155; font-size: 12px; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__raison { color: #9a3412; font-size: 12px; }
+.mzia-fen3d__vide .mz-parcours .is-bloquee .mz-parcours__titre,
+.mzia-fen3d__vide .mz-parcours .is-bloquee .mz-parcours__resume { color: #94a3b8; }
+.mzia-fen3d__vide .mz-parcours .mz-fond-image__tuile span { display: block; }
