@@ -259,9 +259,15 @@ export function CopilotChat({
   // Seulement pour les étapes de PERSONNALISATION (volume, style, intérieurs, vues / scénario / pièces) : terrain et
   // conception passent par Mimmo, aperçu et rendu final par le site (seul à lancer et valider les rendus).
   const actionnerParcours: ActionnerParcours = (etape, action) => {
-    if (!ETAPES_VERS_STUDIO.has(etape.cle) || action.cible === 'studio-interieur' || action.cible === 'studio-batiment') { actionHabituelle(etape, action); return; }
+    // 23/11 : une étape encore à préparer (action « chat », ex. 3. Volume 3D → « Préparer ») ne passe jamais par le
+    // Studio : il n'a encore rien à montrer, et un Studio ouvert sur un autre état répondait « refus » → rien ne se passait.
+    if (!ETAPES_VERS_STUDIO.has(etape.cle) || action.cible === 'chat' || action.cible === 'studio-interieur' || action.cible === 'studio-batiment') { actionHabituelle(etape, action); return; }
     const detail: DetailOuvrirEtape = { cle: etape.cle, type: parcoursEcran.parcours.type, repondre: (issue) => {
-      if (issue.etat === 'absent') actionHabituelle(etape, action); else setNoticeParcours(issue.message || null);
+      // Seul un accusé « ok » du Studio remplace l'action ; tout autre retour (absent, refus, autre projet, version)
+      // garde l'action habituelle pour que le clic ait toujours un effet, avec la raison affichée.
+      if (issue.etat === 'ok') { setNoticeParcours(issue.message || null); return; }
+      if (issue.etat !== 'absent' && issue.message) setNoticeParcours(issue.message);
+      actionHabituelle(etape, action);
     } };
     window.dispatchEvent(new CustomEvent(EVENEMENT_OUVRIR_ETAPE_STUDIO, { detail }));
     if (!detail.prise) actionHabituelle(etape, action); // page sans MimmozIAPage
