@@ -10,6 +10,7 @@ import type {
   ActionExterne, Briefing, DepotMission, ElementMemoire, EtatMission, GenreJournal,
   MissionRow, ResultatDebit, StatutMission,
 } from './types.ts';
+import { journaliserEchecEdge } from '../../_shared/copilot-stream/journal.ts';
 
 // deno-lint-ignore no-explicit-any
 type Requete = any;
@@ -54,6 +55,10 @@ export function estLigneDeTest(r: Record<string, unknown>): boolean {
 
 export function depotSupabase(db: ClientSupabaseMin): DepotMission {
   return {
+    async alerteAdmin(code, message, userId, contexte) {
+      await journaliserEchecEdge(db as never, { fonction: 'copilot-chat', code, etape: 'mission', message, userId, contexte: contexte ?? {} });
+    },
+
     async prendreMissions(worker, bailS) {
       const { data, error } = await db.rpc('agent_mission_prendre', { p_worker: worker, p_lease_s: bailS });
       if (error) throw erreur('agent_mission_prendre', error);
@@ -197,6 +202,14 @@ export function depotSupabase(db: ClientSupabaseMin): DepotMission {
       const { data, error } = await db.from('agent_missions').insert(row).select('id').single();
       if (error) throw erreur('création de la mission', error);
       return String(data.id);
+    },
+
+    async conceptionsDeLaConversation(userId, conversationId) {
+      const { data, error } = await db.from('agent_missions').select('id, statut, criteres, objectif, cree_le')
+        .eq('user_id', userId).eq('conversation_id', conversationId).eq('type', 'conception')
+        .order('cree_le', { ascending: false }).limit(10);
+      if (error) throw erreur('conceptions de la conversation', error);
+      return data ?? [];
     },
 
     async listerMissions(userId, limite) {

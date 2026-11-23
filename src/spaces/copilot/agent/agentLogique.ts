@@ -10,6 +10,7 @@ import type {
   ActionExterne, Briefing, DevisMission, ElementBriefing, ElementMemoire,
   LigneJournal, Mission, PropositionDevis, RapportMission, TerrainRapport,
 } from './agent.types';
+import { estPauseFournisseur, messagePanneFournisseur } from '../../../../supabase/functions/_shared/copilot-stream/fournisseurIA.ts';
 
 // ── Petits lecteurs tolérants ────────────────────────────────────────────────
 
@@ -200,6 +201,17 @@ const ACTIFS = new Set(['en_attente', 'en_cours', 'attente_utilisateur']);
 const FINIS = new Set(['terminee', 'budget_atteint', 'echec', 'annulee']);
 export const missionActive = (s: string): boolean => ACTIFS.has(s);
 export const missionFinie = (s: string): boolean => FINIS.has(s);
+
+/** VIS-21 — mission mise en pause par une panne du fournisseur d'IA (bouton « Reprendre », pas de champ de réponse). */
+export const missionEnPauseFournisseur = (m: Pick<Mission, 'statut' | 'question_en_attente'> | null | undefined): boolean =>
+  !!m && m.statut === 'attente_utilisateur' && estPauseFournisseur(m.question_en_attente);
+
+/** VIS-21 — erreur d'une mission lisible : une panne du fournisseur d'IA est dite honnêtement (pas de JSON d'API). */
+export function erreurMissionLisible(erreur: string | null | undefined): string | null {
+  if (!erreur) return null;
+  const p = messagePanneFournisseur(erreur);
+  return p ? `Mission interrompue : ${p.charAt(0).toLowerCase()}${p.slice(1)}` : erreur;
+}
 export const peutAnnuler = (s: string): boolean => s === 'devis' || ACTIFS.has(s);
 export const peutRepondre = (m: Pick<Mission, 'statut' | 'question_en_attente'>): boolean =>
   m.statut === 'attente_utilisateur' && !!m.question_en_attente;

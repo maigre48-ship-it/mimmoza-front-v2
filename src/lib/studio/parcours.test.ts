@@ -67,7 +67,7 @@ test('cas réel Ascain : 1–3 faits, prochaine étape = Style & façades, résu
 test('conception : devis, en cours, échec, fiche décrite dans le chat', () => {
   const t = 'AI0001 · Ascain';
   const c = (statut: string) => calculerParcours({ ...sourcesVides(), terrain: t, conception: { statut, resume: null } }).etapes[1];
-  assert.equal(c('devis').statut, 'a_faire'); assert.equal(c('devis').action.libelle, 'Valider');
+  assert.equal(c('devis').statut, 'a_faire'); assert.equal(c('devis').action.libelle, 'Lancer la mission'); // VIS-21
   assert.equal(c('en_cours').statut, 'en_cours');
   assert.equal(c('attente_utilisateur').statut, 'en_cours');
   assert.equal(c('echec').statut, 'a_faire'); assert.match(c('echec').resume, /échoué/);

@@ -33,6 +33,9 @@ import type {
   StatutMission, Tier, TourHistorique, TypeMission,
 } from './types.ts';
 import { STATUTS_FINAUX, TYPES_MISSION } from './types.ts';
+import { memeTerrainCriteres, missionConceptionDeReference } from '../../../../src/lib/studio/parcours.ts';
+// VIS-21 : panne du fournisseur d'IA → mission EN PAUSE (reprenable), jamais en échec ni débitée pour l'étape perdue.
+import { CODE_JOURNAL_FOURNISSEUR, panneFournisseurIA, questionPauseFournisseur, type PanneFournisseur } from '../../_shared/copilot-stream/fournisseurIA.ts';
 import {
   calculerDevis, devisExpire, devisViable, ENTREE_MAX_TOKENS, estimerTokens, ETAPES_TECHNIQUES_RESERVEES, pireCasEtapeMission,
   pireCasRapportMission, SORTIE_ETAPE_MAX_TOKENS, SORTIE_RAPPORT_MAX_TOKENS,
@@ -1588,6 +1591,31 @@ export function etapesMetierDisponibles(m: Pick<MissionRow, 'type' | 'etapes_fai
 }
 
 /**
+ * VIS-21 : panne du fournisseur d'IA (crédit du compte Mimmoza épuisé, surcharge persistante). La mission passe en
+ * `attente_utilisateur` avec une « question » reconnue par le front (bouton « Reprendre » → agent_mission_repondre) :
+ * rien n'est débité pour l'appel perdu (l'API n'a rien produit), la réserve reste mise de côté, et la clôture
+ * automatique des attentes (72 h) la règle normalement si personne ne reprend. Alerte administrateur journalisée.
+ * Renvoie false si la mise en pause n'a pas pu se faire (l'erreur suit alors le chemin habituel).
+ */
+async function mettreEnPauseFournisseur(c: CtxEtape, panne: PanneFournisseur, msg: string): Promise<boolean> {
+  const question = questionPauseFournisseur(panne);
+  c.etat.attente = { question };
+  c.etat.pause_fournisseur = { panne, le: new Date((c.deps.now ?? Date.now)()).toISOString() };
+  c.etat.derniere_erreur = null;
+  c.etat.erreurs_consecutives = 0;
+  let ok = false;
+  try { ok = await c.depot.mettreEnAttente(c.m.id, question, c.etat); } catch { ok = false; }
+  if (!ok) { c.etat.attente = null; c.etat.pause_fournisseur = null; return false; }
+  await c.depot.journal(c.m.id, 'question', null, { panne }, question, 0).catch(() => {});
+  await c.depot.alerteAdmin?.(CODE_JOURNAL_FOURNISSEUR,
+    panne === 'credit_epuise'
+      ? `ALERTE ADMIN — crédit du compte API Anthropic épuisé (recharger Plans & Billing) ; mission ${c.m.id.slice(0, 8)} en pause : ${texte(msg, 400)}`
+      : `fournisseur d'IA saturé ; mission ${c.m.id.slice(0, 8)} en pause : ${texte(msg, 400)}`,
+    c.m.user_id, { panne, mission: c.m.id }).catch(() => {});
+  return true;
+}
+
+/**
  * Lot Q3 : clôture propre après une erreur répétée — statut 'echec', rapport partiel (règles et
  * dossier connus), message clair, règlement des jetons (seul le consommé est facturé). Robuste à un
  * état qui ne peut plus être sauvé : clôture et règlement directs en dernier recours.
@@ -1829,10 +1857,14 @@ export async function travaillerMission(
 
   if (etat.attente) {
     const rep = etat.derniere_reponse?.reponse?.trim();
-    let txt = rep
+    // VIS-21 : reprise après une pause pour panne du fournisseur — pas une réponse à une question métier.
+    const reprisePanne = !!etat.pause_fournisseur;
+    let txt = reprisePanne
+      ? 'Le service d’IA était momentanément indisponible ; la mission reprend : poursuis exactement là où tu en étais.'
+      : rep
       ? `Réponse de l'utilisateur à « ${etat.attente.question} » : ${rep}`
       : `L'utilisateur n'a pas répondu à « ${etat.attente.question} » : avance avec une hypothèse prudente, écrite au carnet.`;
-    if (rep && m.type === 'conception') {
+    if (rep && m.type === 'conception' && !reprisePanne) {
       // Réponse structurée du formulaire de règles (format imposé par le front).
       const k = chargerConception(etat.conception, m);
       const a = appliquerReponseFormulaire(k.regles, rep);
@@ -1895,6 +1927,7 @@ export async function travaillerMission(
     else etat.carnet.push(txt);
     etat.attente = null;
     etat.derniere_reponse = null;
+    etat.pause_fournisseur = null;
     await depot.sauverEtat(id, etat);
   }
 
@@ -1964,6 +1997,11 @@ export async function travaillerMission(
       etat.derniere_erreur = { signature: sig, n, le: new Date(now()).toISOString() };
       etat.erreurs_consecutives += 1;
       await journalErreur(c, null, `Étape interrompue : ${texte(msg, 800)}`);
+      // VIS-21 : crédit du fournisseur épuisé → pause tout de suite ; surcharge répétée → pause au lieu de l'échec.
+      const panne = panneFournisseurIA(msg);
+      if (panne && !etat.en_vol && (panne === 'credit_epuise' || n >= ERREURS_IDENTIQUES_MAX)) {
+        if (await mettreEnPauseFournisseur(c, panne, msg)) return { etapes: etapes + 1, issue: 'pause_fournisseur' };
+      }
       if (n >= ERREURS_IDENTIQUES_MAX) {
         await cloturerSurErreurRepetee(c, msg, n);
         return { etapes: etapes + 1, issue: 'echec' };
@@ -2145,6 +2183,24 @@ export async function executerOutilAgentChat(
             return { status: 'error', source: SOURCE, message: 'Conception : criteres.idu (identifiant cadastral à 14 caractères) ou criteres.parcel_ids (assiette groupée) est requis.' };
           }
           criteres = { ...criteres, idu: assiette[0], ...(assiette.length > 1 ? { parcel_ids: assiette } : {}) };
+          // VIS-21 (23/11, a7cca310…) : conception TERMINÉE à 09:45 puis deux nouveaux devis à 10:01 / 10:02 sur la même
+          // parcelle. Sans demande explicite de refaire, on renvoie la conception faite (sa carte propose la 3D).
+          const conv = estUuid(ctx.conversation_id) ? ctx.conversation_id : null;
+          if (conv && input.refaire !== true && depot.conceptionsDeLaConversation) {
+            let existantes: Awaited<ReturnType<NonNullable<DepotMission['conceptionsDeLaConversation']>>> = [];
+            try { existantes = await depot.conceptionsDeLaConversation(userId, conv); } catch { existantes = []; }
+            const faite = conceptionDejaFaite(existantes, criteres);
+            if (faite) {
+              return {
+                status: 'ok', source: SOURCE,
+                data: { mission_id: faite.id, type, objectif: faite.objectif, statut: faite.statut, deja_faite: true },
+                message:
+                  `Une conception est DÉJÀ TERMINÉE sur ce terrain (mission ${faite.id.slice(0, 8)}) : AUCUN nouveau devis n'a été créé, ` +
+                  'rien n’est débité. Sa carte est affichée avec « Ouvrir mon projet en 3D » : propose à l’utilisateur de l’ouvrir. ' +
+                  'Ne repropose une conception (proposer_mission avec refaire: true) que s’il demande EXPLICITEMENT de la refaire ou de la modifier.',
+              };
+            }
+          }
           if (criteres.mission_origine_id != null) {
             const o = estUuid(criteres.mission_origine_id) ? await depot.chargerMissionUtilisateur(userId, criteres.mission_origine_id) : null;
             if (!o) criteres = { ...criteres, mission_origine_id: null };
@@ -2212,9 +2268,22 @@ export async function executerOutilAgentChat(
   return null;
 }
 
+/**
+ * VIS-21 — conception déjà TERMINÉE (terminee / budget_atteint) sur le même terrain parmi les missions de la
+ * conversation (la plus récente) ; null sinon. Une mission postérieure LANCÉE sur ce terrain l'emporte (rien à garder).
+ */
+export function conceptionDejaFaite<T extends { id: string; statut: string; criteres?: unknown; cree_le?: string | null }>(
+  missions: readonly T[], criteres: unknown,
+): T | null {
+  const ref = missionConceptionDeReference(missions.filter((m) => memeTerrainCriteres(m.criteres, criteres))).mission;
+  return ref && (ref.statut === 'terminee' || ref.statut === 'budget_atteint') ? ref : null;
+}
+
 /** Données de l'événement SSE `mission_devis`, à partir du résultat de proposer_mission. */
 export function evenementDevis(res: ResultatOutil): Record<string, unknown> | null {
   if (res.status !== 'ok' || !res.data || !res.data.mission_id) return null;
+  // VIS-21 : conception déjà faite renvoyée telle quelle → pas d'événement « devis » (la carte relit la mission).
+  if (res.data.deja_faite === true) return null;
   const d = res.data;
   return {
     id: d.mission_id, mission_id: d.mission_id, type: d.type, objectif: d.objectif,

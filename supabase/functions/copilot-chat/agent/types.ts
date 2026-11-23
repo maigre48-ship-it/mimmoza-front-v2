@@ -153,6 +153,8 @@ export interface EtatMission {
   zonages_lus?: unknown;
   /** Lot Q3 : dernière erreur d'étape (signature normalisée, occurrences consécutives) — clôture à la 3e identique. */
   derniere_erreur?: { signature: string; n: number; le?: string } | null;
+  /** VIS-21 : mission mise en pause (attente_utilisateur) par une panne du fournisseur d'IA ; « Reprendre » la relance. */
+  pause_fournisseur?: { panne: 'credit_epuise' | 'surcharge'; le: string } | null;
   /** Lot Q3 : occurrences journalisées par signature d'erreur (journal dédoublonné). */
   journal_erreurs?: Record<string, number>;
   /** Lot Q3 : étapes techniques débitées (lecture IA du règlement, sortie coupée) — hors budget « métier » dans la limite réservée. */
@@ -213,6 +215,8 @@ export interface ResultatDebit {
  * (depot.ts) ; implémentation de test : en mémoire (mission.test.ts).
  */
 export interface DepotMission {
+  /** VIS-21 : alerte administrateur (client_errors, page admin « Erreurs ») ; facultatif (tests). */
+  alerteAdmin?(code: string, message: string, userId: string | null, contexte?: Record<string, string | number | boolean | null>): Promise<void>;
   /** agent_mission_prendre : en_attente, en_cours, closes non réglées ; pose le bail. */
   prendreMissions(worker: string, bailS: number): Promise<MissionRow[]>;
   /** agent_mission_reserver : réserve devis.jetons_max ET passe en_cours (atomique). */
@@ -242,6 +246,8 @@ export interface DepotMission {
   creerBriefing(userId: string, missionId: string, b: Briefing): Promise<void>;
   creerMission(row: Record<string, unknown>): Promise<string>;
   listerMissions(userId: string, limite: number): Promise<MissionRow[]>;
+  /** VIS-21 : missions de conception d'une conversation (garde « conception déjà faite ») ; facultatif (tests). */
+  conceptionsDeLaConversation?(userId: string, conversationId: string): Promise<Array<Pick<MissionRow, 'id' | 'statut' | 'criteres' | 'objectif'> & { cree_le?: string | null }>>;
   chargerMissionUtilisateur(userId: string, id: string): Promise<MissionRow | null>;
   /** Le projet existe ET appartient à l'utilisateur (créateur ou membre de l'organisation). */
   projetAccessible(userId: string, id: string): Promise<boolean>;

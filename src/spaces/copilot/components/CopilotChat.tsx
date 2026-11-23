@@ -33,6 +33,7 @@ import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from '../studio
 // VIS-18a / VIS-18b : clic d'une étape → Studio déjà ouvert (pont « ouvrir-étape » avec accusé).
 import { EVENEMENT_OUVRIR_ETAPE_STUDIO, type DetailOuvrirEtape } from '../studio3d/pontParcoursSite';
 import { messageValidationApercu } from '@/lib/studio/parcours';
+import { lancerMissionDuDevis, suivreMissionUi } from '../agent/lancementMission';
 // VIS-18b : étapes de personnalisation qu'un Studio déjà ouvert peut prendre en charge.
 const ETAPES_VERS_STUDIO: ReadonlySet<string> = new Set(['volume', 'style', 'interieurs', 'vues', 'scenario', 'pieces']);
 
@@ -227,6 +228,21 @@ export function CopilotChat({
   const actionHabituelle: ActionnerParcours = (_etape, action) => {
     setNoticeParcours(null);
     if (action.cible === 'chat') { if (action.message) handleSend(action.message); return; }
+    // VIS-21 : devis de mission en attente → la MÊME fonction que « Lancer la mission » de la carte du devis ; mission en
+    // cours → son suivi. Jamais de message à Mimmo (qui reproposait une mission).
+    if (action.cible === 'mission') {
+      const id = action.missionId;
+      if (!id) { setNoticeParcours('Le devis de la mission est plus haut dans la conversation : utilisez son bouton « Lancer la mission ».'); return; }
+      if (action.operation === 'suivre') {
+        if (!suivreMissionUi(id)) setNoticeParcours('Suivez son avancement depuis la page MimmozIA, menu « Missions ».');
+        return;
+      }
+      setNoticeParcours('Lancement de la mission…');
+      lancerMissionDuDevis(id)
+        .then(() => setNoticeParcours('Mission lancée : les jetons du devis sont mis de côté, seul le consommé sera débité.'))
+        .catch((e: unknown) => setNoticeParcours(e instanceof Error ? e.message : 'Le lancement a échoué.'));
+      return;
+    }
     if (action.cible === 'habillage') { ouvrirHabillage(null); return; }
     if (action.cible === 'studio-interieur' || action.cible === 'studio-batiment') {
       montrerPanneau3D();

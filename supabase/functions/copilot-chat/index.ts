@@ -42,6 +42,8 @@ import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-stu
 import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
 import { estDemandeDeSuite, retirerMarqueursInterruption } from '../_shared/copilot-stream/reprise.ts';
 import { journaliserEchecEdge, type EchecEdge } from '../_shared/copilot-stream/journal.ts';
+// VIS-21 : panne du fournisseur d'IA (crédit du compte Anthropic de Mimmoza épuisé, surcharge) ≠ solde de l'utilisateur.
+import { CODE_JOURNAL_FOURNISSEUR, panneFournisseurIA } from '../_shared/copilot-stream/fournisseurIA.ts';
 // Moteur prédictif — MÊME code que la page Analyse prédictive du front, qui le
 // réexporte depuis ici. Deux copies auraient produit deux projections
 // différentes pour le même bien selon qu'on la demande à l'écran ou au chat.
@@ -73,7 +75,7 @@ import { etatMissionsUtile } from './agent/etat-missions.ts';
 // VIS-17 : parcours guidé (image / film / visite) — bloc « PARCOURS — FAIT FOI » relu à chaque message.
 // VIS-20 : sur la page MimmozIA, le parcours ne quitte jamais le chat (outils et pages retirés, consigne).
 import { CONSIGNE_RESTER_DANS_LE_CHAT, estPageMimmozIA, outilHorsChat, refusRouteHorsChat } from './agent/rester-dans-le-chat.ts';
-import { blocParcoursServeur, fusionnerTextesUtilisateur, MESSAGES_BLOCS_PARCOURS, MESSAGES_RECENTS_PARCOURS, MOTIFS_BLOCS_PARCOURS } from './agent/parcours-chat.ts';
+import { blocParcoursServeur, fusionnerTextesUtilisateur, missionConceptionDeReference, MESSAGES_BLOCS_PARCOURS, MESSAGES_RECENTS_PARCOURS, MOTIFS_BLOCS_PARCOURS } from './agent/parcours-chat.ts';
 // VIS-18b : fond de l'image choisi dans l'étape 6 du parcours (instantané de l'écran), repris par le devis d'image.
 import { fondDuParcours } from '../../../src/lib/studio/parcours.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
@@ -10525,8 +10527,9 @@ async function buildParcoursBlock(conversationId: string, userId: string, instan
   try {
     const admin = getAdmin();
     const [missions, preparations, travaux, messagesUtilisateur, temoins, messagesBlocs] = await Promise.all([
-      admin.from('agent_missions').select('type, statut, criteres').eq('conversation_id', conversationId).eq('user_id', userId)
-        .eq('type', 'conception').order('cree_le', { ascending: false }).limit(1),
+      // VIS-21 : les 10 dernières conceptions — une conception terminée n'est pas masquée par un devis postérieur.
+      admin.from('agent_missions').select('id, type, statut, criteres, cree_le').eq('conversation_id', conversationId).eq('user_id', userId)
+        .eq('type', 'conception').order('cree_le', { ascending: false }).limit(10),
       admin.from('studio_preparations').select('idu, resume').eq('conversation_id', conversationId).eq('user_id', userId)
         .order('cree_le', { ascending: false }).limit(1),
       admin.from('studio_jobs').select('id, type, statut, options, resultat, cree_le').eq('conversation_id', conversationId).eq('user_id', userId)
@@ -10551,7 +10554,8 @@ async function buildParcoursBlock(conversationId: string, userId: string, instan
     const textesUtilisateur = fusionnerTextesUtilisateur(lignesDe(messagesUtilisateur), ...blocs.map(lignesDe));
     const { bloc } = blocParcoursServeur({
       instantane,
-      mission: !missions.error && Array.isArray(missions.data) && missions.data[0] ? missions.data[0] as { type: string; statut: string; criteres: unknown } : null,
+      mission: !missions.error && Array.isArray(missions.data)
+        ? missionConceptionDeReference(missions.data as { id: string; type: string; statut: string; criteres: unknown; cree_le: string }[]).mission : null,
       preparation: !preparations.error && Array.isArray(preparations.data) && preparations.data[0] ? preparations.data[0] as { idu: string | null; resume: unknown } : null,
       travaux: !travaux.error && Array.isArray(travaux.data) ? travaux.data : [],
       textesUtilisateur,
@@ -12229,8 +12233,52 @@ async function traiterRequete(req: Request): Promise<Response> {
       message: msg, userId, dureeMs: Date.now() - startedAt,
       contexte: { ...contexteJournal(), client_parti: sse.clientPartiA != null },
     });
+    // VIS-21 : alerte administrateur dédiée (page admin « Erreurs ») quand le fournisseur d'IA est en panne.
+    const panne = panneFournisseurIA(msg);
+    if (panne) {
+      journal.push({
+        fonction: 'copilot-chat', code: CODE_JOURNAL_FOURNISSEUR, etape: billable ? 'generation' : 'preparation',
+        message: panne === 'credit_epuise'
+          ? `ALERTE ADMIN — crédit du compte API Anthropic épuisé (recharger Plans & Billing) : ${msg}`
+          : `fournisseur d'IA saturé : ${msg}`,
+        userId, dureeMs: Date.now() - startedAt, contexte: { ...contexteJournal(), panne },
+      });
+    }
 
-    if (billable && !settled) {
+    if (billable && !settled && panne) {
+      // VIS-21 : panne du fournisseur pendant la génération → le partiel est gardé (l'utilisateur l'a vu) mais RIEN
+      // n'est débité : la réservation est rendue en entier (« vos jetons ne sont pas débités »).
+      let messageIdInterrompu: string | undefined = messageAssistantId;
+      try {
+        await messageUtilisateurEcrit;
+        const texteProduit = sse.texteDiffuse.trim();
+        const finalText = texteProduit
+          ? `${texteProduit}\n\n_[Réponse interrompue avant la fin — le service d'IA était momentanément indisponible ; aucun jeton débité.]_`
+          : '[réponse interrompue]';
+        const messageId = messageAssistantId ?? await saveAssistantMessage({
+          conversationId, userId, mode,
+          latencyMs: Date.now() - startedAt,
+          creditsCost: 0,
+          result: {
+            finalText,
+            toolCallsLog: outilsExecutes,
+            totalInputTokens: usageReel.inputTokens,
+            totalOutputTokens: usageReel.outputTokens,
+            webSearches: usageReel.webSearches,
+            webFetches: usageReel.webFetches,
+            model: TIER_MODEL_ID[tier],
+            finishReason: 'interrupted',
+          },
+        });
+        messageAssistantId = messageIdInterrompu = messageId;
+      } catch (e) {
+        console.error('[copilot] persistance après panne fournisseur', e);
+      }
+      const refunded = await refundCredits({ userId, reservationId, reason: `fournisseur IA indisponible (${panne})` });
+      settled = true;
+      sse.send({ type: 'error', error: msg, message_id: messageIdInterrompu, refunded_credits: refunded });
+
+    } else if (billable && !settled) {
       // NEW : génération déjà commencée → on FACTURE, pas de refund.
       // L'identifiant doit rester lisible par le `sse.send` qui suit, pour que
       // le front rattache la réponse partielle.

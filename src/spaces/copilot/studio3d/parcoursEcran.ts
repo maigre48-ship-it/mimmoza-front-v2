@@ -13,7 +13,7 @@
 // =============================================================================
 import type { BriefProjet } from '../../../lib/studio/briefProjet.ts';
 import {
-  apercuValideDesMessages, lireBlocParcours, sourcesVides, programmeDesCriteres, terrainDesCriteres, travailParcours, typeParcoursDesMessages,
+  apercuValideDesMessages, lireBlocParcours, missionConceptionDeReference, sourcesVides, programmeDesCriteres, terrainDesCriteres, travailParcours, typeParcoursDesMessages,
   type InstantaneParcours, type ReglagesFilm, type ReglagesVisite, type SourcesParcours, type TravailParcours, type TypeParcours,
 } from '../../../lib/studio/parcours.ts';
 import { fondDe, type OptionsFond } from '../../../lib/studio/fondImage.ts';
@@ -64,14 +64,16 @@ export function assemblerSourcesEcran(e: EntreeEcran): SourcesParcours {
   const ficheDimensionnee = !!fiche && !!fiche.dimensions?.trim() && !!fiche.programme?.trim();
   const terrain = e.parcelle ?? (prep ? `${prep.idu}${prep.commune ? ` · ${prep.commune}` : ''}` : null);
 
-  // Conception : dernière mission de conception de la conversation (statut réel), sinon fiche décrite.
-  const mission = [...e.missions]
-    .filter((m) => m.type === 'conception' && (!e.conversationId || m.conversation_id === e.conversationId))
-    .sort((a, b) => Date.parse(b.cree_le ?? '') - Date.parse(a.cree_le ?? ''))[0];
+  // Conception : mission de conception de la conversation qui fait foi (statut réel), sinon fiche décrite.
+  // VIS-21 : une conception TERMINÉE n'est plus masquée par un devis postérieur non lancé (missionConceptionDeReference).
+  const reference = missionConceptionDeReference(e.missions
+    .filter((m) => m.type === 'conception' && (!e.conversationId || m.conversation_id === e.conversationId)));
+  const mission = reference.mission ?? undefined;
   const lignes = prep ? lignesCarte(prep) : [];
   const terrainFinal = terrain ?? terrainDesCriteres(mission?.criteres);
   const conception = mission
-    ? { statut: mission.statut, resume: programmeDesCriteres(mission.criteres) ?? (lignes.length ? lignes.join(' · ') : null) }
+    ? { statut: mission.statut, resume: programmeDesCriteres(mission.criteres) ?? (lignes.length ? lignes.join(' · ') : null), missionId: mission.id,
+      ...(reference.autreDevis ? { autreDevisEnAttente: true } : {}) }
     : ficheDimensionnee ? { statut: 'fiche', resume: fiche!.programme } : null;
 
   // Habillage : brief validé dans le fil (ou devis), sinon celui mémorisé dans le brief projet de l'étude.
@@ -99,7 +101,28 @@ export function assemblerSourcesEcran(e: EntreeEcran): SourcesParcours {
     temoinStudio: e.temoinStudio ? { fait: e.temoinStudio.fait, resume: e.temoinStudio.resume } : null,
     travaux,
     apercuValide: apercuValideDesMessages(textesUtilisateur),
+    devisRenduEnAttente: devisRenduEnAttente(e.messages),
   };
+}
+
+/**
+ * VIS-21 — devis de rendu en attente dans le fil : la dernière réponse de Mimmo (rien écrit depuis par l'utilisateur)
+ * porte une sortie `confirmation_requise` de studio_lancer_rendu. Renvoie sa qualité (`apercu` / `finale`), null sinon.
+ */
+export function devisRenduEnAttente(messages: readonly MessageEcran[]): 'apercu' | 'finale' | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'user') return null;
+    if (m.role !== 'assistant') continue;
+    for (const t of [...(m.toolCalls ?? [])].reverse()) {
+      if (t.name !== 'studio_lancer_rendu') continue;
+      const o = t.output as { status?: unknown; data?: { options?: { qualite?: unknown } } } | undefined;
+      if (o?.status !== 'confirmation_requise') return null;
+      return o.data?.options?.qualite === 'apercu' ? 'apercu' : 'finale';
+    }
+    return null;
+  }
+  return null;
 }
 
 /** VIS-18b — gamme / cible : celles de l'étude rattachée, sinon celles du petit réglage du parcours (dit). */

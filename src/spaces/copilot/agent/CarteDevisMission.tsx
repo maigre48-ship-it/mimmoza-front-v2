@@ -9,9 +9,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Loader2, Rocket } from 'lucide-react';
 import { JETON_VALEUR_EUR } from '@/lib/billing/grille';
 import { useCopilotStore } from '../store/copilotStore';
-import { annulerMission, lireMissionParId, suivreMission, validerDevis } from './agentApi';
+import { annulerMission, lireMissionParId, suivreMission } from './agentApi';
+// VIS-21 : UNE fonction de lancement, partagée avec le parcours (panneau Espace 3D) et le panneau Missions.
+import { lancerMissionDuDevis, reprendreMissionEnPause } from './lancementMission';
 import {
-  devisExpire, dureeLisible, formatJetons, MESSAGE_DEVIS_EXPIRE, libelleStatut, libelleType, missionFinie, resumerDevis, tonStatut,
+  devisExpire, dureeLisible, erreurMissionLisible, formatJetons, missionEnPauseFournisseur, MESSAGE_DEVIS_EXPIRE, libelleStatut, libelleType, missionFinie, resumerDevis, tonStatut,
   type AffichageDevis,
 } from './agentLogique';
 import type { Mission } from './agent.types';
@@ -58,7 +60,7 @@ export function CarteDevisMission({ affichage, onSend, conversationId, onVisuali
 function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }: { proposition: Extract<AffichageDevis, { etat: 'carte' }>['proposition']; onSend?: (t: string) => void; conversationId?: string | null; onVisualiserMission?: (mission: Mission) => void }) {
   const missionId = proposition.missionId;
   const [mission, setMission] = useState<Mission | null>(null);
-  const [occupe, setOccupe] = useState<'lancer' | 'annuler' | 'modifier' | 'visualiser' | null>(null);
+  const [occupe, setOccupe] = useState<'lancer' | 'annuler' | 'modifier' | 'visualiser' | 'reprendre' | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [modif, setModif] = useState<string | null>(null);
 
@@ -110,14 +112,21 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
     if (!missionId) return;
     setOccupe('lancer'); setErreur(null);
     try {
-      const m = await validerDevis(missionId);
+      const m = await lancerMissionDuDevis(missionId);
       if (m) setMission(m); else await relire();
-      useAgentUi.getState().signalerChangement();
-      // La réservation est faite par le moteur au démarrage : on relit le solde ensuite.
-      window.setTimeout(() => { void useCopilotStore.getState().refreshCredits?.(); }, 8000);
-      if (useAgentUi.getState().hotes > 0) useAgentUi.getState().ouvrir('missions', missionId);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : 'Le lancement a échoué.');
+    } finally { setOccupe(null); }
+  };
+
+  const reprendre = async () => {
+    if (!missionId) return;
+    setOccupe('reprendre'); setErreur(null);
+    try {
+      const m = await reprendreMissionEnPause(missionId);
+      if (m) setMission(m); else await relire();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : 'La reprise a échoué.');
     } finally { setOccupe(null); }
   };
 
@@ -230,6 +239,16 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
           </div>
         )
       )}
+
+      {/* VIS-21 : panne du fournisseur d'IA → pause honnête + « Reprendre » ; échec → raison lisible. */}
+      {mission && missionEnPauseFournisseur(mission) && (
+        <div className="mzag-pile" role="status">
+          <p className="mzag-alerte" style={{ margin: '0 0 8px' }}>{mission.question_en_attente}</p>
+          <div className="mzag-actions"><button type="button" className="mzag-btn mzag-btn--plein" disabled={occupe !== null} onClick={() => void reprendre()}>
+            {occupe === 'reprendre' ? 'Reprise…' : 'Reprendre'}</button></div>
+        </div>
+      )}
+      {mission && statut === 'echec' && mission.erreur && <p className="mzag-alerte" style={{ margin: '0 0 10px' }}>{erreurMissionLisible(mission.erreur)}</p>}
 
       {statut !== 'devis' && statut !== 'annulee' && missionId && (
         hotes > 0

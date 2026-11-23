@@ -386,7 +386,8 @@ Deno.test('reprise après erreur d’outil ou de LLM : jamais bloquée, échec p
   const m = depot.ajouter({ statut: 'en_attente' });
   const { deps } = fabriquerDeps(depot, (a) => {
     if (estPlan(a)) return { textBlocks: ['1. A'] };
-    throw new Error('Anthropic 529');
+    // VIS-21 : une surcharge (529) met désormais la mission en pause ; on garde ici une erreur technique ordinaire.
+    throw new Error('Anthropic API 500 : erreur interne');
   }, horloge);
   for (let i = 0; i < 5 && !STATUTS_FINAUX.includes(depot.missions.get(m.id)!.statut); i++) {
     await tickMissions(deps, depot, { worker: `w${i}` });
@@ -1590,4 +1591,87 @@ Deno.test('Q3-quinquies : la réserve de lectures n’est plus une cloison (cas 
   assert(!etapesMetierDisponibles({ ...m, etapes_faites: 16 }, { etapes_techniques: 1 }), '1 étape gardée pour une lecture + 1 pour le rapport');
   assert(etapesMetierDisponibles({ ...m, etapes_faites: 16 }, { etapes_techniques: 4 }), 'réserve épuisée : seule l’étape du rapport est gardée');
   assert(!etapesMetierDisponibles({ ...m, etapes_faites: 17 }, { etapes_techniques: 4 }), 'dernière étape = rapport');
+});
+
+// ── VIS-21 : panne du fournisseur d'IA → mission EN PAUSE (reprenable), jamais en échec ni débitée ───────────────────
+import { estPauseFournisseur, REPONSE_REPRENDRE } from '../../_shared/copilot-stream/fournisseurIA.ts';
+const ERREUR_CREDIT_ANTHROPIC = 'Anthropic API 400 : {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011ChKd9MDUedMmr1Yf9uSuY"}';
+
+Deno.test('VIS-21 — crédit du fournisseur épuisé : pause immédiate (attente_utilisateur), alerte admin, 0 débit ; « Reprendre » relance', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const alertes: string[] = [];
+  (depot as DepotMission).alerteAdmin = async (code: string, message: string) => { alertes.push(`${code}|${message}`); };
+  const m = depot.ajouter({ statut: 'en_attente' });
+  let panne = true;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (panne) throw new Error(ERREUR_CREDIT_ANTHROPIC);
+    return estPlan(a) ? { textBlocks: ['1. A'] } : { textBlocks: ['Fini.'], stopReason: 'end_turn' };
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w1' });
+  let x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'attente_utilisateur');
+  assert(estPauseFournisseur(x.question_en_attente), String(x.question_en_attente));
+  assertEquals(x.jetons_consommes, 0);
+  assertEquals(depot.debits.filter((d) => d.id === m.id).length, 0, 'aucun débit pour l’appel perdu');
+  assertEquals(alertes.length, 1);
+  assert(alertes[0].startsWith('fournisseur_ia_indisponible|ALERTE ADMIN — crédit du compte API Anthropic épuisé'), alertes[0]);
+  // Le tick suivant ne touche pas une mission en pause (elle dort jusqu'à « Reprendre »).
+  horloge.t += 60_000; await tickMissions(deps, depot, { worker: 'w2' });
+  assertEquals(depot.missions.get(m.id)!.statut, 'attente_utilisateur');
+  // Service rétabli + « Reprendre » (agent_mission_repondre) → la mission repart, sans formulaire de règles.
+  panne = false;
+  depot.repondre(m.id, REPONSE_REPRENDRE);
+  for (let i = 3; i <= 8 && !STATUTS_FINAUX.includes(depot.missions.get(m.id)!.statut); i++) {
+    horloge.t += 60_000; await tickMissions(deps, depot, { worker: `w${i}` });
+  }
+  x = depot.missions.get(m.id)!;
+  assert(x.statut !== 'echec', `statut ${x.statut} (${x.erreur})`);
+  assertEquals((x.etat as EtatMission).pause_fournisseur ?? null, null);
+});
+
+Deno.test('VIS-21 — fournisseur saturé (529) répété : pause au lieu de l’échec à la 3e erreur identique', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const m = depot.ajouter({ statut: 'en_attente' });
+  const { deps } = fabriquerDeps(depot, () => { throw new Error('Anthropic API 529 : {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'); }, horloge);
+  for (let i = 1; i <= 6; i++) {
+    const st = depot.missions.get(m.id)!.statut;
+    if (st !== 'en_attente' && st !== 'en_cours') break;
+    await tickMissions(deps, depot, { worker: `w${i}` }); horloge.t += 60_000;
+  }
+  const x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'attente_utilisateur');
+  assert(estPauseFournisseur(x.question_en_attente));
+  assert(String(x.question_en_attente).includes('service saturé'));
+});
+
+Deno.test('VIS-21 — proposer_mission conception : conception déjà TERMINÉE sur le terrain → aucun nouveau devis (cas réel a7cca310…)', async () => {
+  const depot = new DepotMemoire(() => 0);
+  const CONV = 'a7cca310-82fc-4be7-84f3-d4b3cb25a5f1';
+  const faite = depot.ajouter({ statut: 'terminee', type: 'conception', conversation_id: CONV, objectif: 'Conception AI0002', criteres: { idu: '64065000AI0002' } });
+  (depot as DepotMission).conceptionsDeLaConversation = async () => [
+    { id: crypto.randomUUID(), statut: 'devis', criteres: { idu: '64065000AI0002' }, objectif: 'x', cree_le: '2026-11-23T10:02:47Z' },
+    { id: faite.id, statut: 'terminee', criteres: { idu: '64065000AI0002' }, objectif: 'Conception AI0002', cree_le: '2026-11-23T09:42:35Z' },
+    { id: crypto.randomUUID(), statut: 'echec', criteres: { idu: '64065000AI0002' }, objectif: 'x', cree_le: '2026-11-23T09:25:43Z' },
+  ];
+  const deps = { debitJetons: () => 7, tierUtilisateur: async () => 'sonnet' as const };
+  const avant = depot.missions.size;
+  const soldeAvant = depot.solde;
+  const input = { type: 'conception', objectif: 'Concevoir sur AI0002', criteres: { idu: '64065000AI0002', programme: 'R+2' } };
+  const r = await executerOutilAgentChat('proposer_mission', input, { conversation_id: CONV }, USER, deps, depot);
+  assert(r && r.status === 'ok');
+  assertEquals(r!.data!.mission_id, faite.id);
+  assertEquals(r!.data!.deja_faite, true);
+  assert(String(r!.message).includes('DÉJÀ TERMINÉE'));
+  assertEquals(depot.missions.size, avant, 'aucune mission créée');
+  assertEquals(depot.solde, soldeAvant, 'rien de débité');
+  assertEquals(evenementDevis(r!), null, 'pas d’événement « devis »');
+  // Demande explicite de refaire → nouveau devis.
+  const r2 = await executerOutilAgentChat('proposer_mission', { ...input, refaire: true }, { conversation_id: CONV }, USER, deps, depot);
+  assert(r2 && r2.status === 'ok' && r2.data!.mission_id !== faite.id);
+  assertEquals(depot.missions.get(String(r2!.data!.mission_id))!.statut, 'devis');
+  // Autre terrain → nouveau devis.
+  const r3 = await executerOutilAgentChat('proposer_mission', { ...input, criteres: { idu: '64065000AI0001' } }, { conversation_id: CONV }, USER, deps, depot);
+  assert(r3 && r3.status === 'ok' && r3.data!.mission_id !== faite.id);
 });

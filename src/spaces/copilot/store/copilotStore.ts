@@ -23,6 +23,8 @@ import {
 import { isLocalMessageId, persistActionRun } from '../actions/copilotActions';
 import { MESSAGES_REPRISE, raccorderSuite, retirerMarqueursInterruption } from './repriseFlux';
 import { signalerErreur } from '@/lib/monitoring';
+import { messageErreurLisible } from './erreurLisible';
+import { messagePanneFournisseur } from '../../../../supabase/functions/_shared/copilot-stream/fournisseurIA.ts';
 import { avisDocuments } from '../pieces-jointes/piecesJointesLogique';
 import type {
   ActionRun,
@@ -151,39 +153,7 @@ interface CopilotStore {
 
 const localId = (p: string) => `local-${p}-${crypto.randomUUID()}`;
 
-/**
- * Traduit une erreur technique en message affichable.
- *
- * Le message brut du serveur remontait tel quel jusqu'au bandeau : l'utilisateur
- * lisait « Anthropic API 529 : {"type":"error",...} » ou « Timeout Anthropic
- * (60000ms dépassés) » — incompréhensible, et sans indication de ce qu'il peut
- * faire. Les cas connus sont reformulés ; le détail technique reste dans la
- * console pour le diagnostic.
- */
-function messageErreurLisible(brut: string | undefined | null): string {
-  const e = (brut ?? '').toString();
-  if (e) console.warn('[copilot] erreur technique :', e);
-  if (!e) return "Une erreur est survenue. Réessayez dans un instant.";
-
-  const bas = e.toLowerCase();
-
-  if (bas.includes('insufficient_credits') || bas.includes('credits')) {
-    return "Vous n'avez plus assez de jetons pour cette demande.";
-  }
-  if (bas.includes('timeout') || bas.includes('aborted')) {
-    return "La réponse a mis trop de temps à arriver. Reformulez plus simplement, ou réessayez.";
-  }
-  if (bas.includes('529') || bas.includes('overloaded') || bas.includes('rate')) {
-    return "Le service est momentanément saturé. Réessayez dans quelques secondes.";
-  }
-  if (bas.includes('401') || bas.includes('unauthorized') || bas.includes('jwt')) {
-    return "Votre session a expiré. Reconnectez-vous puis relancez la demande.";
-  }
-  if (bas.includes('network') || bas.includes('failed to fetch')) {
-    return "Connexion interrompue. Vérifiez votre réseau et réessayez.";
-  }
-  return "Une erreur est survenue. Réessayez dans un instant.";
-}
+// VIS-21 : traduction des erreurs déplacée dans erreurLisible.ts (pure, testée) — panne du fournisseur ≠ jetons.
 
 /** Copie de `obj` sans les clés données (les valeurs nulles sont ignorées). */
 function sansCles(obj: Record<string, true>, cles: Array<string | null | undefined>): Record<string, true> {
@@ -610,6 +580,8 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
   failStreaming: (message, requestId) => {
     if (get().activeRequestId !== requestId) return;
     void signalerErreur({ source: 'copilot', message: `flux copilote : ${message}`, context: { etape: 'requete' } });
+    // VIS-21 : panne du fournisseur d'IA (crédit Mimmoza épuisé, surcharge) → message honnête, jamais « jetons ».
+    message = messagePanneFournisseur(message) ?? message;
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === s.streamingId

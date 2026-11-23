@@ -107,6 +107,11 @@ export default function ErreursPage() {
     void charger(filtre);
   }, [charger, filtre]);
 
+  // VIS-21 : crédit du compte API Anthropic épuisé (ou fournisseur saturé) → bandeau d'alerte en tête de page.
+  const alerteFournisseur = useMemo(() => groupes
+    .filter((g) => /fournisseur_ia_indisponible|credit balance is too low/i.test(g.message))
+    .sort((a, b) => Date.parse(b.derniere) - Date.parse(a.derniere))[0] ?? null, [groupes]);
+
   const totaux = useMemo(() => ({
     groupes: groupes.length,
     occurrences: groupes.reduce((s, g) => s + g.occurrences, 0),
@@ -115,6 +120,18 @@ export default function ErreursPage() {
 
   return (
     <div className="space-y-6">
+      {alerteFournisseur && (
+        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-900">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <strong>{/credit balance is too low|crédit du compte/i.test(alerteFournisseur.message)
+              ? "Crédit du compte API Anthropic épuisé : Mimmo et les missions ne peuvent plus répondre."
+              : "Fournisseur d'IA saturé : réponses de Mimmo et missions interrompues."}</strong>
+            <p className="mt-1">Dernière occurrence {depuis(alerteFournisseur.derniere)} ({formatDateHeure(alerteFournisseur.derniere)}) · {alerteFournisseur.occurrences} fois sur 7 jours.
+              Rechargez le crédit dans la console Anthropic (Plans &amp; Billing) ; les missions concernées sont en pause et reprennent avec « Reprendre ».</p>
+          </div>
+        </div>
+      )}
       <header className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

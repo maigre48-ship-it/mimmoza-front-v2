@@ -45,12 +45,21 @@ export type CleEtape = 'terrain' | 'conception' | 'volume' | 'style' | 'interieu
  *   reglages-rendu   : « Brief relié au rendu » (vues, lumière, saison, gamme) dans l'Espace 3D ;
  *   feuille-image / feuille-film / feuille-visite : feuille d'options « Film, visite 360° ou image » (FilmVisitePanel) ;
  *   apercu           : feuille image en « aperçu rapide » ;   final : feuille du rendu final ;
- *   resultats        : rendus déjà réalisés (voir, valider l'aperçu, télécharger).
+ *   resultats        : rendus déjà réalisés (voir, valider l'aperçu, télécharger) ;
+ *   mission          : VIS-21 — devis de la mission de conception en attente → MÊME action que « Lancer la mission » de la
+ *                      carte du devis (validerDevis, mêmes jetons réservés) ; mission en cours → suivi (panneau Missions).
+ *                      Jamais un message à Mimmo (qui reproposerait une mission).
  */
-export type CibleParcours = 'chat' | 'terrain' | 'programme' | 'dimensions' | 'studio-batiment' | 'habillage' | 'studio-interieur' | 'reglages-rendu'
+export type CibleParcours = 'chat' | 'terrain' | 'programme' | 'mission' | 'dimensions' | 'studio-batiment' | 'habillage' | 'studio-interieur' | 'reglages-rendu'
   | 'feuille-image' | 'feuille-film' | 'feuille-visite' | 'apercu' | 'final' | 'resultats';
 
-export interface ActionParcours { cible: CibleParcours; libelle: string; message?: string }
+export interface ActionParcours {
+  cible: CibleParcours; libelle: string; message?: string;
+  /** VIS-21 — cible `mission` : identifiant de la mission (devis à lancer / mission à suivre). */
+  missionId?: string;
+  /** VIS-21 — cible `mission` : lancer le devis ou suivre la mission. */
+  operation?: 'lancer' | 'suivre';
+}
 
 export interface EtapeParcours {
   cle: CleEtape;
@@ -71,6 +80,11 @@ export interface EtapeParcours {
    * aucune étude Style & tendances n'est rattachée ; `fond` (étape 6 du parcours Images : étude / photo de rue / photo).
    */
   reglage?: 'cible' | 'gamme' | 'fond' | 'terrain' | 'programme';
+  /**
+   * VIS-21 — une carte d'action de CETTE étape est déjà dans le fil du chat (devis de mission, brief créatif, devis de
+   * rendu) : la carte « Votre parcours » du chat n'affiche PAS de bouton concurrent, seulement ce renvoi.
+   */
+  carteDansLeFil?: string;
 }
 
 export interface Parcours {
@@ -102,7 +116,7 @@ export interface SourcesParcours {
   /** « AI0001 + AI0002 (2 349 m²) · Ascain » ; null : aucun terrain connu. */
   terrain: string | null;
   /** Mission de conception (statut réel) ou fiche de projet décrite dans le chat (statut « fiche »). */
-  conception: { statut: string; resume: string | null } | null;
+  conception: { statut: string; resume: string | null; missionId?: string | null; autreDevisEnAttente?: boolean } | null;
   volume: { pret: boolean; resume: string | null };
   habillage: { resume: string | null; attenduParMimmo: boolean };
   /**
@@ -124,6 +138,8 @@ export interface SourcesParcours {
   travaux: TravailParcours[];
   /** Identifiant du rendu d'aperçu validé par l'utilisateur (bloc mimmoza-parcours), s'il y en a un. */
   apercuValide: string | null;
+  /** VIS-21 — devis de rendu (studio_lancer_rendu « confirmation_requise ») en attente dans le fil : sa qualité. */
+  devisRenduEnAttente?: 'apercu' | 'finale' | null;
 }
 
 export function sourcesVides(type: TypeParcours = 'image'): SourcesParcours {
@@ -190,6 +206,9 @@ export function interieurRequis(s: SourcesParcours): boolean {
 const CONCEPTION_FAITE = new Set(['terminee', 'budget_atteint', 'fiche']);
 const CONCEPTION_EN_COURS = new Set(['en_attente', 'en_cours', 'attente_utilisateur']);
 
+/** VIS-21 — renvoi de la carte du parcours vers le devis de rendu déjà proposé dans le fil. */
+export const DEVIS_RENDU_DANS_LE_FIL = 'Le devis du rendu est juste au-dessus, dans la conversation : confirmez-le à Mimmo (ou demandez-lui de le modifier).';
+
 export const MESSAGES_PARCOURS = {
   terrain: 'Aide-moi à choisir le terrain de mon projet (une parcelle ou une assiette de plusieurs parcelles).',
   conception: 'Lance la conception de mon projet sur ce terrain.',
@@ -221,22 +240,26 @@ export function calculerParcours(s: SourcesParcours): Parcours {
     const statut: StatutEtape = (c && CONCEPTION_FAITE.has(c.statut)) || (!c && s.volume.pret) ? 'fait'
       : c && CONCEPTION_EN_COURS.has(c.statut) ? 'en_cours'
       : !s.terrain && !c ? 'bloquee' : 'a_faire';
-    const resume = statut === 'fait' ? (c?.resume ?? s.volume.resume ?? 'Conception terminée.')
+    const resume = statut === 'fait' ? `${c?.resume ?? s.volume.resume ?? 'Conception terminée.'}${c?.autreDevisEnAttente ? ' · Un autre devis de conception attend (facultatif : la conception est déjà faite).' : ''}`
       : statut === 'en_cours' ? 'Mission de conception en cours…'
-      : c?.statut === 'devis' ? 'Mission de conception proposée : à valider (devis).'
+      : c?.statut === 'devis' ? 'Mission de conception proposée : devis à valider (« Lancer la mission »).'
       : c?.statut === 'echec' ? 'La dernière conception a échoué : à relancer.'
       : 'Programme (logements, niveaux) et conception sur le terrain.';
     ajouter({
       cle: 'conception', titre: 'Programme & conception', statut, resume,
       raison: statut === 'bloquee' ? 'Choisissez d’abord le terrain.' : null,
       debloquePar: statut === 'bloquee' ? 'terrain' : null,
-      // VIS-20 : lancer / modifier = champs du programme de l'étape (mission proposée dans le chat) ; valider un devis ou
-      // suivre une mission en cours = message à Mimmo.
+      // VIS-20 : lancer / modifier = champs du programme de l'étape (mission proposée dans le chat).
+      // VIS-21 : devis en attente = MÊME action que « Lancer la mission » de la carte du devis (cible `mission`), mission
+      // en cours = suivi ; plus jamais un message « Lance la conception… » qui faisait reproposer une mission à Mimmo.
       action: statut === 'fait' ? { cible: 'programme', libelle: 'Modifier' }
-        : c?.statut === 'devis' || statut === 'en_cours'
-          ? { cible: 'chat', libelle: c?.statut === 'devis' ? 'Valider' : 'Suivre', message: MESSAGES_PARCOURS.conception }
-          : { cible: 'programme', libelle: 'Lancer' },
+        : c?.statut === 'devis'
+          ? { cible: 'mission', operation: 'lancer', libelle: 'Lancer la mission', ...(c.missionId ? { missionId: c.missionId } : {}) }
+          : statut === 'en_cours'
+            ? { cible: 'mission', operation: 'suivre', libelle: 'Suivre la mission', ...(c?.missionId ? { missionId: c.missionId } : {}) }
+            : { cible: 'programme', libelle: 'Lancer' },
       ...(statut === 'en_cours' || c?.statut === 'devis' ? {} : { reglage: 'programme' as const }),
+      ...(c?.statut === 'devis' ? { carteDansLeFil: 'Le devis de la mission est affiché plus haut dans la conversation : validez-le avec son bouton « Lancer la mission ».' } : {}),
     });
   }
 
@@ -264,6 +287,8 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       resume: `${h.resume ?? 'Façade, teinte, menuiseries, balcons, toiture — ou laissez Mimmo proposer.'}${cible}`,
       raison: h.attenduParMimmo ? 'Mimmo attend votre habillage pour chiffrer le rendu.' : null, debloquePar: null,
       action: { cible: 'habillage', libelle: h.resume ? 'Modifier' : 'Choisir' },
+      // VIS-21 : Mimmo attend le brief → la carte du brief est dans le fil ; pas de second bouton dans la carte du parcours.
+      ...(h.attenduParMimmo ? { carteDansLeFil: 'Mimmo attend votre habillage : répondez avec la carte du brief créatif, plus haut dans la conversation.' } : {}),
       // VIS-18b : sans étude Style & tendances, la cible se règle ici (sinon : dans l'étude).
       ...(s.rendu.etudeRattachee ? {} : { reglage: 'cible' as const }),
     });
@@ -356,6 +381,8 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       debloquePar: statut === 'bloquee' ? 'volume' : null,
       action: statut === 'fait' ? { cible: 'resultats', libelle: 'Revoir' }
         : pret && !enCours ? { cible: 'resultats', libelle: 'Voir et valider' } : { cible: 'apercu', libelle: enCours ? 'Suivre' : 'Lancer l’aperçu' },
+      // VIS-21 : devis d'aperçu déjà proposé par Mimmo dans le fil → on y renvoie, pas de second lancement concurrent.
+      ...(statut === 'a_faire' && s.devisRenduEnAttente === 'apercu' ? { carteDansLeFil: DEVIS_RENDU_DANS_LE_FIL } : {}),
     });
   }
 
@@ -378,6 +405,7 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       raison: statut === 'bloquee' ? 'Validez d’abord l’aperçu.' : null,
       debloquePar: statut === 'bloquee' ? 'apercu' : null,
       action: statut === 'fait' ? { cible: 'resultats', libelle: 'Voir' } : statut === 'en_cours' ? { cible: 'resultats', libelle: 'Suivre' } : { cible: 'final', libelle: 'Lancer' },
+      ...(statut === 'a_faire' && s.devisRenduEnAttente === 'finale' ? { carteDansLeFil: DEVIS_RENDU_DANS_LE_FIL } : {}),
     });
   }
 
@@ -417,6 +445,47 @@ export function terrainDesCriteres(criteres: unknown): string | null {
     .map((v) => v.trim()).map((v) => (/^\d[\dAB]\d{3}[\dA-Z]{3}[A-Z0-9]{2}\d{4}$/.test(v) ? v.slice(8) : v)); // IDU complet → section + numéro
   const commune = typeof c.commune === 'string' && c.commune.trim() ? ` · ${c.commune.trim()}` : '';
   return ids.length ? `${ids.slice(0, 6).join(' + ')}${commune}` : null;
+}
+
+/** VIS-21 — parcelles (IDU complets ou « AI0002 ») des critères d'une mission, normalisées « section+numéro » ; [] : inconnues. */
+export function parcellesDesCriteres(criteres: unknown): string[] {
+  if (typeof criteres !== 'object' || criteres === null || Array.isArray(criteres)) return [];
+  const c = criteres as Record<string, unknown>;
+  const liste = [c.parcel_ids, c.idus, c.parcelles].find((v) => Array.isArray(v) && v.length) as unknown[] | undefined;
+  return [...new Set((liste ?? (typeof c.idu === 'string' ? [c.idu] : []))
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => v.replace(/\s/g, '').toUpperCase())
+    .map((v) => (/^\d[\dAB]\d{3}[\dA-Z]{3}[A-Z0-9]{2}\d{4}$/.test(v) ? v.slice(8) : v)))].sort();
+}
+
+/** VIS-21 — deux missions portent-elles le même terrain ? Terrain inconnu d'un côté : on le suppose identique. */
+export function memeTerrainCriteres(a: unknown, b: unknown): boolean {
+  const x = parcellesDesCriteres(a); const y = parcellesDesCriteres(b);
+  if (!x.length || !y.length) return true;
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+export interface MissionConceptionLue { id?: string | null; type?: string; statut: string; cree_le?: string | null; criteres?: unknown }
+
+/**
+ * VIS-21 — mission de conception qui FAIT FOI pour l'étape 2 (écran et serveur). Cas réel du 23/11 (a7cca310…) :
+ * d1cde026 TERMINÉE à 09:45, puis deux devis non lancés (10:01, 10:02) sur la même parcelle : la dernière mission
+ * (un devis) faisait repasser l'étape 2 en « à valider » → l'utilisateur relançait en boucle.
+ * Règle : une conception terminée (terminee / budget_atteint) l'emporte sur les devis, échecs et annulations
+ * POSTÉRIEURS du même terrain ; seule une mission postérieure réellement LANCÉE (en file, en cours, en attente) sur
+ * ce terrain, ou une mission sur un AUTRE terrain, la remplace. `autreDevis` : devis postérieur non lancé (information).
+ */
+export function missionConceptionDeReference<T extends MissionConceptionLue>(missions: readonly T[]): { mission: T | null; autreDevis: T | null } {
+  const triees = [...missions].filter((m) => !m.type || m.type === 'conception')
+    .sort((a, b) => (Date.parse(b.cree_le ?? '') || 0) - (Date.parse(a.cree_le ?? '') || 0));
+  const i = triees.findIndex((m) => CONCEPTION_FAITE.has(m.statut));
+  if (i < 0) return { mission: triees[0] ?? null, autreDevis: null };
+  const faite = triees[i];
+  const posterieures = triees.slice(0, i);
+  const remplacante = posterieures.find((m) => (CONCEPTION_EN_COURS.has(m.statut) && memeTerrainCriteres(m.criteres, faite.criteres))
+    || (m.statut !== 'annulee' && !memeTerrainCriteres(m.criteres, faite.criteres)));
+  if (remplacante) return { mission: remplacante, autreDevis: null };
+  return { mission: faite, autreDevis: posterieures.find((m) => m.statut === 'devis') ?? null };
 }
 
 /** Programme demandé dans les critères d'une mission (« petit collectif R+2 ») ; null sinon. */
@@ -578,6 +647,10 @@ export function blocParcoursSysteme(p: Parcours): string {
     '(qualité finale, film, visite) tant que l’étape « Aperçu » n’est pas FAITE (aperçu validé) : propose d’abord l’aperçu. Une demande directe',
     '(« lance le pack plaquette ») reste possible : fais-la, mais signale en une phrase les étapes NON FAITES qui comptent (vue intérieure sans',
     'logement témoin, habillage non choisi, aperçu non validé). Ne déclare jamais une étape faite toi-même : seul ce bloc fait foi.',
+    'Un devis déjà proposé et en attente (mission de conception « à valider », devis de rendu) ne se repropose PAS : renvoie l’utilisateur',
+    'vers le bouton de sa carte (« Lancer la mission » pour une mission), sauf s’il demande explicitement de modifier.',
+    'Étape « Programme & conception » FAITE : ne propose PAS de nouvelle mission de conception sur ce terrain (pas de proposer_mission) ;',
+    'propose plutôt d’ouvrir le projet en 3D. Seule une demande EXPLICITE de refaire ou de modifier la conception justifie un nouveau devis.',
     'L’aperçu se lance avec studio_lancer_rendu et options.qualite = "apercu" : type « image » (mêmes vues que le rendu final prévu), « film »',
     '(film court basse définition, mêmes plans) ou « visite360 » (panoramas basse définition) — mêmes autres options que le rendu final prévu ;',
     'l’utilisateur le valide ensuite d’un clic sur l’écran. Pas de mots techniques (aucun nom d’outil) en parlant des étapes à l’utilisateur.',

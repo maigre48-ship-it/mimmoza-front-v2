@@ -59,6 +59,7 @@ export const OUTIL_PROPOSER_MISSION: OutilDef = {
           'Type « conception » : idu (parcelle, 14 caractères) ; ASSIETTE GROUPÉE de plusieurs parcelles contiguës → parcel_ids (liste des idu, la première = parcelle principale) ; idu peut alors être omis.',
       },
       projet_id: { type: 'string', description: 'Identifiant du projet (uuid) si la mission s’y rattache.' },
+      refaire: { type: 'boolean', description: 'Type « conception » : true SEULEMENT si l’utilisateur demande explicitement de refaire ou de modifier une conception déjà TERMINÉE sur ce terrain.' },
     },
     required: ['type', 'objectif'],
   },

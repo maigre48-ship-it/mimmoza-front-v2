@@ -6,6 +6,8 @@
 //     numérotées, étape courante mise en avant, chaque étape cliquable (« Ouvrir » / « Modifier » mène à l'outil existant).
 //   · CarteParcours   : carte compacte du chat (UNE par conversation, mise à jour en place) — pastilles des étapes et
 //     prochaine étape en bouton principal. Cliquer une étape = même action que dans le panneau.
+//     VIS-21 : si la carte d'action de la prochaine étape est déjà dans le fil (devis de mission, brief créatif, devis
+//     de rendu), la carte n'affiche PAS de bouton concurrent mais un renvoi vers cette carte.
 // Composants minces : statuts, résumés et actions viennent de src/lib/studio/parcours.ts (calculés, jamais déclarés).
 // =============================================================================
 import type { ReactNode } from 'react';
@@ -108,7 +110,10 @@ export function CarteParcours({ parcours, onAction, onType, onDetail, reglage }:
     </ol>
     {prochaine ? <div className="mz-parcours__suite">
       <p><strong>Prochaine étape : {String(prochaine.numero)}. {prochaine.titre}</strong><br />{prochaine.raison ?? prochaine.resume}</p>
-      <button type="button" className="is-primaire" onClick={() => onAction(prochaine, prochaine.action)}>{prochaine.action.libelle} <ChevronRight size={14} aria-hidden="true" /></button>
+      {/* VIS-21 : une carte d'action de cette étape est déjà dans le fil (devis, brief) → pas de bouton concurrent. */}
+      {prochaine.carteDansLeFil
+        ? <span className="mz-parcours__renvoi" role="note">{prochaine.carteDansLeFil}</span>
+        : <button type="button" className="is-primaire" onClick={() => onAction(prochaine, prochaine.action)}>{prochaine.action.libelle} <ChevronRight size={14} aria-hidden="true" /></button>}
     </div> : <p className="mz-parcours__fini"><Circle size={10} aria-hidden="true" /> Toutes les étapes sont faites.</p>}
     {prochaine && (prochaine.reglage === 'terrain' || prochaine.reglage === 'programme') && reglage?.(prochaine)}
     {onDetail && <button type="button" className="mz-parcours__detail" onClick={onDetail}>Voir le détail dans l’Espace 3D</button>}

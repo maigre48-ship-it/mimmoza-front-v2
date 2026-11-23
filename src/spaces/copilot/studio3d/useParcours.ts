@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { calculerParcours, type Parcours, type TypeParcours } from '@/lib/studio/parcours';
 import { listerTravaux } from '@/lib/studio/travaux';
 import { listerMissions } from '../agent/agentApi';
+import { useAgentUi } from '../agent/agentUi.store';
 import { BRIEF_PROJET_EVENT, champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
 import type { BriefProjet } from '@/lib/studio/briefProjet';
 import type { ChatMessage } from '../types/copilot.types';
@@ -42,6 +43,8 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
   const [jeton, setJeton] = useState(0);
   const rafraichir = useCallback(() => setJeton((j) => j + 1), []);
   const enCours = messages.some((m) => m.status === 'streaming');
+  // VIS-21 : mission lancée / reprise depuis une carte (devis, parcours, panneau Missions) → le parcours relit la base.
+  const versionMissions = useAgentUi((st) => st.version);
   const nbTermines = messages.filter((m) => m.status !== 'streaming').length;
 
   // Base : missions et rendus de la conversation (jamais bloquant).
@@ -60,7 +63,7 @@ export function useParcours(messages: readonly ChatMessage[], conversationId: st
       if (vivant) setTemoin(etat);
     })().catch(() => undefined);
     return () => { vivant = false; };
-  }, [actif, conversationId, enCours, nbTermines, jeton]);
+  }, [actif, conversationId, enCours, nbTermines, jeton, versionMissions]);
 
   // Rendu en calcul : relecture toutes les 20 s.
   const calcul = travaux.some((t) => ['en_attente', 'en_cours'].includes(String((t as { statut?: unknown }).statut)));

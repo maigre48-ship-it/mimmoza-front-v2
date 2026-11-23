@@ -9,11 +9,12 @@ import { useDocumentUi } from '../document/documentUi.store';
 import '../document/document.css';
 import { JETON_VALEUR_EUR } from '@/lib/billing/grille';
 import { useCopilotStore } from '../store/copilotStore';
-import { annulerMission, lireJournal, lireMissionParId, listerMissions, repondreMission, suivreMission, validerDevis } from './agentApi';
+import { annulerMission, lireJournal, lireMissionParId, listerMissions, repondreMission, suivreMission } from './agentApi';
 import {
   dateCourte, devisExpire, formatEuros, MESSAGE_DEVIS_EXPIRE, formatJetons, libelleJournal, libelleStatut, libelleType,
-  missionActive, missionFinie, peutAnnuler, peutRepondre, progression, tonStatut,
+  missionActive, missionFinie, peutAnnuler, peutRepondre, progression, tonStatut, erreurMissionLisible, missionEnPauseFournisseur,
 } from './agentLogique';
+import { lancerMissionDuDevis, reprendreMissionEnPause } from './lancementMission';
 import type { LigneJournal, Mission } from './agent.types';
 import { RapportMission } from './RapportMission';
 // VIS-15 : ouverture du projet en 3D à la fin d'une mission de conception.
@@ -110,7 +111,7 @@ function DetailMission({ id }: { id: string }) {
   const [journal, setJournal] = useState<LigneJournal[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
   const [reponse, setReponse] = useState('');
-  const [occupe, setOccupe] = useState<'repondre' | 'annuler' | 'lancer' | null>(null);
+  const [occupe, setOccupe] = useState<'repondre' | 'annuler' | 'lancer' | 'reprendre' | null>(null);
   const solde = useCopilotStore((s) => s.credits);
   const finJournal = useRef<HTMLLIElement | null>(null);
   const enTrain = useRef(false);
@@ -142,14 +143,16 @@ function DetailMission({ id }: { id: string }) {
 
   useEffect(() => { if (active) finJournal.current?.scrollIntoView({ block: 'nearest' }); }, [journal.length, active]);
 
-  const agir = async (genre: 'repondre' | 'annuler' | 'lancer') => {
+  const agir = async (genre: 'repondre' | 'annuler' | 'lancer' | 'reprendre') => {
     if (!mission) return;
     if (genre === 'annuler' && !window.confirm('Arrêter cette mission ? Ce qui n’a pas été utilisé vous sera rendu.')) return;
     setOccupe(genre); setErreur(null);
     try {
+      // VIS-21 : lancer / reprendre = les MÊMES fonctions que la carte du devis et le parcours.
       const m = genre === 'repondre' ? await repondreMission(mission.id, reponse.trim())
         : genre === 'annuler' ? await annulerMission(mission.id)
-        : await validerDevis(mission.id);
+        : genre === 'reprendre' ? await reprendreMissionEnPause(mission.id)
+        : await lancerMissionDuDevis(mission.id);
       if (m) setMission(m);
       if (genre === 'repondre') setReponse('');
       useAgentUi.getState().signalerChangement();
@@ -186,7 +189,7 @@ function DetailMission({ id }: { id: string }) {
           </p>
         ) : <Barres m={mission} />}
         {mission.statut === 'en_attente' && <p className="mzag-petit" style={{ margin: '10px 0 0' }}>La mission démarre dans la minute.</p>}
-        {mission.erreur && <p className="mzag-alerte" style={{ margin: '12px 0 0' }}>{mission.erreur}</p>}
+        {mission.erreur && <p className="mzag-alerte" style={{ margin: '12px 0 0' }}>{erreurMissionLisible(mission.erreur)}</p>}
         <div className="mzag-actions" style={{ marginTop: 12 }}>
           {mission.statut === 'devis' && (
             <button type="button" className="mzag-btn mzag-btn--plein mzag-btn--petit" disabled={occupe !== null || !devis || devisExpire(devis) || (solde != null && !!devis && solde < devis.jetons_max)} onClick={() => void agir('lancer')}>
@@ -207,7 +210,19 @@ function DetailMission({ id }: { id: string }) {
         <FormulaireRegles missionId={mission.id} question={lireQuestionRegles(mission.question_en_attente)!} onRepondu={() => void relire()} />
       )}
 
-      {peutRepondre(mission) && !lireQuestionRegles(mission.question_en_attente) && (
+      {/* VIS-21 : pause pour panne du fournisseur d'IA → « Reprendre » (même reprise que la carte du devis). */}
+      {missionEnPauseFournisseur(mission) && (
+        <div className="mzag-question">
+          <p className="mzag-alerte" style={{ margin: 0 }}>{mission.question_en_attente}</p>
+          <div className="mzag-actions" style={{ marginTop: 8 }}>
+            <button type="button" className="mzag-btn mzag-btn--plein mzag-btn--petit" disabled={occupe !== null} onClick={() => void agir('reprendre')}>
+              {occupe === 'reprendre' ? 'Reprise…' : 'Reprendre'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {peutRepondre(mission) && !missionEnPauseFournisseur(mission) && !lireQuestionRegles(mission.question_en_attente) && (
         <div className="mzag-question">
           <p>MimmozIA a besoin de vous :</p>
           <TexteLisible texte={mission.question_en_attente} className="mzag-question__texte" reponseDabord />

@@ -13,8 +13,11 @@ import {
   typeParcoursDesMessages, typeParcoursDuTexte, type Parcours, type SourcesParcours, type TravailParcours,
 } from '../../../../src/lib/studio/parcours.ts';
 
+// VIS-21 : mission de conception qui fait foi (une conception terminée n'est pas masquée par un devis postérieur).
+export { missionConceptionDeReference } from '../../../../src/lib/studio/parcours.ts';
+
 export interface PreparationLue { idu: string | null; resume: unknown }
-export interface MissionLue { type: string; statut: string; criteres?: unknown }
+export interface MissionLue { id?: string | null; type: string; statut: string; criteres?: unknown; cree_le?: string | null }
 
 export interface EntreeParcoursServeur {
   instantane: unknown;
@@ -106,7 +109,7 @@ export function sourcesServeur(e: EntreeParcoursServeur): SourcesParcours {
     ...s,
     type,
     terrain: prep.terrain ?? terrainDesCriteres(e.mission?.criteres),
-    conception: e.mission && e.mission.type === 'conception' ? { statut: e.mission.statut, resume: programmeDesCriteres(e.mission.criteres) ?? prep.volume } : null,
+    conception: e.mission && e.mission.type === 'conception' ? { statut: e.mission.statut, resume: programmeDesCriteres(e.mission.criteres) ?? prep.volume, missionId: e.mission.id ?? null } : null,
     volume: e.preparation ? { pret: true, resume: prep.volume ?? '3D préparée par Mimmo.' } : { pret: false, resume: null },
     habillage: { resume: s.habillage.resume ?? habillageFil, attenduParMimmo: false },
     travaux: e.travaux.map(travailParcours).filter((t): t is TravailParcours => t !== null),

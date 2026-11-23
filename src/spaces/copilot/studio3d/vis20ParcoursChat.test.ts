@@ -17,7 +17,7 @@ import { estPageMimmozIA, messageSansNavigation, navigationPermise } from '../ac
 
 /** Cibles traitées DANS la page (CopilotChat.actionHabituelle / JarvisDraftPanel) : chat, panneau, Studio intégré. */
 const CIBLES_DANS_LA_PAGE: ReadonlySet<CibleParcours> = new Set<CibleParcours>([
-  'chat', 'terrain', 'programme', 'dimensions', 'studio-batiment', 'habillage', 'studio-interieur', 'reglages-rendu',
+  'chat', 'terrain', 'programme', 'mission', 'dimensions', 'studio-batiment', 'habillage', 'studio-interieur', 'reglages-rendu',
   'feuille-image', 'feuille-film', 'feuille-visite', 'apercu', 'final', 'resultats',
 ]);
 
@@ -67,12 +67,13 @@ test('étape 1 : cible « terrain » (champ + carte du panneau), jamais un messa
   assert.equal(fait.action.cible, 'terrain'); assert.equal(fait.action.libelle, 'Modifier'); assert.equal(fait.reglage, 'terrain');
 });
 
-test('étape 2 : programme dans l’étape (lancer / modifier), devis et suivi par message à Mimmo', () => {
+test('étape 2 : programme dans l’étape (lancer / modifier) ; devis et suivi = action de la mission (VIS-21)', () => {
   const c = (statut: string | null) => calculerParcours({ ...sourcesVides(), terrain: 'AI0001', conception: statut ? { statut, resume: null } : null }).etapes[1];
   assert.equal(c(null).action.cible, 'programme'); assert.equal(c(null).action.libelle, 'Lancer'); assert.equal(c(null).reglage, 'programme');
   assert.equal(c('echec').action.cible, 'programme');
-  assert.equal(c('devis').action.cible, 'chat'); assert.equal(c('devis').action.libelle, 'Valider'); assert.equal(c('devis').reglage, undefined);
-  assert.equal(c('en_cours').action.cible, 'chat'); assert.equal(c('en_cours').reglage, undefined);
+  // VIS-21 : plus de message « Lance la conception… » — même action que « Lancer la mission » de la carte du devis.
+  assert.equal(c('devis').action.cible, 'mission'); assert.equal(c('devis').action.libelle, 'Lancer la mission'); assert.equal(c('devis').reglage, undefined);
+  assert.equal(c('en_cours').action.cible, 'mission'); assert.equal(c('en_cours').reglage, undefined);
   assert.equal(c('terminee').action.cible, 'programme'); assert.equal(c('terminee').action.libelle, 'Modifier');
   // Étape bloquée (pas de terrain) : pas de champ.
   assert.equal(calculerParcours(sourcesVides()).etapes[1].statut, 'bloquee');

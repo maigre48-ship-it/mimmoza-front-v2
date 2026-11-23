@@ -42,6 +42,7 @@
 .mz-parcours__puces button.is-bloquee { color: #94a3b8; }
 .mz-parcours__suite { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px 10px; border-top: 1px solid #f1f5f9; }
 .mz-parcours__suite p { margin: 0; flex: 1 1 220px; font-size: 12px; color: #334155; }
+.mz-parcours__renvoi { flex: 1 1 200px; font-size: 12px; color: #5b21b6; background: #f5f3ff; border-radius: 10px; padding: 6px 10px; }
 .mz-parcours__suite p strong { color: #1e1b4b; font-size: 13px; }
 .mz-parcours__fini { margin: 0; padding: 8px 12px; color: #15803d; font-size: 12px; }
 .mz-parcours__detail { margin: 0 12px 10px; border-style: dashed; font-weight: 500; }
