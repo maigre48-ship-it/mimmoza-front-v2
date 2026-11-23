@@ -71,6 +71,12 @@ import { plansPourModele } from '../../../../src/lib/studio/plansExtension.ts';
 // LOT P9 : volume d'étude posé au recul sur voie, règles PLU de la conception dans `charge.regles`.
 import { ligneHauteurFiche, poserVolumeSurVoie } from '../../../../src/spaces/copilot/studio3d/implantationVoieVolume.ts';
 import { reglesFicheDepuisReglesLues } from '../../../../src/spaces/copilot/studio3d/reglesFiche.ts';
+// VIS-22 : description du bâtiment (chat : texte ou photo) -> forme / niveaux demandés au moteur, clauses du Studio.
+import {
+  clausesHabillageAvecDescription, commandeAvecDescription, descriptionDuMessage, LIBELLES as LIBELLES_BATIMENT, libelleNiveauxBatiment,
+  nonReproduits, phraseDescription, versBrief, versForme, type DescriptionBatiment, type ValidationDescription,
+} from '../../../../src/lib/studio/descriptionBatiment.ts';
+import { modifierAile, modifierCorps } from '../../../../src/spaces/copilot/studio3d/ficheDimensions.ts';
 import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
 // LOT X3 : projet d'extension de la conversation (maison conservée). LOT X4 site : rendu ouvert (drapeau), projet transmis
@@ -236,7 +242,11 @@ export interface ResumeForme {
 }
 
 /** Lot formes-batiment : choix de forme transmis à la préparation (bloc de la fiche, ou paramètre `forme` de l'outil). */
-export interface ChoixForme { saisie?: SaisieDimensions | null; forme?: Forme | 'auto' | null }
+export interface ChoixForme {
+  saisie?: SaisieDimensions | null; forme?: Forme | 'auto' | null;
+  /** VIS-22 : niveaux demandés par la description du bâtiment (jamais au-dessus de ceux du moteur ; ignorés avec `saisie`). */
+  niveaux?: number | null;
+}
 
 export type IssuePreparation =
   | { ok: true; entree: EntreePreparation; volume: VolumePropose; resume: ResumePreparation; empreinte: string }
@@ -415,6 +425,7 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
   // Sans choix de forme, empreinte inchangée (mêmes lignes qu'avant ce lot) ; avec, la forme saisie y entre.
   const empreinte = await sha256Hex(jsonCanonique({ version: VERSION_CALCUL, conception_id: c.id, entree, ...(f.cle ? { forme: f.cle } : {}) }));
   const resume: ResumePreparation = { ...resumerVolume(volume, controles, pv), forme: f.resume };
+  if (f.noteNiveaux) resume.alertes = [f.noteNiveaux, ...resume.alertes].slice(0, 8);
   // VIS-15 : le volume suit le gabarit RETENU par la conception (niveauxDuGabarit lit le premier R+N) ; l'écart avec la
   // demande est DIT (carte du Dossier 3D, résultat d'outil), jamais laissé en silence.
   const ecart = phraseGabaritRetenu(c.programme, regles, volume.niveaux);
@@ -429,7 +440,7 @@ export async function preparerVolume(c: ConceptionLue, choix: ChoixForme = {}): 
 
 /** Lot formes-batiment : applique le choix de forme au volume du moteur (code PUR de la fiche, aucune seconde implémentation). */
 export function appliquerChoixForme(pf: PreparationFiche, choix: ChoixForme):
-  { ok: true; volume: VolumePropose; resume: ResumeForme; cle: unknown } | { ok: false; raison: string } {
+  { ok: true; volume: VolumePropose; resume: ResumeForme; cle: unknown; /** VIS-22 */ noteNiveaux?: string | null } | { ok: false; raison: string } {
   const comparees = comparerFormes(pf);
   const comparaison = comparees.map((x) => ({ forme: x.forme, libelle: x.libelle, dans_les_regles: x.dansLesRegles, logements: x.logements, niveaux: x.niveaux,
     sdp_m2: x.sdpM2, emprise_m2: x.empriseM2, facade_m: x.facadeM, raison: x.raison }));
@@ -445,11 +456,28 @@ export function appliquerChoixForme(pf: PreparationFiche, choix: ChoixForme):
     if (r.raison) return { ok: false, raison: `${libelle(voulue)} : ${r.raison}` };
     saisie = r.saisie; origine = choix.forme === 'auto' ? 'suggestion' : 'demande';
   }
-  if (!saisie) return { ok: true, volume: pf.volume, resume: { retenue: libelle(base.forme), origine, comparaison }, cle: null };
+  // VIS-22 : niveaux demandés par la description du bâtiment. Le moteur garde la main : jamais AU-DESSUS de ce qu'il a
+  // calculé (règles du terrain, gabarit du projet) ; une demande plus haute est ramenée à son maximum et DITE.
+  let noteNiveaux: string | null = null;
+  const demandes = !choix.saisie && typeof choix.niveaux === 'number' && Number.isFinite(choix.niveaux) && choix.niveaux >= 1 ? Math.round(choix.niveaux) : null;
+  if (demandes !== null) {
+    let s: SaisieDimensions = saisie ?? base;
+    const plafond = Math.max(...s.corps.map((c) => c.niveaux));
+    if (demandes > plafond) noteNiveaux = `Hauteur demandée (${libelleNiveauxBatiment(demandes)}) ramenée à ${libelleNiveauxBatiment(plafond)} : c’est le maximum retenu sur ce terrain (règles et gabarit du projet).`;
+    const avant = JSON.stringify(s);
+    s.corps.forEach((c, i) => {
+      if (c.ailes) c.ailes.forEach((a, k) => { if (a.niveaux > demandes) s = modifierAile(s, i, k, 'niveaux', demandes); });
+      else if (c.niveaux > demandes) s = modifierCorps(s, i, 'niveaux', demandes);
+    });
+    if (JSON.stringify(s) !== avant) saisie = s;
+  }
+  if (!saisie) return { ok: true, volume: pf.volume, resume: { retenue: libelle(base.forme), origine, comparaison }, cle: null, noteNiveaux };
   const ev = evaluerSaisie(pf, saisie);
   const bloquante = ev.alertes.find((a) => /déborde|chevauchent/.test(a));
   if (bloquante) return { ok: false, raison: `La forme choisie ne tient pas dans la parcelle : ${bloquante}` };
-  return { ok: true, volume: ev.volume, resume: { retenue: libelle(saisie.forme), origine, comparaison }, cle: ev.modifie ? blocForme(saisie) : null };
+  // VIS-22 : la clé d'empreinte porte aussi les niveaux demandés (forme du moteur sans bloc : maisons, résidence).
+  const cle = ev.modifie ? (blocForme(saisie) ?? (demandes !== null ? { niveaux_demandes: demandes } : null)) : null;
+  return { ok: true, volume: ev.volume, resume: { retenue: libelle(saisie.forme), origine, comparaison }, cle, noteNiveaux };
 }
 
 /**
@@ -956,6 +984,42 @@ export async function briefDuFil(depot: DepotStudio, userId: string, conversatio
   return null;
 }
 
+/**
+ * VIS-22 : description du bâtiment EN VIGUEUR dans la conversation. Le message « Reproduire en 3D » porte la description
+ * ET son habillage (bloc de brief) ; elle ne vaut que si ce message est le DERNIER habillage envoyé : un habillage
+ * choisi plus tard dans l'Espace 3D la remplace (sinon le toit ou le style de la description contrediraient ce choix).
+ */
+export async function descriptionDuFil(depot: DepotStudio, userId: string, conversationId: string): Promise<{ description: DescriptionBatiment; ms: number } | null> {
+  if (!depot.briefsMessages) return null;
+  let lignes: { texte: string; cree_le: string }[] = [];
+  try { lignes = await depot.briefsMessages(userId, conversationId); } catch { return null; }
+  for (const l of lignes) {
+    const v = briefDuMessage(l.texte);
+    const ms = Date.parse(l.cree_le);
+    if (!(v?.ok && v.valeur.brief && Number.isFinite(ms))) continue;
+    const d = descriptionDuMessage(l.texte);
+    return d?.ok ? { description: d.valeur, ms } : null;
+  }
+  return null;
+}
+
+/** VIS-22 : réserves du devis pour un bâtiment décrit (texte ou photo) : ce qui est repris, ce qui ne l'est pas encore. */
+export function reservesDescription(d: DescriptionBatiment, plusieurs = false): string[] {
+  const r: string[] = [];
+  if (d.origine === 'photo') r.push('Bâtiment décrit d’après une photo : elle sert de référence de style, le rendu s’en inspire — ce n’est ni un relevé ni une copie exacte.');
+  if (plusieurs && (d.style === 'basque' || d.style === 'normand')) r.push(`Style ${d.style} (colombages, volets, lucarnes) : appliqué seulement à un bâtiment seul — non appliqué ici (plusieurs bâtiments ou bâtiment à ailes).`);
+  const non = nonReproduits(d);
+  if (non.length) r.push(`Bâtiment décrit — pas encore reproduit dans le rendu : ${non.join(' ; ')}.`);
+  return r;
+}
+
+/** VIS-22 : la description ne s'applique au rendu que si l'habillage retenu est bien le sien (toiture et façade). */
+export function descriptionPourBrief(d: DescriptionBatiment | null | undefined, b: BriefRendu | null): DescriptionBatiment | null {
+  if (!d || !b) return null;
+  const sien = versBrief(d);
+  return sien.toiture === b.toiture && sien.facade === b.facade && sien.teinte === b.teinte ? d : null;
+}
+
 export interface BriefCarte {
   /** LOT X9 : null pour le bloc « photo de ma maison » (image d'extension : fond seul, aucun habillage). */
   brief: BriefRendu | null;
@@ -1267,7 +1331,16 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
     /** Lot P9 : façades recopiées dans `charge.site` (contrat photo-rue §2) ; sinon seulement pour poser le volume. */ facadesDansSite?: boolean;
     /** VIS-04 : champs du brief projet (même passage que FilmVisitePanel : construireProjetChat) ; absent → fiche inchangée. */
     briefProjet?: ChampsContratBrief | null;
+    /**
+     * VIS-22 : description du bâtiment en vigueur (descriptionDuFil). Appliquée seulement si `brief` est bien son habillage
+     * (descriptionPourBrief) : toiture remplacée (quatre pans, monopente, mansarde), style basque / normand et ses éléments
+     * ajoutés à la commande d'UN bâtiment ; pour plusieurs bâtiments, seule la toiture. Absente → fiche inchangée.
+     */
+    description?: DescriptionBatiment | null;
   } = {}): Validation<Obj> {
+  const decrit = descriptionPourBrief(options.description, brief);
+  // Composition ou plusieurs bâtiments : ni style ni éléments (le Studio les poserait sur le premier bâtiment seulement).
+  const decritSansStyle: DescriptionBatiment | null = decrit ? { ...decrit, style: 'contemporain' } : null;
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
   const v0 = p.volume as VolumePropose;
   const parcelle = lireParcelle(entree.parcelle, p.idu);
@@ -1287,20 +1360,20 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
   const insee = /^\d{5}|^2[AB]\d{3}/.test(p.idu) ? p.idu.slice(0, 5) : null;
   // E1-brief : le brief habille la commande de création (seule entrée interprétée par le Studio
   // quand une commande existe) ; le texte `brief` le reprend à titre informatif.
-  const composition = studioComposition(draft)?.map((c) => ({ ...c, commande: commandeAvecBrief(c.commande, brief, true) ?? c.commande })) ?? null;
+  const composition = studioComposition(draft)?.map((c) => ({ ...c, commande: commandeAvecDescription(commandeAvecBrief(c.commande, brief, true), decritSansStyle, true) ?? c.commande })) ?? null;
   // Lot P9 : comment la hauteur est comptée (acrotère compris, décision de prudence) et où le volume est posé.
   // VIS-15 : assiette groupée → UNE entrée `parcelles` dont la géométrie est l'UNION (la pose unique du contrat exige une
   // seule parcelle) ; la liste des parcelles et la surface voyagent dans le brief.
   const assietteFiche = assietteDeLaParcelle(entree.parcelle);
   const lignesP9 = [ligneHauteurFiche(v, rv), ...(v.poseVoie ? [v.poseVoie.message] : []),
     ...(assietteFiche && assietteFiche.idus.length > 1 ? [`assiette groupée : ${libelleAssiette(assietteFiche)}`] : [])].join('\n');
-  const texteBrief = `${brief ? `${draftBrief(draft)}\nhabillage demandé : ${libelleBrief(brief)}` : draftBrief(draft)}\n${lignesP9}`;
+  const texteBrief = `${brief ? `${draftBrief(draft)}\nhabillage demandé : ${libelleBrief(brief)}` : draftBrief(draft)}${decrit ? `\nbâtiment décrit : ${phraseDescription(decrit)}` : ''}\n${lignesP9}`;
   const construit = construireProjetChat({
     conversationId, etudeId: null, sessionId, origine, retourUrl: null, revision: 0, horodatage,
     parcelles: [{ id: p.idu, feature: { type: 'Feature', properties: { id: p.idu, ...(insee ? { code_insee: insee } : {}) }, geometry: parcelle.geometrie } }],
     communeInsee: insee, adresse: entree.commune ?? null, pointAdresse: null, relief: null,
     implantation: vb ? null : poseDepuisVolume(v),
-    brief: texteBrief, commandeArchitecture: composition ? null : commandeAvecBrief(studioCommand(draft), brief),
+    brief: texteBrief, commandeArchitecture: composition ? null : commandeAvecDescription(commandeAvecBrief(studioCommand(draft), brief), decrit, true),
     compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(draft),
     batiments: vb?.batiments ?? null, programmeVolume: vb,
     briefProjet: options.briefProjet ?? null,
@@ -1324,7 +1397,9 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
   return { ok: true, valeur: {
     version: 1, charge, draft, titre: titreRendu(draft), conversation_id: conversationId, origine: 'mimmo', preparation_id: p.id,
     ...(brief ? { brief_rendu: brief } : {}),
-    ...(brief && multi ? { habillage_batiments: habillageBatiments(brief) } : {}),
+    ...(brief && multi ? { habillage_batiments: (() => { const h = habillageBatiments(brief); return { ...h, clauses: clausesHabillageAvecDescription(h.clauses, decrit) }; })() } : {}),
+    // VIS-22 : la description voyage aussi telle quelle (la machine de rendu journalise ce qui n'est pas encore reproduit).
+    ...(decrit ? { description_batiment: decrit } : {}),
     // Lot brief-unifié : bâtiment seul ou composition nommée — clauses et balcons sont déjà dans la commande ;
     // seuls les DÉTAILS (garde-corps, menuiseries, soubassement) voyagent à part, posés par le worker (scene.mts).
     ...(brief && !multi && detailsHabillage(brief) ? { habillage_batiments: { clauses: [], balcons: null, details: detailsHabillage(brief) } } : {}),
@@ -1440,6 +1515,12 @@ export interface EnvStudio {
    * relu par index.ts avec formeDuMessage), jamais fournie par le modèle. Prioritaire sur `input.forme`.
    */
   formeCarte?: Validation<SaisieDimensions> | null;
+  /**
+   * VIS-22 : description du bâtiment validée dans la carte « Votre bâtiment » (bloc ```mimmoza-batiment``` du message REÇU,
+   * relu par index.ts avec descriptionDuMessage), jamais fournie par le modèle. Donne la forme et les niveaux demandés
+   * au moteur quand ni la fiche (`formeCarte`) ni la demande (`input.forme`) ne les fixent.
+   */
+  batimentCarte?: ValidationDescription | null;
 }
 
 /** Identifiant stable de la requête : le même objet de contexte est passé à chaque outil d'une requête. */
@@ -1630,8 +1711,28 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   const carte = env.formeCarte ?? null;
   if (carte && !carte.ok) return erreur(`Forme choisie dans la fiche refusée : ${carte.erreur}`, 'partial');
   const formeVoulue = typeof input.forme === 'string' && (input.forme === 'auto' || FORMES.some((f) => f.valeur === input.forme)) ? input.forme as Forme | 'auto' : null;
-  const p = await preparerVolume(c, carte?.ok ? { saisie: carte.valeur } : { forme: formeVoulue });
+  // VIS-22 : description du bâtiment (carte « Votre bâtiment » de ce message, sinon celle en vigueur dans la conversation) :
+  // elle DEMANDE une forme et des niveaux au moteur, qui garde la main (terrain, règles, gabarit). La fiche (`formeCarte`)
+  // et une forme demandée en texte (`input.forme`) passent avant. Jamais pour une extension (aucun bâtiment neuf).
+  const batiment = env.batimentCarte ?? null;
+  if (batiment && !batiment.ok) return erreur(`Description du bâtiment refusée : ${batiment.erreur}`, 'partial');
+  const description = ext || carte?.ok ? null : batiment?.ok ? batiment.valeur
+    : env.userId && env.conversationId ? (await descriptionDuFil(env.depot, env.userId, env.conversationId))?.description ?? null : null;
+  const demande = description ? versForme(description) : null;
+  const formeDecrite = demande?.forme && !formeVoulue ? demande.forme : null;
+  let noteForme: string | null = null;
+  let p = await preparerVolume(c, carte?.ok ? { saisie: carte.valeur } : { forme: formeVoulue ?? formeDecrite, niveaux: demande?.niveaux ?? null });
+  if (!p.ok && formeDecrite) {
+    // La forme décrite ne tient pas sur ce terrain : le moteur garde la sienne, et c'est DIT (jamais un échec muet).
+    const repli = await preparerVolume(c, { forme: null, niveaux: demande?.niveaux ?? null });
+    if (repli.ok) {
+      noteForme = `Forme demandée (${LIBELLES_BATIMENT.forme[formeDecrite].toLowerCase()}) non retenue sur ce terrain : ${p.raison.replace(/[.\s]+$/u, '')}. Le moteur a gardé la forme qui tient.`;
+      p = repli;
+    }
+  }
   if (!p.ok) return erreur(p.raison, 'partial');
+  if (noteForme) p.resume.alertes = [noteForme, ...p.resume.alertes].slice(0, 8);
+  const notesDescription = description ? [noteForme, ...p.resume.alertes.filter((x) => x.startsWith('Hauteur demandée'))].filter((x): x is string => !!x) : [];
   const id = await env.depot.enregistrerPreparation(env.userId!, {
     conception_id: c.id, conversation_id: env.conversationId, idu: c.idu, empreinte: p.empreinte,
     entree: p.entree, volume: p.volume, resume: p.resume, origine: env.mission ? 'mission' : 'chat', version_calcul: VERSION_CALCUL,
@@ -1655,6 +1756,8 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     data: {
       preparation_id: id, conception_id: c.id, idu: c.idu, commune: c.commune, empreinte: p.empreinte,
       calcul: 'déterministe — moteur du Dossier 3D (volumeParcelle + implantationProgramme), aucune IA',
+      // VIS-22 : description du bâtiment appliquée (forme / niveaux demandés au moteur) et ce qui n'est pas encore reproduit.
+      ...(description && !env.mission ? { batiment_decrit: { description: phraseDescription(description), ecarts: notesDescription, pas_encore_reproduit: nonReproduits(description) } } : {}),
       // VIS-15 : écart de gabarit et assiette groupée, à dire tels quels.
       ...(p.resume.gabarit_retenu ? { gabarit_retenu: p.resume.gabarit_retenu } : {}),
       ...(p.resume.assiette ? { assiette: p.resume.assiette } : {}),
@@ -1671,6 +1774,8 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     message:
       (p.resume.gabarit_retenu ? `GABARIT : écris tel quel « ${p.resume.gabarit_retenu} » (le volume suit le gabarit retenu par la conception). ` : '') +
       (p.resume.assiette ? `ASSIETTE GROUPÉE : ${p.resume.assiette}. ` : '') +
+      (description && !env.mission ? 'BÂTIMENT DÉCRIT par l’utilisateur (`batiment_decrit`) : la forme et la hauteur demandées ont été soumises au moteur — dis en une phrase ce qui a été retenu, ' +
+        'reprends tels quels les `ecarts` s’il y en a, et cite en une phrase ce qui n’est `pas_encore_reproduit` (jamais « copie exacte »). L’habillage décrit est enregistré : ne le redemande pas. ' : '') +
       'Volume d’étude INDICATIF, calculé par le moteur (ne recalcule rien de tête, cite ces chiffres tels quels). ' +
       'Reprends chaque vérification avec son verdict : « dans la limite de la règle citée » seulement si verdict dans_la_limite, sinon « à vérifier » ou « non contrôlé » ; ' +
       'n’écris jamais « conforme ». Rien n’a été envoyé au Studio : l’utilisateur ouvre la 3D d’un clic. ' +
@@ -1871,7 +1976,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       // LOT X4 site : un projet d'extension a besoin de la limite sur rue pour TOUT rendu (moteur d'extension du worker,
       // qui la lit dans `charge.site.facadesVoie`), film et visite compris.
       const avecExtension = ext !== null;
-      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension, briefProjet });
+      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension, briefProjet,
+        description: avecExtension ? null : (await descriptionDuFil(env.depot, uid, j.c))?.description ?? null });
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }
@@ -2102,8 +2208,11 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   let plusieurs = false;
   let nbBatiments = 0;
   let aAiles = false;
+  // VIS-22 : description du bâtiment en vigueur (dernier habillage envoyé par « Reproduire en 3D »), jamais pour une extension.
+  let decritDevis: DescriptionBatiment | null = null;
   if (src.source.genre === 'preparation') {
-    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet });
+    decritDevis = extension ? null : descriptionPourBrief((await descriptionDuFil(env.depot, uid, env.conversationId))?.description, brief);
+    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet, description: decritDevis });
     if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
     plusieurs = ((f.valeur.charge as { compositionArchitecture?: unknown[] }).compositionArchitecture?.length ?? 0) >= 2;
     nbBatiments = (f.valeur.charge as { batiments?: unknown[] }).batiments?.length ?? 0;
@@ -2152,7 +2261,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     ...(type === 'image' ? { fond: LIBELLES_FOND[fondDe(opts.valeur)] } : {}),
-    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(fondImage?.avertissements ?? []),
+    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(decritDevis ? reservesDescription(decritDevis, plusieurs || nbBatiments > 0) : []), ...(fondImage?.avertissements ?? []),
       ...notesVues,
       ...phrasesPronosticVues(pronostic),
       ...(briefProjet && bp ? ['Brief du projet (Style & tendances, programme, habillage) : transmis au Studio, qui l’applique avec ses matières de catalogue et liste dans le résultat ce qu’il n’applique pas.'] : []),

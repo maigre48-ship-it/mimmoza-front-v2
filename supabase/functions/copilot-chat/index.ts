@@ -69,6 +69,11 @@ import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUT
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
 import { ACTION_PREPARER_3D_CONCEPTION, preparer3DDirect, briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, demandePlansSeuls, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
 import { consigneFormeCarte, formeDuMessage } from './agent/studio.ts';
+// VIS-22 : « dessiner le bâtiment » depuis le chat (description en texte ou photo d'un bâtiment qui ressemble).
+import {
+  consigneBatimentCarte, consigneDessinBatiment, descriptionDuMessage, dessinPlutotQuExtension, executerOutilDecrireBatiment, intentionDessinBatiment,
+  OUTIL_DECRIRE_BATIMENT, OUTIL_DECRIRE_BATIMENT_DEF, suiteDuDessin,
+} from './agent/description-batiment.ts';
 // VIS-16 : « Préparer la plaquette » — état réel des missions, pack plaquette.
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
 import { etatMissionsUtile } from './agent/etat-missions.ts';
@@ -4590,6 +4595,8 @@ const TOOLS: ToolDef[] = [
   OUTIL_EXTENSION_MAISON_DEF,
   // LOT G10b : parcours « maison neuve » (proposé seulement quand le tour en parle ou le poursuit).
   OUTIL_MAISON_NEUVE_DEF,
+  // VIS-22 : description du bâtiment (texte ou photo) -> carte « Votre bâtiment » (proposé seulement quand le tour en parle).
+  OUTIL_DECRIRE_BATIMENT_DEF,
 ];
 
 /**
@@ -4724,6 +4731,9 @@ async function executeTool(
     case OUTIL_MAISON_NEUVE:
       // LOT G10b : même règle (JWT vérifié ; réponses lues dans le message REÇU).
       return (await executerOutilMaisonNeuve(input, envMaisonNeuve(ctx, auth))) as ToolResult;
+    case OUTIL_DECRIRE_BATIMENT:
+      // VIS-22 : le modèle PROPOSE, le serveur VALIDE (listes fermées, bornes) ; la photo jointe est un fait du tour.
+      return executerOutilDecrireBatiment(input, { photoAuTour: PHOTOS_DU_TOUR.has(ctx as unknown as object) }) as ToolResult;
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
   }
@@ -4799,6 +4809,8 @@ function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
     briefCarte: (brut.brief_carte ?? null) as EnvStudio['briefCarte'],
     // Lot formes-batiment : forme choisie dans la fiche « Espace 3D », relue dans le message REÇU (jamais par le modèle).
     formeCarte: (brut.forme_carte ?? null) as EnvStudio['formeCarte'],
+    // VIS-22 : description du bâtiment de la carte « Votre bâtiment », relue dans le message REÇU (jamais par le modèle).
+    batimentCarte: (brut.batiment_carte ?? null) as EnvStudio['batimentCarte'],
     // VIS-18b : fond choisi dans le parcours (instantané de l'écran du tour, relu défensivement ; jamais persisté).
     fondParcours: (brut.fond_parcours ?? null) as EnvStudio['fondParcours'],
   };
@@ -10987,15 +10999,19 @@ async function runOrchestrator(params: {
   // Brief créatif validé dans la carte du chat (bloc du message reçu) : consigne de rappel de l'outil.
   const briefCarte = (ctx as unknown as Record<string, unknown>).brief_carte as EnvStudio['briefCarte'];
   const formeCarte = (ctx as unknown as Record<string, unknown>).forme_carte as EnvStudio['formeCarte'];
-  const consigneCarte = [consigneBriefCarte(briefCarte ?? null), consigneFormeCarte(formeCarte ?? null)].filter(Boolean).join('\n\n');
+  // VIS-22 : bâtiment à reproduire (carte « Votre bâtiment ») — sa consigne REMPLACE celle du bloc d'habillage qui l'accompagne
+  // (« habillage enregistré, ne prépare rien » contredirait « prépare la 3D »).
+  const batimentCarte = (ctx as unknown as Record<string, unknown>).batiment_carte as EnvStudio['batimentCarte'];
+  const consigneCarte = batimentCarte ? consigneBatimentCarte(batimentCarte)
+    : [consigneBriefCarte(briefCarte ?? null), consigneFormeCarte(formeCarte ?? null)].filter(Boolean).join('\n\n');
   const systemBase = params.priorToolResults
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
     : buildSystemPrompt(ctx, mode);
   // VIS-20 : page MimmozIA → consigne « le parcours ne quitte jamais le chat » et outils de sortie retirés.
   const consigneChat = estPageMimmozIA(ctx.route) ? CONSIGNE_RESTER_DANS_LE_CHAT : '';
-  const system = [systemBase, consigneCarte, consigneChat].filter(Boolean).join('\n\n');
+  let system = [systemBase, consigneCarte, consigneChat].filter(Boolean).join('\n\n');
   const availableTools = toolsForMode(mode)
-    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE))
+    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE || tool.name === OUTIL_DECRIRE_BATIMENT))
     .filter((tool) => !outilHorsChat(tool.name, ctx.route));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
@@ -11004,7 +11020,7 @@ async function runOrchestrator(params: {
   // VIS-16 : « Préparer la plaquette » (bouton de fin de conception) = demande de rendu : outils Studio au tour.
   const plaquetteAuTour = agentDisponible(ctx.vertical) && demandePlaquette(userText);
   const studioAuTour = agentDisponible(ctx.vertical)
-    && (Boolean(briefCarte) || Boolean(formeCarte) || plaquetteAuTour || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
+    && (Boolean(briefCarte) || Boolean(formeCarte) || Boolean(batimentCarte) || plaquetteAuTour || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
   // LOT X3 : parcours « extension de maison » — demandé dans ce message, ou poursuivi (dernière question de Mimmo
   // issue du parcours ET réponse qui y répond). Dans ces deux cas, le premier tour est IMPOSÉ sur l'outil.
@@ -11019,10 +11035,15 @@ async function runOrchestrator(params: {
   // porte un parcours d'extension ou de maison neuve : tour imposé sur studio_lancer_rendu (devis des plans seuls).
   const parcoursMaisonDansConversation = agentDisponible(ctx.vertical) && params.messages.some((message) => message.role === 'assistant' && suiteDuParcoursMaison(extractText(message.content)));
   const plansAuTour = (parcoursDansConversation || parcoursMaisonDansConversation) && demandePlansSeuls(userText);
+  // VIS-22 : un bâtiment ENTIER décrit (« une maison basque R+1…, garage accolé à gauche ») n'est pas une demande d'extension :
+  // le garage ou la véranda y sont des éléments du bâtiment décrit. Sans mot d'agrandissement et hors parcours d'extension,
+  // la description passe devant (sinon l'exemple même de la fonction partait dans le parcours d'extension).
+  const dessinPrime = agentDisponible(ctx.vertical) && !parcoursEnCours && !parcoursDansConversation
+    && dessinPlutotQuExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object));
   const extensionAuTour = !plansAuTour && agentDisponible(ctx.vertical)
-    && (detecterIntentionExtension(userText).extension || (parcoursEnCours && reponseAuParcours(userText)) || retoucheAuTour
+    && ((!dessinPrime && detecterIntentionExtension(userText).extension) || (parcoursEnCours && reponseAuParcours(userText)) || retoucheAuTour
       // LOT G3 : photo de la maison jointe avec une demande d'agrandissement (« extension de 4 × 5 m à gauche »).
-      || intentionPhotoExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object))
+      || (!dessinPrime && intentionPhotoExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object)))
       // LOT G6 : plan de la maison joint, ou valeurs vérifiées dans la carte « Plan lu » : le parcours reprend.
       || messagePlanPourLeParcours(userText)
       // FINITIONS 18/11 : réponse à la carte « Utiliser cette photo pour l'image ? » (mode d'accord « bouton »).
@@ -11034,8 +11055,16 @@ async function runOrchestrator(params: {
     && (detecterIntentionMaisonNeuve(userText) || (parcoursMaisonEnCours && userText.trim().length > 0)
       // FINITIONS 18/11 : réponse à la carte d'accord sur la photo du terrain, plus tard dans la conversation.
       || (accordPhotoDuTexte(userText) !== null && parcoursMaisonDansConversation));
+  // VIS-22 : « dessiner le bâtiment » — description de l'allure du bâtiment, ou photo d'un bâtiment qui ressemble. Jamais
+  // pendant un parcours d'extension ou de maison neuve (leurs photos et leurs réponses leur appartiennent), ni sur le
+  // message du bouton « Reproduire en 3D » (bloc : la 3D est préparée, la carte n'est pas reproposée).
+  const photoAuTour = PHOTOS_DU_TOUR.has(ctx as unknown as object);
+  const batimentAuTour = agentDisponible(ctx.vertical) && !batimentCarte && !plansAuTour && !extensionAuTour && !parcoursEnCours && !maisonAuTour && !parcoursMaisonEnCours
+    && (intentionDessinBatiment(userText, photoAuTour) || (suiteDuDessin(texteAssistantPrecedent) && userText.trim().length > 0));
+  if (batimentAuTour && intentionDessinBatiment(userText, photoAuTour)) system = `${system}\n\n${consigneDessinBatiment(photoAuTour)}`;
   const selectedNames = new Set([
     ...selection.toolNames,
+    ...(batimentAuTour ? [OUTIL_DECRIRE_BATIMENT] : []),
     ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
     // LOT G7 : une retouche d'extension peut relancer l'image de la variante (même photo, même placement).
     ...(studioAuTour || retoucheAuTour || plansAuTour ? NOMS_OUTILS_STUDIO : []),
@@ -11947,6 +11976,8 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).brief_carte = briefDuMessage(payload.message);
     // Lot formes-batiment : même principe pour la forme choisie dans la fiche (bloc ```mimmoza-forme```).
     (effectiveContext as unknown as Record<string,unknown>).forme_carte = formeDuMessage(payload.message);
+    // VIS-22 : même principe pour le bâtiment décrit (bloc ```mimmoza-batiment``` du bouton « Reproduire en 3D »).
+    (effectiveContext as unknown as Record<string,unknown>).batiment_carte = descriptionDuMessage(payload.message);
     // VIS-18b : fond de l'image choisi dans le parcours (même principe : posé après l'instantané, jamais persisté).
     (effectiveContext as unknown as Record<string,unknown>).fond_parcours = fondDuParcours(instantaneParcours);
     // LOT X3 : le parcours d'extension lit les réponses dans le message REÇU (même principe : jamais persisté).

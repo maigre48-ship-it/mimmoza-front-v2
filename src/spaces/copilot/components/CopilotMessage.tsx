@@ -41,6 +41,10 @@ import { variantesDeConversation } from '../studio3d/variantesChat';
 import { CarteAccordPhoto } from '../studio3d/CarteAccordPhoto';
 import { dernierAppelPhotoProjet, lireDemandeAccordPhoto, OUTILS_PHOTO_PROJET } from '@/lib/studio/accordPhoto';
 import { lireVueExtension, OUTIL_EXTENSION_MAISON } from '../studio3d/extensionMaison';
+// VIS-22 (23/11/2026) — « dessiner le bâtiment » : carte « Votre bâtiment » (ce que Mimmo a compris, modifiable, UN bouton).
+import { CarteDescriptionBatiment } from '../studio3d/CarteDescriptionBatiment';
+import { lireCarteBatiment } from '../studio3d/descriptionBatimentChat';
+import { sansBlocDescription } from '@/lib/studio/descriptionBatiment';
 // Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
 import { LigneHabillage } from '../studio3d/LigneHabillage';
 // LOT P2 (11/11/2026) — image dans sa rue : carte « Fond de l'image » sous le devis d'une image.
@@ -169,7 +173,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   if (isUser) {
     // LOT BRIEF-CRÉATIF : le bloc ```mimmoza-brief``` (relu par le serveur) est masqué ; une pastille le signale.
     const blocBrief = lireBlocBrief(message.text);
-    const blocParcours = lireBlocParcours(blocBrief.visible);
+    // VIS-22 : le bloc ```mimmoza-batiment``` du bouton « Reproduire en 3D » est masqué lui aussi ; une pastille le signale.
+    const blocBatiment = sansBlocDescription(blocBrief.visible);
+    const blocParcours = lireBlocParcours(blocBatiment.visible);
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
         <div style={{
@@ -177,7 +183,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
           background: T.userBubble, border: `1px solid ${T.border}`,
           color: T.text, fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap',
         }}>
-          {blocBrief.brief && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 600 }}>Brief créatif</span>}
+          {blocBrief.brief && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 600 }}>{blocBatiment.description ? 'Bâtiment à reproduire' : 'Brief créatif'}</span>}
           {blocBrief.brief && <br />}
           {blocParcours.apercuValide && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#dcfce7', color: '#15803d', fontSize: 11, fontWeight: 600 }}>Aperçu validé</span>}
           {blocParcours.apercuValide && <br />}
@@ -194,6 +200,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} /> : null; }
             { const suivi = suivisRendu.get(tc.id); if (suivi) return <CarteSuiviRendu indice={suivi} onSend={onSend} />; }
             if (suivisRemplaces.has(tc.id)) return <p style={{ margin: '4px 0', color: T.textMuted, fontSize: 12 }}>Suivi de ce rendu : voir la carte à jour plus bas dans la conversation.</p>;
+            // VIS-22 : description du bâtiment comprise par Mimmo → carte modifiable (à la place de la carte d'outil).
+            { const batiment = lireCarteBatiment(tc); if (batiment) return <CarteDescriptionBatiment key={tc.id} carte={batiment} messageId={message.id} onSend={onSend} />; }
             { const photo = lireDemandePhotoMaison(tc); if (photo) return <DemandePhotoMaison requise={photo} contour={photo.contour} onSend={onSend} afficherTexte />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
@@ -253,6 +261,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     estAppelDevis(tc.name)
     || suivisRendu.has(tc.id)
     || !!lireDemandePhotoMaison(tc)
+    || !!lireCarteBatiment(tc)
     || !!lireDemandeBrief(tc)
     || (OUTILS_PHOTO_PROJET.has(tc.name) && tc.status !== 'running' && !!lireDemandeAccordPhoto(tc.output))
     || (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running')

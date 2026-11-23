@@ -71,6 +71,8 @@ export function instantaneParcoursPour(conversationId: string | null | undefined
 
 /** Studio intégré (même origine) : étape et sous-onglet ouverts au prochain chargement (mémoire des colonnes du Studio). */
 export const CLE_COLONNES_STUDIO = 'mimmozia.ui.colonnes';
+/** VIS-23 — étape demandée au prochain chargement du Studio (même nom que `CLE_ETAPE_DEMANDEE` côté Studio). */
+export const CLE_ETAPE_DEMANDEE_STUDIO = 'mimmozia.ui.etape-demandee';
 export function preparerEtapeStudio(etape: 'batiment' | 'amenagement', sous: string): void {
   try {
     const brut = JSON.parse(window.localStorage.getItem(CLE_COLONNES_STUDIO) ?? 'null') as Record<string, unknown> | null;
@@ -79,6 +81,10 @@ export function preparerEtapeStudio(etape: 'batiment' | 'amenagement', sous: str
     window.localStorage.setItem(CLE_COLONNES_STUDIO, JSON.stringify({
       panneauReplie: false, expert: false, ...base, etape, sous: { ...sousAvant, [etape]: sous },
     }));
+    // VIS-23 (23/11/2026) — DEMANDE explicite, datée, à usage unique : à l'arrivée du projet, le Studio ouvrait
+    // toujours « Terrain » (la mémoire des colonnes ne dit pas « on me demande cette étape maintenant »). Le Studio lit
+    // cette clé au chargement (valable 2 minutes), la retire, et ouvre l'étape demandée à la place de « Terrain ».
+    window.localStorage.setItem(CLE_ETAPE_DEMANDEE_STUDIO, JSON.stringify({ etape, sous, at: Date.now() }));
   } catch { /* stockage indisponible : le Studio s'ouvre sur sa dernière étape */ }
 }
 

@@ -25,6 +25,10 @@ import type { ProjetMimmozaV2 } from '@/spaces/promoteur/shared/echangeStudio/mi
 // « Voir en 3D », le film / la visite / l'image de FilmVisitePanel et le chat (construireProjetChat).
 import { facadeDesChamps, type ChampsContratBrief } from '@/lib/studio/briefProjet';
 import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
+// VIS-22 : bâtiment décrit dans le chat (texte ou photo) — ses clauses habillent la commande envoyée au Studio.
+import { commandeAvecDescription, type DescriptionBatiment } from '@/lib/studio/descriptionBatiment';
+import { descriptionCourante } from './descriptionBatimentChat';
+import { useCopilotStore } from '../store/copilotStore';
 
 /** Terrain retenu pour la conversation, ou celui qui vient d'être confirmé. */
 export type TerrainCharge = Pick<ConfirmedTerrain, 'parcel' | 'point' | 'implantation' | 'accesses'> & {
@@ -60,6 +64,11 @@ export async function preparerChargeVoirEn3D(
     autoriserEtudeActive?: boolean;
     /** VIS-04 : champs du brief projet ; absent → ceux de l'étude de la conversation ; null → aucun brief. */
     briefProjet?: ChampsContratBrief | null;
+    /**
+     * VIS-22 : description du bâtiment à appliquer ; absente → celle en vigueur dans la conversation AFFICHÉE (dernier
+     * message « Reproduire en 3D », tant qu'aucun autre habillage n'a été choisi ensuite) ; null → aucune.
+     */
+    description?: DescriptionBatiment | null;
   } = {},
 ): Promise<PreparationChargeStudio> {
   // Également utilisé par le film et les rappels photo : contrôle avant stockage, signature ou upload.
@@ -80,6 +89,10 @@ export async function preparerChargeVoirEn3D(
     : options.autoriserEtudeActive === false ? null : champsBriefDeLaConversation(conversationId)?.champs ?? null;
   const facadeBrief = facadeDesChamps(briefProjet);
   const composition = studioComposition(fiche, facadeBrief);
+  // VIS-22 : un seul bâtiment simple → façade, ouvertures, balcons, toiture, style et éléments de la description sont
+  // ajoutés à la commande de création (mêmes formulations que le rendu). Plusieurs bâtiments ou bâtiment à ailes : le
+  // Studio reçoit le volume bâtiment par bâtiment, sans habillage (limite connue, dite dans la carte).
+  const description = options.description !== undefined ? options.description : descriptionDeLaConversation(conversationId);
   // Volume multi-bâtiments du Dossier 3D : seulement pour la fiche tirée de ce volume (sinon bâtiment unique historique).
   // Lot formes-batiment : un seul bâtiment à ailes (L, U, cour, redans) part aussi par `batiments`.
   const volume = retenue.volumeBatiments && transportParBatiments(retenue.volumeBatiments.batiments)
@@ -96,12 +109,20 @@ export async function preparerChargeVoirEn3D(
     parcelles, communeInsee: insee, adresse: retenue.adresse ?? fiche.localisation,
     pointAdresse: retenue.point, relief: reliefConnu,
     implantation: volume ? null : retenue.implantation ?? null, accesses: volume ? undefined : retenue.accesses,
-    brief: draftBrief(fiche), commandeArchitecture: composition ? null : studioCommand(fiche, facadeBrief),
+    brief: draftBrief(fiche), commandeArchitecture: composition ? null : commandeAvecDescription(studioCommand(fiche, facadeBrief), description),
     compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(fiche), plans, panoramas,
     batiments: volume?.batiments ?? null, programmeVolume: volume,
     briefProjet,
   });
   return { construit, parcelles, insee, reliefConnu, conserves, sessionId, etudeId };
+}
+
+/** VIS-22 : description en vigueur dans la conversation affichée par le chat (null pour une autre conversation). */
+function descriptionDeLaConversation(conversationId: string): DescriptionBatiment | null {
+  try {
+    const etat = useCopilotStore.getState();
+    return etat.currentConversationId === conversationId ? descriptionCourante(etat.messages) : null;
+  } catch { return null; }
 }
 
 /** Le projet avec la révision suivante de la conversation (comme à chaque envoi à Studio). */

@@ -1,0 +1,46 @@
+/* VIS-22 — carte « Votre bâtiment » du chat (CarteDescriptionBatiment.tsx). */
+.mz-bat { margin: 10px 0; padding: 14px 16px; border: 1px solid rgb(109 93 252 / 0.22); border-radius: 14px; background: #ffffff; color: #0f172a; font-size: 13px; line-height: 1.5; box-shadow: 0 1px 2px rgb(15 23 42 / 0.04); }
+.mz-bat__tete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.mz-bat__tete strong { font-size: 15px; }
+.mz-bat__sous { margin: 2px 0 0; color: #5b5f78; font-size: 12px; }
+.mz-bat__origine { flex: none; padding: 2px 10px; border-radius: 999px; background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.mz-bat__photo { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid #d97706; border-radius: 0 8px 8px 0; background: #fffbeb; color: #78350f; font-size: 12px; }
+
+.mz-bat__groupe { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
+.mz-bat__groupe h4 { margin: 0 0 6px; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.mz-bat__rang { display: grid; grid-template-columns: minmax(96px, 150px) minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 2px; padding: 4px 0; }
+.mz-bat__nom { color: #334155; font-weight: 500; }
+.mz-bat__valeur { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.mz-bat__choix { max-width: 100%; padding: 4px 26px 4px 8px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #f8fafc; color: #0f172a; font: inherit; cursor: pointer; }
+.mz-bat__choix:hover { border-color: rgb(109 93 252 / 0.5); }
+.mz-bat__choix:focus-visible, .mz-bat__bouton:focus-visible, .mz-bat__retirer:focus-visible { outline: 2px solid rgb(109 93 252); outline-offset: 1px; }
+.mz-bat__choix:disabled { cursor: not-allowed; opacity: 0.6; }
+.mz-bat__note { grid-column: 2 / -1; margin: 0; color: #64748b; font-size: 12px; }
+.mz-bat__rang.is-non .mz-bat__note { color: #9a3412; }
+.mz-bat__etats { display: inline-flex; gap: 4px; justify-self: end; }
+.mz-bat__etat { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: help; }
+.mz-bat__etat.is-reproduit { background: #dcfce7; color: #166534; }
+.mz-bat__etat.is-approche { background: #e0f2fe; color: #075985; }
+.mz-bat__etat.is-non_reproduit { background: #ffedd5; color: #9a3412; }
+.mz-bat__etat.is-verifier { background: #fef3c7; color: #92400e; }
+.mz-bat__pastille-couleur { display: inline-block; width: 16px; height: 16px; border: 1px solid #cbd5e1; border-radius: 50%; }
+.mz-bat__retirer { padding: 2px 8px; border: 1px solid #e2e8f0; border-radius: 8px; background: transparent; color: #475569; font: inherit; font-size: 12px; cursor: pointer; }
+.mz-bat__retirer:hover { border-color: #dc2626; color: #b91c1c; }
+.mz-bat__vide, .mz-bat__remarques { margin: 0 0 4px; color: #64748b; font-size: 12px; }
+.mz-bat__ajout { margin-top: 4px; }
+.mz-bat__ajustements { margin: 10px 0 0; padding: 8px 10px 8px 26px; border-radius: 8px; background: #f8fafc; color: #475569; font-size: 12px; }
+
+.mz-bat__pied { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f1f5f9; }
+.mz-bat__bilan { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-weight: 600; }
+.mz-bat__aide { color: #64748b; font-size: 12px; font-weight: 400; }
+.mz-bat__bouton { flex: none; padding: 9px 16px; border: 0; border-radius: 10px; background: rgb(109 93 252); color: #ffffff; font: inherit; font-weight: 600; cursor: pointer; }
+.mz-bat__bouton:hover:not(:disabled) { background: rgb(91 76 230); }
+.mz-bat__bouton:disabled { background: #e2e8f0; color: #64748b; cursor: default; }
+.mz-bat__envoye { margin: 8px 0 0; color: #166534; font-size: 12px; }
+
+@media (max-width: 560px) {
+  .mz-bat__rang { grid-template-columns: minmax(0, 1fr) auto; }
+  .mz-bat__valeur { grid-column: 1 / -1; grid-row: 2; }
+  .mz-bat__note { grid-column: 1 / -1; }
+  .mz-bat__pied { flex-direction: column; align-items: stretch; }
+}

@@ -690,7 +690,7 @@ export default function MimmozIAPage() {
         // sans accusé (Studio d'avant VIS-18a, encore en chargement), le message VIS-17 d'origine.
         setStudio3d({ ...avant, ouvert: true });
         void ouvrirEtapeStudio({ etapeStudio: d.etape, sousOnglet: d.sous }, { cadre: cadreCourant(conversationId), projetId: projetIdChat(conversationId), canal: null })
-          .then((issue) => d.repondre(issue.etat === 'ok' ? null : issue.etat === 'refus' ? issue.message : `Le Studio était déjà ouvert : dans sa colonne de gauche, choisissez l’étape ${libelle}.`));
+          .then((issue) => d.repondre(issue.etat === 'ok' ? null : issue.etat === 'refus' ? issue.message : `Le Studio était déjà ouvert : revenez sur son onglet (étape ${libelle}).`));
         return;
       }
       void (async () => {
