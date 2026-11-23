@@ -210,14 +210,15 @@ async function charger() {
 }
 const texte = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, '’').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
 
-test('panneau : cible (étape 4), gamme (étape 5) et fond (étape 6) réglables dans l’étape, valeurs mémorisées affichées', async () => {
+test('carte du chat (23/11 : seule à porter les réglages) : cible (étape 4), gamme (étape 5) et fond (étape 6) réglables dans l’étape, valeurs mémorisées affichées', async () => {
   const stock = new Map<string, string>([[`mimmoza.parcours.${CONV}`, JSON.stringify({ projet: { gamme: 'standard', cible: 'Seniors' }, fond: { fond: 'photo_rue' } })]]);
   (globalThis as { window?: unknown }).window = { localStorage: { getItem: (k: string) => stock.get(k) ?? null, setItem: (k: string, v: string) => stock.set(k, v) }, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
   try {
     const { m, h, rendre } = await charger();
     const s = assemblerSourcesEcran(entree({ projet: { gamme: 'standard', cible: 'Seniors' }, fond: { fond: 'photo_rue' } }));
     const p = calculerParcours(s);
-    const html = rendre(h(m.ParcoursPanneau, { parcours: p, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: CONV, messages: fil }) }));
+    const html = rendre(h(m.CarteParcours, { parcours: p, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: CONV, messages: fil }) }));
+    assert.equal((rendre(h(m.ParcoursPanneau, { parcours: p })).match(/<button/g) ?? []).length, 0, 'récapitulatif de l’Espace 3D : aucun réglage, aucun bouton');
     const t = texte(html);
     assert.match(t, /Pour qui : Primo-accédants Familles Investisseurs Seniors/);
     assert.match(t, /Gamme : Standard Confort Premium/);

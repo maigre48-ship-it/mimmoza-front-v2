@@ -16,7 +16,7 @@
 // et un bandeau dit où en est le relief (délai maximal 25 s, message clair).
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Loader2, Mountain, RotateCw, Maximize2, PanelRight } from "lucide-react";
+import { Box, Download, ExternalLink, Loader2, Mountain, RotateCw, X } from "lucide-react";
 import { demarrerPoigneeDeMain, examinerMessageStudio, originesStudio } from "@/spaces/promoteur/shared/echangeStudio/transportStudio";
 import type { ProjetMimmozaV2 } from "@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2";
 import { DELAI_STUDIO_MUET_MS, lireFermetureStudio, messageRelief, messageStudioMuet, type PoseChat } from "./projetChat";
@@ -44,7 +44,8 @@ type EtatRelief = { texte: string; erreur: boolean; enCours: boolean };
 
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 
-const CLE_AFFICHAGE_STUDIO = "mzia.studio.affichage";
+/** Nom de l'onglet du Studio : un seul onglet, réutilisé d'une ouverture à l'autre. */
+const NOM_ONGLET_STUDIO = "mimmoza-studio";
 
 export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve }: {
   demande: DemandeStudioIntegre | null;
@@ -55,20 +56,39 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
   /** LOT F5 — relevé de l'existant posé (validé) dans le Studio : synthèse relue pour les écrans du site. */
   onReleve?: (synthese: SyntheseReleve) => void;
 }) {
-  const cadre = useRef<HTMLIFrameElement | null>(null);
   const [connecte, setConnecte] = useState(false);
-  // 23/11 — « je reste dans le chat » : par défaut le Studio s'ouvre À CÔTÉ du chat (chat visible à gauche) ;
-  // plein écran au choix, mémorisé sur ce navigateur.
-  const [cote, setCote] = useState<boolean>(() => { try { return window.localStorage.getItem(CLE_AFFICHAGE_STUDIO) !== "plein"; } catch { return true; } });
-  const basculerAffichage = () => setCote((c) => {
-    try { window.localStorage.setItem(CLE_AFFICHAGE_STUDIO, c ? "plein" : "cote"); } catch { /* stockage indisponible */ }
-    return !c;
-  });
+  // 23/11 — le Studio s'ouvre dans un NOUVEL ONGLET (le chat reste la trame principale, entier, dans le sien). La
+  // poignée de main, le relief, l'IFC et le pont du parcours parlent à la fenêtre de cet onglet (même protocole qu'avec
+  // l'ancien cadre). Ouverture bloquée par le navigateur (pas de clic récent) → bouton dans le bandeau.
+  const fenetre = useRef<Window | null>(null);
+  const cible = (): Window | null => { const f = fenetre.current; return f && !f.closed ? f : null; };
+  const [generation, setGeneration] = useState(0);
+  const [bloque, setBloque] = useState(false);
+  const [masque, setMasque] = useState(false);
+  const derniereCle = useRef<string | null>(null);
+  const ouvrirOnglet = (forcer = false) => {
+    if (!demande) return;
+    const nouvelle = forcer || derniereCle.current !== demande.cle || !cible();
+    // Onglet nommé : une nouvelle maquette le recharge, la même maquette le ramène simplement au premier plan.
+    const w = window.open(nouvelle ? demande.url : "", NOM_ONGLET_STUDIO);
+    if (!w) { setBloque(true); return; }
+    setBloque(false);
+    derniereCle.current = demande.cle;
+    if (nouvelle) { fenetre.current = w; setGeneration((g) => g + 1); }
+  };
   useEffect(() => {
-    const actif = !!demande && ouvert && cote;
-    document.body.classList.toggle("mzia-studio-cote", actif);
-    return () => { document.body.classList.remove("mzia-studio-cote"); };
-  }, [demande, ouvert, cote]);
+    if (!demande || !ouvert) return;
+    setMasque(false);
+    ouvrirOnglet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demande?.cle, ouvert]);
+  // Retour sur l'onglet du chat : l'état « ouvert » retombe, pour que la prochaine demande ramène l'onglet du Studio.
+  useEffect(() => {
+    if (!ouvert) return;
+    const surRetour = () => { if (!bloque) fermer.current("projet"); };
+    window.addEventListener("focus", surRetour);
+    return () => window.removeEventListener("focus", surRetour);
+  }, [ouvert, bloque]);
   const [relief, setRelief] = useState<EtatRelief | null>(null);
   const issueRelief = useRef<IssueRelief | null>(null);
   const reliefEnvoye = useRef(false);
@@ -87,7 +107,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
 
   /** R6 — « Télécharger l'IFC 4 » : demande à Studio (protocole mimmoza.studio.ifc4), même origine. */
   const telechargerIfc = () => {
-    const f = cadre.current?.contentWindow;
+    const f = cible();
     if (!f || !demande) return;
     const origine = new URL(demande.url).origin;
     const requeteId = crypto.randomUUID();
@@ -111,7 +131,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
 
   // Une demande = une session : poignée de main, envoi du projet, puis du relief.
   useEffect(() => {
-    if (!demande) return;
+    if (!demande || !cible()) return;
     setConnecte(false);
     setMuet(false);
     setReleve(null);
@@ -121,19 +141,19 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
     const autorisees = originesStudio(ENV.VITE_STUDIO_ORIGINES_AUTORISEES, demande.url);
     let poignee: ReturnType<typeof demarrerPoigneeDeMain> | null = null;
     const envoyerRelief = () => {
-      const f = cadre.current?.contentWindow;
+      const f = cible();
       const issue = issueRelief.current;
       if (!f || !issue || reliefEnvoye.current || !poignee?.connecte()) return;
       reliefEnvoye.current = true;
       f.postMessage(messageRelief(demande.sessionId, issue.ok ? { ok: true, terrain: issue.terrain } : { ok: false, message: issue.message }, issue.ok ? demande.implantation : null), origine);
     };
     const demarrer = () => {
-      const f = cadre.current?.contentWindow;
+      const f = cible();
       if (!f || poignee) return;
       poignee = demarrerPoigneeDeMain(f, origine, demande.sessionId, demande.projet, { maintenir: true, dureeMaxMs: 90_000, ...(demande.complements ? { complements: demande.complements } : {}) });
     };
     const surMessage = (evt: MessageEvent) => {
-      if (evt.source !== cadre.current?.contentWindow) return;
+      if (!cible() || evt.source !== cible()) return;
       const vers = lireFermetureStudio(evt.data);
       if (vers && evt.origin === origine) { fermer.current(vers); return; }
       // LOT F5 — relevé validé : même fenêtre, même origine, session de cette demande ; relu sans rien compléter.
@@ -147,7 +167,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
       const d = examinerMessageStudio({ origin: evt.origin, data: evt.data }, autorisees, window.location.origin, new Set([demande.sessionId]), Boolean(ENV.DEV));
       if (d.type === "pret") {
         poignee?.surPret(d.attendProjet); setConnecte(true); setMuet(false); envoyerRelief();
-        const f = cadre.current?.contentWindow;
+        const f = cible();
         if (f) cadrePret.current?.(f, origine);
       }
     };
@@ -180,32 +200,26 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
       return () => { actif = false; relancer.current = null; window.clearTimeout(delaiMuet); window.removeEventListener("message", surMessage); poignee?.arreter(); };
     }
     return () => { window.clearTimeout(delaiMuet); window.removeEventListener("message", surMessage); poignee?.arreter(); };
-  }, [demande]);
+  }, [demande, generation]);
 
-  if (!demande) return null;
+  if (!demande || masque) return null;
+  const versStudio = () => ouvrirOnglet(!cible());
   return (
-    <div className={`studio-integre${ouvert ? " is-open" : ""}${cote ? " is-cote" : ""}`} role="dialog" aria-label="Studio 3D" aria-hidden={!ouvert}>
-      <header className="studio-integre__bar">
-        <button type="button" className="studio-integre__back" onClick={() => onFermer("projet")}><ArrowLeft size={16} /> {cote ? "Fermer le Studio" : "Retour au chat"}</button>
-        <strong>Studio 3D</strong>
-        <button type="button" className="studio-integre__back" onClick={basculerAffichage}
-          title={cote ? "Studio sur tout l’écran (le chat est masqué)" : "Studio à droite, chat visible à gauche"}>
-          {cote ? <><Maximize2 size={15} /> Plein écran</> : <><PanelRight size={15} /> À côté du chat</>}
-        </button>
-        <button type="button" className="studio-integre__back" disabled={!connecte} onClick={telechargerIfc} title="Export IFC 4 du modèle ouvert dans Studio"><Download size={15} /> IFC 4</button>
-        <button type="button" className="studio-integre__back" onClick={() => onFermer("bilan")}>{demande?.projet.etudeId ? "Bilan" : "Bilan (étude à relier)"}</button>
-        {ifc && <span className="studio-integre__chip" role="status">{ifc}</span>}
-        {releve && <span className="studio-integre__chip" role="status">{releve}</span>}
-        {!connecte && !muet && <span className="studio-integre__chip"><Loader2 size={13} className="studio-integre__spin" /> Ouverture de Studio…</span>}
-        {!connecte && muet && <span className="studio-integre__chip is-error" role="alert">{messageStudioMuet(demande.url, window.location.origin)}</span>}
-        {relief && <span className={`studio-integre__chip${relief.erreur ? " is-error" : ""}`} role="status">
-          {relief.enCours ? <Loader2 size={13} className="studio-integre__spin" /> : <Mountain size={13} />} {relief.texte}
-          {relief.erreur && <button type="button" onClick={() => relancer.current?.()}><RotateCw size={12} /> Réessayer</button>}
-        </span>}
-        {demande.imagesNonEnvoyees > 0 && <span className="studio-integre__chip">{demande.imagesNonEnvoyees} image(s) du tchat non envoyée(s) : « Préparer en détail » pour les classer.</span>}
-      </header>
-      <iframe key={demande.cle} ref={cadre} className="studio-integre__frame" src={demande.url} title="Studio 3D Mimmoza"
-        allow="fullscreen; clipboard-write; xr-spatial-tracking" />
+    <div className="studio-onglet" role="status" aria-label="Studio 3D">
+      <strong><Box size={15} aria-hidden="true" /> Studio 3D</strong>
+      {bloque
+        ? <><span className="studio-onglet__texte">Votre projet est prêt. Le navigateur a retenu l’ouverture automatique :</span>
+          <button type="button" className="studio-onglet__btn is-primaire" onClick={() => ouvrirOnglet(true)}><ExternalLink size={14} aria-hidden="true" /> Ouvrir le Studio (nouvel onglet)</button></>
+        : <><span className="studio-onglet__texte">{connecte ? "ouvert dans un autre onglet — le chat reste ici." : muet ? messageStudioMuet(demande.url, window.location.origin) : "ouverture dans un nouvel onglet…"}</span>
+          <button type="button" className="studio-onglet__btn" onClick={versStudio}><ExternalLink size={14} aria-hidden="true" /> Aller au Studio</button>
+          <button type="button" className="studio-onglet__btn" disabled={!connecte} onClick={telechargerIfc} title="Export IFC 4 du modèle ouvert dans Studio"><Download size={14} aria-hidden="true" /> IFC 4</button></>}
+      {ifc && <span className="studio-onglet__chip">{ifc}</span>}
+      {releve && <span className="studio-onglet__chip">{releve}</span>}
+      {relief && (relief.erreur || relief.enCours) && <span className={`studio-onglet__chip${relief.erreur ? " is-error" : ""}`}>
+        {relief.enCours ? <Loader2 size={13} className="studio-integre__spin" /> : <Mountain size={13} />} {relief.texte}
+        {relief.erreur && <button type="button" onClick={() => relancer.current?.()}><RotateCw size={12} /> Réessayer</button>}
+      </span>}
+      <button type="button" className="studio-onglet__fermer" aria-label="Masquer ce bandeau" title="Masquer ce bandeau" onClick={() => setMasque(true)}><X size={14} /></button>
     </div>
   );
 }

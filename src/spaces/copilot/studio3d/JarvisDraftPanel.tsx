@@ -55,7 +55,7 @@ type Field = keyof typeof LABELS;
 /** R2 — résultat de l'ouverture : `parcelle-requise` = poser la question minimale dans le dossier. */
 export type IssueOuvertureStudio = void | 'parcelle-requise';
 
-export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, onParcours, onTypeParcours, commandeParcours, noticeParcours, onValiderApercu, apercuValide }: {
+export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, commandeParcours, noticeParcours, onValiderApercu, apercuValide }: {
   messages: readonly ChatMessage[];
   conversationId: string | null;
   /** VIS-17 : parcours calculé (CopilotChat), actions des étapes, commande d'une étape cliquée (panneau ou carte du chat). */
@@ -185,9 +185,9 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     switch (c.cible) {
       case 'parcours': defiler(refParcours); break;
       // VIS-20 : terrain et programme se font DANS l'étape (champ, carte cadastrale), jamais sur une autre page.
-      case 'terrain': setReglageOuvert({ cle: 'terrain', carte: false, jeton: jetonParcours }); defiler(refParcours); break;
+      case 'terrain': defiler(refParcours); break; // 23/11 : le champ du terrain est dans la carte du chat
       case 'terrain-carte': setReglageOuvert({ cle: 'terrain', carte: true, jeton: jetonParcours }); defiler(refParcours); break;
-      case 'programme': setReglageOuvert({ cle: 'conception', carte: false, jeton: jetonParcours }); defiler(refParcours); break;
+      case 'programme': defiler(refParcours); break; // 23/11 : les champs du programme sont dans la carte du chat
       case 'dimensions':
         if (ficheOk) defiler(refDimensions);
         else { setNoteParcours('Le volume s’ajuste ici une fois la 3D préparée par Mimmo ; sinon, ouvrez-le dans le Studio.'); defiler(refParcours); }
@@ -207,9 +207,12 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jetonParcours]);
-  const parcoursUi = parcours && onParcours ? <div ref={refParcours}>
-    <ParcoursPanneau parcours={parcours} onAction={onParcours} onType={onTypeParcours} notice={noticeParcours ?? null}
-      reglage={(e) => reglageDeLEtape(e, { conversationId, messages: messages as never, onSend, ouvert: reglageOuvert })} />
+  // 23/11 : récapitulatif en LECTURE SEULE (les commandes sont dans la carte du chat) ; seul détail : la carte
+  // cadastrale de l'étape 1, quand le chat la demande (« Choisir sur la carte »).
+  const parcoursUi = parcours ? <div ref={refParcours}>
+    <ParcoursPanneau parcours={parcours} notice={noticeParcours ?? null}
+      detail={(e) => (e.cle === 'terrain' && reglageOuvert?.cle === 'terrain' && reglageOuvert.carte
+        ? reglageDeLEtape(e, { conversationId, messages: messages as never, onSend, ouvert: reglageOuvert }) : null)} />
     {noteParcours && <p role="status" className="jarvis-dossier__proposal">{noteParcours}</p>}
     {reglagesOuverts && etude && <div ref={refReglages} style={{ margin: '0 0 12px' }}>
       <BriefProjetRenduSection studyId={etude} source="parcours" />

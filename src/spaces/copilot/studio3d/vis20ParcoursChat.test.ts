@@ -163,16 +163,20 @@ async function charger() {
 }
 const texte = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, '’').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
 
-test('rendu : étape 1 dans le panneau ET dans la carte du chat (champ, carte) ; étape 2 pré-remplie depuis la demande', async () => {
+test('rendu : étape 1 dans la carte du chat (champ, carte) ; étape 2 pré-remplie depuis la demande ; récapitulatif sans commande', async () => {
   (globalThis as { window?: unknown }).window = { localStorage: { getItem: () => null, setItem() {} }, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
   try {
     const { m, h, rendre } = await charger();
     const fil = [{ id: 'u1', role: 'user', text: 'Je veux un R+4 de 28 logements T1/T3 à Ascain' }];
     const vide = calculerParcours(sourcesVides());
-    const panneau = texte(rendre(h(m.ParcoursPanneau, { parcours: vide, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: null, messages: fil as never, onSend: () => undefined }) })));
-    assert.match(panneau, /Envoyer à Mimmo/);
-    assert.match(panneau, /Choisir sur la carte/);
-    assert.match(panneau, /Plusieurs parcelles = une assiette/);
+    // 23/11 : le terrain se désigne DANS LA CARTE DU CHAT ; le récapitulatif de l'Espace 3D n'a ni champ ni bouton
+    // (seule la carte cadastrale s'y ouvre, à la demande du chat).
+    const panneau = rendre(h(m.ParcoursPanneau, { parcours: vide }));
+    assert.doesNotMatch(panneau, /<button|<input/);
+    const carte = texte(rendre(h(m.CarteParcours, { parcours: vide, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: null, messages: fil as never, onSend: () => undefined }) })));
+    assert.match(carte, /Envoyer à Mimmo/);
+    assert.match(carte, /Choisir sur la carte/);
+    assert.match(carte, /Plusieurs parcelles = une assiette/);
     const chat = rendre(h(m.CarteParcours, { parcours: vide, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: 'c', messages: fil as never, onSend: () => undefined, dansLeChat: true, onOuvrirCarte: () => undefined }) }));
     assert.match(chat, /aria-label="Adresse ou numéro\(s\) de parcelle\(s\) du terrain"/);
     assert.doesNotMatch(chat, /href=/);
@@ -183,7 +187,7 @@ test('rendu : étape 1 dans le panneau ET dans la carte du chat (champ, carte) ;
     assert.match(html2, /value="T1, T3"/);
     assert.match(texte(html2), /Proposer la mission/);
     // 23/11 — terrain déjà choisi : champ replié, UN SEUL bouton (« Modifier » de l'étape), plus de « Changer de terrain » en double.
-    const replie = texte(rendre(h(m.ParcoursPanneau, { parcours: etape2, onAction: () => undefined, reglage: (e) => m.reglageDeLEtape(e, { conversationId: 'c', messages: fil as never, onSend: () => undefined }) })));
+    const replie = texte(html2);
     assert.doesNotMatch(replie, /Changer de terrain/);
     assert.doesNotMatch(replie, /Adresse, ou parcelle/);
     assert.match(replie, /1\. Terrain Fait .* Modifier/);

@@ -32,12 +32,8 @@ import { reglageDeLEtape } from '../studio3d/ReglagesParcours';
 import { ancreCarteParcours } from '../studio3d/parcoursEcran';
 import type { CommandeParcours } from '../studio3d/JarvisDraftPanel';
 import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from '../studio3d/parcours.store';
-// VIS-18a / VIS-18b : clic d'une étape → Studio déjà ouvert (pont « ouvrir-étape » avec accusé).
-import { EVENEMENT_OUVRIR_ETAPE_STUDIO, type DetailOuvrirEtape } from '../studio3d/pontParcoursSite';
 import { messageValidationApercu } from '@/lib/studio/parcours';
 import { lancerMissionDuDevis, suivreMissionUi } from '../agent/lancementMission';
-// VIS-18b : étapes de personnalisation qu'un Studio déjà ouvert peut prendre en charge.
-const ETAPES_VERS_STUDIO: ReadonlySet<string> = new Set(['volume', 'style', 'interieurs', 'vues', 'scenario', 'pieces']);
 
 /** Fenêtre « Espace 3D » : ouverte, agrandie, réduite en bande sur le côté, ou fermée. */
 type EtatFenetre3D = 'ouvert' | 'large' | 'reduit' | 'ferme';
@@ -268,26 +264,10 @@ export function CopilotChat({
     }
     commanderPanneau(action.cible);
   };
-  // VIS-18a / VIS-18b : Studio déjà ouvert → il passe sur l'étape (accusé) ; aucun Studio (« absent ») → action habituelle.
-  // Seulement pour les étapes de PERSONNALISATION (volume, style, intérieurs, vues / scénario / pièces) : terrain et
-  // conception passent par Mimmo, aperçu et rendu final par le site (seul à lancer et valider les rendus).
-  const actionnerParcours: ActionnerParcours = (etape, action) => {
-    // 23/11 : une étape encore à préparer (action « chat », ex. 3. Volume 3D → « Préparer ») ne passe jamais par le
-    // Studio : il n'a encore rien à montrer, et un Studio ouvert sur un autre état répondait « refus » → rien ne se passait.
-    // 23/11 (2) : idem pour une action directe (cible `mission`, ex. « Préparer » = préparer la 3D de la conception) : un
-    // Studio intégré déjà ouvert accusait « ok » sur l'étape Volume et l'action n'était jamais faite.
-    if (!ETAPES_VERS_STUDIO.has(etape.cle) || action.cible === 'chat' || action.cible === 'mission'
-      || action.cible === 'studio-interieur' || action.cible === 'studio-batiment') { actionHabituelle(etape, action); return; }
-    const detail: DetailOuvrirEtape = { cle: etape.cle, type: parcoursEcran.parcours.type, repondre: (issue) => {
-      // Seul un accusé « ok » du Studio remplace l'action ; tout autre retour (absent, refus, autre projet, version)
-      // garde l'action habituelle pour que le clic ait toujours un effet, avec la raison affichée.
-      if (issue.etat === 'ok') { setNoticeParcours(issue.message || null); return; }
-      if (issue.etat !== 'absent' && issue.message) setNoticeParcours(issue.message);
-      actionHabituelle(etape, action);
-    } };
-    window.dispatchEvent(new CustomEvent(EVENEMENT_OUVRIR_ETAPE_STUDIO, { detail }));
-    if (!detail.prise) actionHabituelle(etape, action); // page sans MimmozIAPage
-  };
+  // 23/11 — le chat est la trame principale : un clic sur une étape fait TOUJOURS son action ici (habillage, feuille des
+  // rendus, dimensions…). Avant (VIS-18a/b), un Studio déjà ouvert « prenait » l'étape et accusait « ok » : avec le Studio
+  // dans un autre onglet, le clic semblait sans effet. Seules les actions « Ouvrir dans le Studio » y mènent.
+  const actionnerParcours: ActionnerParcours = (etape, action) => actionHabituelle(etape, action);
   const validerApercu = (travailId: string) => handleSend(messageValidationApercu(travailId, parcoursEcran.parcours.type));
   const commandeConversation = commandeParcours && commandeParcours.conversation === (currentConversationId ?? null) ? commandeParcours : null;
   // VIS-16 : action du panneau Missions (« Préparer la plaquette », « Ouvrir mon projet en 3D ») → la conversation
@@ -418,10 +398,13 @@ export function CopilotChat({
             }
             const message = <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} onRemplirSaisie={remplirSaisie} onOuvrirHabillage={showStudioDraft ? ouvrirHabillage : undefined} />;
             // VIS-17 : UNE carte « Votre parcours » par conversation, sous la dernière réponse qui touche au parcours, mise à jour en place.
-            if (m.id !== ancreParcours || m.status === 'streaming' || !parcoursEcran.charge) return message;
+            // 23/11 : la carte « Votre parcours » est la TRAME PRINCIPALE — toujours EN BAS du fil (après le dernier
+            // message), une seule, dès que la conversation touche au parcours (ancre trouvée) ; jamais pendant une réponse.
+            if (index !== messages.length - 1 || !ancreParcours || isStreaming || m.status === 'streaming' || !parcoursEcran.charge) return message;
             return <Fragment key={m.id}>{message}<CarteParcours parcours={parcoursEcran.parcours} onAction={actionnerParcours}
               onType={parcoursEcran.choisirType} onDetail={() => commanderPanneau('parcours')} notice={noticeParcours}
-              reglage={(e) => reglageDeLEtape(e, { conversationId: currentConversationId ?? null, messages: messages as never, onSend: (t) => handleSend(t), dansLeChat: true, onOuvrirCarte: () => commanderPanneau('terrain-carte') })} /></Fragment>;
+              reglage={(e, ouvert) => reglageDeLEtape(e, { conversationId: currentConversationId ?? null, messages: messages as never, onSend: (t) => handleSend(t), dansLeChat: true, onOuvrirCarte: () => commanderPanneau('terrain-carte'),
+                ouvert: ouvert ? { cle: ouvert.cle, carte: false, jeton: ouvert.jeton } : null })} /></Fragment>;
           })
         )}
       </div>

@@ -25,6 +25,16 @@ export const TYPES_PARCOURS: readonly TypeParcours[] = ['image', 'film', 'visite
 export const LIBELLES_TYPE_PARCOURS: Readonly<Record<TypeParcours, string>> = { image: 'Images', film: 'Film', visite: 'Visite 360°' };
 
 export type StatutEtape = 'fait' | 'en_cours' | 'a_faire' | 'facultative' | 'bloquee';
+/**
+ * 23/11 — CODE COULEUR des étapes, le même partout (carte du chat, récapitulatif de l'Espace 3D) :
+ * terrain vert, programme bleu, volume violet, style orange, intérieurs rose, vues / scénario / pièces turquoise,
+ * aperçu ambre, final rouge.
+ */
+export const COULEURS_ETAPE: Readonly<Record<CleEtape, string>> = {
+  terrain: '#15803d', conception: '#1d4ed8', volume: '#7c3aed', style: '#c2410c', interieurs: '#be185d',
+  vues: '#0f766e', scenario: '#0f766e', pieces: '#0f766e', apercu: '#b45309', final: '#b91c1c',
+};
+
 export const LIBELLES_STATUT_ETAPE: Readonly<Record<StatutEtape, string>> = {
   fait: 'Fait', en_cours: 'En cours', a_faire: 'À faire', facultative: 'Facultative', bloquee: 'Bloquée',
 };

@@ -86,7 +86,8 @@ test('même handler : carte du devis, panneau Missions et parcours appellent lan
   }
   assert.match(chat, /action\.cible === 'mission'/);
   // La carte du parcours du chat remplace son bouton par le renvoi quand une carte d'action existe.
-  assert.match(lire('./ParcoursGuide.tsx'), /prochaine\.carteDansLeFil\s*\n?\s*\?/);
+  assert.match(lire('./ParcoursGuide.tsx'), /!e\.carteDansLeFil/);
+  assert.match(lire('./ParcoursGuide.tsx'), /mz-parcours__renvoi/);
 });
 
 test('lancement : une seule réservation même si la carte du devis et le parcours sont cliqués ensemble', async () => {
@@ -146,7 +147,7 @@ test('bloc serveur : un devis en attente ne se repropose pas', () => {
 // ── Rendu de la carte du chat (esbuild + react-dom/server, comme vis20) ───────────────────────────────────────────
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 const RACINE = path.resolve(ICI, '../../../..');
-test('rendu : carte « Votre parcours » sous un devis → aucun bouton concurrent ; panneau → « Lancer la mission »', async () => {
+test('rendu : carte « Votre parcours » sous un devis → aucun bouton concurrent ; récapitulatif sans commande', async () => {
   const require = createRequire(import.meta.url);
   const esbuild = require('esbuild') as typeof import('esbuild');
   const r = await esbuild.build({
@@ -164,11 +165,13 @@ test('rendu : carte « Votre parcours » sous un devis → aucun bouton concurre
   const p = calculerParcours(avecDevis());
   const recus: string[] = [];
   const chat = rendre(h(m.CarteParcours, { parcours: p, onAction: (_e, a) => { recus.push(a.cible); } }));
-  assert.match(chat, /Prochaine étape : 2\. Programme &amp; conception/);
+  assert.match(chat, /2\. Programme &amp; conception/);
   assert.match(chat, /mz-parcours__renvoi/);
-  assert.doesNotMatch(chat, /class="is-primaire"[^>]*>(Valider|Lancer la mission)/);
-  const panneau = rendre(h(m.ParcoursPanneau, { parcours: p, onAction: () => undefined }));
-  assert.match(panneau, />Lancer la mission</);
+  assert.doesNotMatch(chat, /aria-label="Étape 2[^"]*"/, 'devis dans le fil : aucun bouton concurrent sur l’étape 2');
+  assert.doesNotMatch(chat, />(Valider|Lancer la mission)</);
+  // 23/11 : le récapitulatif de l'Espace 3D n'a aucune commande (la carte du devis, dans le fil, est la seule).
+  const panneau = rendre(h(m.ParcoursPanneau, { parcours: p }));
+  assert.doesNotMatch(panneau, /<button/);
 });
 
 // ── 3. Conception terminée puis devis postérieurs non lancés (données réelles du 23/11, agent_missions) ────────────────

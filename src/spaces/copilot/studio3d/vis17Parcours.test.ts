@@ -140,33 +140,40 @@ async function chargerComposants() {
 }
 const texte = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, '’').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/\s+/g, ' ');
 
-test('panneau Espace 3D : 8 étapes numérotées, courante mise en avant, actions des outils existants, sélecteur', async () => {
+// 23/11 — le chat est la trame principale : le panneau est un récapitulatif EN LECTURE SEULE (aucun bouton), la carte du
+// chat porte TOUTES les étapes, chacune avec sa couleur et son unique bouton.
+test('Espace 3D : récapitulatif en lecture seule — 8 étapes, couleurs, statuts, AUCUNE commande', async () => {
   const { m, h, rendre } = await chargerComposants();
   const p = calculerParcours(assemblerSourcesEcran(entree()));
-  const html = rendre(h(m.ParcoursPanneau, { parcours: p, onAction: () => undefined, onType: () => undefined }));
+  const html = rendre(h(m.ParcoursPanneau, { parcours: p }));
   const t = texte(html);
   for (const titre of ['1. Terrain', '2. Programme & conception', '3. Volume 3D', '4. Style & façades', '5. Intérieurs', '6. Vues & ambiance', '7. Aperçu', '8. Images finales & livraison']) assert.ok(t.includes(titre), titre);
   assert.match(t, /3 étapes sur 8 · prochaine : 4\. Style & façades/);
+  assert.match(t, /les actions sont dans le chat/);
   assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
-  assert.match(html, /is-style[^"]*|mz-parcours__etape is-a_faire is-courante/);
-  assert.match(t, /Voir \/ ajuster/); // étape 3 faite : ajuster le volume
-  assert.match(t, /Ouvrir dans le Studio/);
+  assert.equal((html.match(/<button/g) ?? []).length, 0, 'aucun bouton dans le récapitulatif');
   assert.match(t, /Validez d’abord l’aperçu\. → étape 7/);
-  assert.match(html, /role="radio" aria-checked="true"[^>]*>Images/);
+  // Code couleur : une couleur par étape, la même que dans la carte du chat.
+  assert.match(html, /--etape:\s*#15803d/); assert.match(html, /--etape:\s*#7c3aed/); assert.match(html, /--etape:\s*#b91c1c/);
   assert.doesNotMatch(t, /studio_|preparation_id|mimmoza-/); // pas de jargon technique
 });
 
-test('carte du chat : compacte, prochaine étape en bouton principal, lien vers le détail', async () => {
+test('carte du chat : toutes les étapes, un seul bouton d’action par étape, étape courante en bouton principal', async () => {
   const { m, h, rendre } = await chargerComposants();
   const p = calculerParcours(assemblerSourcesEcran(entree()));
   const html = rendre(h(m.CarteParcours, { parcours: p, onAction: () => undefined, onType: () => undefined, onDetail: () => undefined }));
   const t = texte(html);
   assert.match(t, /Votre parcours · Images/);
   assert.match(t, /3 sur 8 étapes faites/);
-  assert.match(t, /Prochaine étape : 4\. Style & façades/);
-  assert.match(html, /class="is-primaire"[^>]*>Choisir/);
-  assert.match(t, /Voir le détail dans l’Espace 3D/);
-  assert.equal((html.match(/<li>/g) ?? []).length, 8);
+  assert.equal((html.match(/<li /g) ?? []).length, 8);
+  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
+  assert.equal((html.match(/mz-parcours__action is-primaire/g) ?? []).length, 1, 'un seul bouton principal');
+  assert.match(html, /aria-label="Étape 4 — Style &amp; façades : Choisir"/);
+  assert.match(t, /Voir \/ ajuster/); assert.match(t, /Ouvrir dans le Studio/); // étape 3 faite
+  assert.doesNotMatch(html, /aria-label="Étape 8[^"]*"/, 'étape bloquée : pas de bouton');
+  assert.match(html, /role="radio" aria-checked="true"[^>]*>Images/);
+  assert.match(html, /--etape:\s*#c2410c/);
+  assert.match(t, /Voir le récapitulatif dans l’Espace 3D/);
   const fini = calculerParcours({ ...assemblerSourcesEcran(entree()), habillage: { resume: 'Brique', attenduParMimmo: false }, interieurs: { gamme: 'standard', typologie: null },
     rendu: { vues: ['aerienne'], vuesChoisies: true, ambiance: null, saison: null, fond: null, etudeRattachee: false },
     travaux: [{ id: APERCU, type: 'image', statut: 'termine', qualite: 'apercu', cree_le: '2026-11-20T08:00:00Z', vues: ['aerienne'], nbImages: 1, livraison: false },
