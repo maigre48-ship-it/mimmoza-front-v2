@@ -1,4 +1,6 @@
 // src/spaces/copilot/components/CopilotChat.tsx
+import { lireMissionParId } from '../agent/agentApi';
+import { demanderOuvertureProjet3D } from '../agent/BoutonProjet3D';
 import type { Mission } from '../agent/agent.types';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
@@ -233,6 +235,17 @@ export function CopilotChat({
     if (action.cible === 'mission') {
       const id = action.missionId;
       if (!id) { setNoticeParcours('Le devis de la mission est plus haut dans la conversation : utilisez son bouton « Lancer la mission ».'); return; }
+      if (action.operation === 'projet3d') {
+        setNoticeParcours('Préparation de la 3D…');
+        lireMissionParId(id)
+          .then((mission) => {
+            if (!mission) throw new Error('Mission de conception introuvable : ouvrez-la depuis le menu « Missions ».');
+            return demanderOuvertureProjet3D(mission);
+          })
+          .then((issue) => setNoticeParcours(issue.ok ? null : issue.message))
+          .catch((e: unknown) => setNoticeParcours(e instanceof Error ? e.message : 'Préparation de la 3D impossible.'));
+        return;
+      }
       if (action.operation === 'suivre') {
         if (!suivreMissionUi(id)) setNoticeParcours('Suivez son avancement depuis la page MimmozIA, menu « Missions ».');
         return;

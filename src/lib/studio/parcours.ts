@@ -58,7 +58,7 @@ export interface ActionParcours {
   /** VIS-21 — cible `mission` : identifiant de la mission (devis à lancer / mission à suivre). */
   missionId?: string;
   /** VIS-21 — cible `mission` : lancer le devis ou suivre la mission. */
-  operation?: 'lancer' | 'suivre';
+  operation?: 'lancer' | 'suivre' | 'projet3d';
 }
 
 export interface EtapeParcours {
@@ -271,7 +271,11 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       resume: s.volume.pret ? (s.volume.resume ?? '3D préparée.') : 'Le bâtiment en 3D, à voir et ajuster (forme, dimensions, niveaux).',
       raison: statut === 'bloquee' ? 'La 3D part de la conception terminée.' : null,
       debloquePar: statut === 'bloquee' ? 'conception' : null,
-      action: s.volume.pret ? { cible: 'dimensions', libelle: 'Voir / ajuster' } : { cible: 'chat', libelle: 'Préparer', message: MESSAGES_PARCOURS.volume },
+      // 23/11 : conception terminée connue → même action directe et gratuite que « Ouvrir mon projet en 3D » (panneau
+      // Missions), jamais un message à Mimmo (intercepté par la page, et payant).
+      action: s.volume.pret ? { cible: 'dimensions', libelle: 'Voir / ajuster' }
+        : statut === 'a_faire' && s.conception?.missionId ? { cible: 'mission', operation: 'projet3d', libelle: 'Préparer', missionId: s.conception.missionId }
+        : { cible: 'chat', libelle: 'Préparer', message: MESSAGES_PARCOURS.volume },
       ...(s.volume.pret ? { actionSecondaire: { cible: 'studio-batiment' as const, libelle: 'Ouvrir dans le Studio' } } : {}),
     });
   }

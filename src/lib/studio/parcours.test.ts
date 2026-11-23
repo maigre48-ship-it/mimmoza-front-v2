@@ -258,3 +258,16 @@ test('terrain et programme lus dans les critères RÉELS de la mission 51029769 
   const p = calculerParcours({ ...sourcesVides(), terrain: terrainDesCriteres(criteres), conception: { statut: 'devis', resume: null } });
   assert.equal(p.etapes[0].statut, 'fait'); assert.equal(p.etapes[1].statut, 'a_faire'); assert.equal(p.courante, 'conception');
 });
+
+test('23/11 — étape 3 « Préparer » : conception terminée connue → action directe gratuite (jamais un message à Mimmo)', () => {
+  const s = sourcesVides('image');
+  s.terrain = 'AI0002 · Ascain';
+  s.conception = { statut: 'terminee', resume: 'R+2, 12 logements', missionId: 'd1cde026' };
+  const volume = calculerParcours(s).etapes.find((e) => e.cle === 'volume')!;
+  assert.equal(volume.statut, 'a_faire');
+  assert.deepEqual(volume.action, { cible: 'mission', operation: 'projet3d', libelle: 'Préparer', missionId: 'd1cde026' });
+  // Sans mission connue (fiche seule) : repli sur le message à Mimmo.
+  s.conception = { statut: 'fiche', resume: '12 logements' };
+  const repli = calculerParcours(s).etapes.find((e) => e.cle === 'volume')!;
+  if (repli.statut === 'a_faire') assert.equal(repli.action.cible, 'chat');
+});
