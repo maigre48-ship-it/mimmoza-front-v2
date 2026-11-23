@@ -242,7 +242,7 @@ export function CopilotChat({
             if (!mission) throw new Error('Mission de conception introuvable : ouvrez-la depuis le menu « Missions ».');
             return demanderOuvertureProjet3D(mission);
           })
-          .then((issue) => setNoticeParcours(issue.ok ? null : issue.message))
+          .then((issue) => { setNoticeParcours(issue.ok ? null : issue.message); if (issue.ok) parcoursEcran.rafraichir(); })
           .catch((e: unknown) => setNoticeParcours(e instanceof Error ? e.message : 'Préparation de la 3D impossible.'));
         return;
       }

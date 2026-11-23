@@ -16,7 +16,7 @@
 // et un bandeau dit où en est le relief (délai maximal 25 s, message clair).
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Loader2, Mountain, RotateCw } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Mountain, RotateCw, Maximize2, PanelRight } from "lucide-react";
 import { demarrerPoigneeDeMain, examinerMessageStudio, originesStudio } from "@/spaces/promoteur/shared/echangeStudio/transportStudio";
 import type { ProjetMimmozaV2 } from "@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2";
 import { DELAI_STUDIO_MUET_MS, lireFermetureStudio, messageRelief, messageStudioMuet, type PoseChat } from "./projetChat";
@@ -44,6 +44,8 @@ type EtatRelief = { texte: string; erreur: boolean; enCours: boolean };
 
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 
+const CLE_AFFICHAGE_STUDIO = "mzia.studio.affichage";
+
 export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve }: {
   demande: DemandeStudioIntegre | null;
   ouvert: boolean;
@@ -55,6 +57,18 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
 }) {
   const cadre = useRef<HTMLIFrameElement | null>(null);
   const [connecte, setConnecte] = useState(false);
+  // 23/11 — « je reste dans le chat » : par défaut le Studio s'ouvre À CÔTÉ du chat (chat visible à gauche) ;
+  // plein écran au choix, mémorisé sur ce navigateur.
+  const [cote, setCote] = useState<boolean>(() => { try { return window.localStorage.getItem(CLE_AFFICHAGE_STUDIO) !== "plein"; } catch { return true; } });
+  const basculerAffichage = () => setCote((c) => {
+    try { window.localStorage.setItem(CLE_AFFICHAGE_STUDIO, c ? "plein" : "cote"); } catch { /* stockage indisponible */ }
+    return !c;
+  });
+  useEffect(() => {
+    const actif = !!demande && ouvert && cote;
+    document.body.classList.toggle("mzia-studio-cote", actif);
+    return () => { document.body.classList.remove("mzia-studio-cote"); };
+  }, [demande, ouvert, cote]);
   const [relief, setRelief] = useState<EtatRelief | null>(null);
   const issueRelief = useRef<IssueRelief | null>(null);
   const reliefEnvoye = useRef(false);
@@ -170,10 +184,14 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret, onReleve
 
   if (!demande) return null;
   return (
-    <div className={`studio-integre${ouvert ? " is-open" : ""}`} role="dialog" aria-label="Studio 3D" aria-hidden={!ouvert}>
+    <div className={`studio-integre${ouvert ? " is-open" : ""}${cote ? " is-cote" : ""}`} role="dialog" aria-label="Studio 3D" aria-hidden={!ouvert}>
       <header className="studio-integre__bar">
-        <button type="button" className="studio-integre__back" onClick={() => onFermer("projet")}><ArrowLeft size={16} /> Retour au projet</button>
+        <button type="button" className="studio-integre__back" onClick={() => onFermer("projet")}><ArrowLeft size={16} /> {cote ? "Fermer le Studio" : "Retour au chat"}</button>
         <strong>Studio 3D</strong>
+        <button type="button" className="studio-integre__back" onClick={basculerAffichage}
+          title={cote ? "Studio sur tout l’écran (le chat est masqué)" : "Studio à droite, chat visible à gauche"}>
+          {cote ? <><Maximize2 size={15} /> Plein écran</> : <><PanelRight size={15} /> À côté du chat</>}
+        </button>
         <button type="button" className="studio-integre__back" disabled={!connecte} onClick={telechargerIfc} title="Export IFC 4 du modèle ouvert dans Studio"><Download size={15} /> IFC 4</button>
         <button type="button" className="studio-integre__back" onClick={() => onFermer("bilan")}>{demande?.projet.etudeId ? "Bilan" : "Bilan (étude à relier)"}</button>
         {ifc && <span className="studio-integre__chip" role="status">{ifc}</span>}

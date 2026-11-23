@@ -10,3 +10,13 @@
 .studio-integre__frame { flex: 1 1 auto; width: 100%; border: 0; background: #0b1220; }
 .studio-integre__spin { animation: studio-integre-spin 1s linear infinite; }
 @keyframes studio-integre-spin { to { transform: rotate(360deg); } }
+
+/* 23/11 — Studio À CÔTÉ du chat (par défaut) : le Studio occupe la droite, la page du chat se resserre à gauche
+   (l'Espace 3D, redondant avec le Studio ouvert, est masqué le temps de l'ouverture). */
+.studio-integre.is-cote { left: auto; width: min(64vw, calc(100vw - 480px)); box-shadow: -10px 0 28px rgba(15, 23, 42, .28); }
+body.mzia-studio-cote { padding-right: min(64vw, calc(100vw - 480px)); }
+body.mzia-studio-cote .jarvis-console-rail { display: none !important; }
+@media (max-width: 1100px) {
+  .studio-integre.is-cote { left: 0; width: auto; }
+  body.mzia-studio-cote { padding-right: 0; }
+}
