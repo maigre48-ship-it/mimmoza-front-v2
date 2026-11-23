@@ -274,7 +274,10 @@ export function CopilotChat({
   const actionnerParcours: ActionnerParcours = (etape, action) => {
     // 23/11 : une étape encore à préparer (action « chat », ex. 3. Volume 3D → « Préparer ») ne passe jamais par le
     // Studio : il n'a encore rien à montrer, et un Studio ouvert sur un autre état répondait « refus » → rien ne se passait.
-    if (!ETAPES_VERS_STUDIO.has(etape.cle) || action.cible === 'chat' || action.cible === 'studio-interieur' || action.cible === 'studio-batiment') { actionHabituelle(etape, action); return; }
+    // 23/11 (2) : idem pour une action directe (cible `mission`, ex. « Préparer » = préparer la 3D de la conception) : un
+    // Studio intégré déjà ouvert accusait « ok » sur l'étape Volume et l'action n'était jamais faite.
+    if (!ETAPES_VERS_STUDIO.has(etape.cle) || action.cible === 'chat' || action.cible === 'mission'
+      || action.cible === 'studio-interieur' || action.cible === 'studio-batiment') { actionHabituelle(etape, action); return; }
     const detail: DetailOuvrirEtape = { cle: etape.cle, type: parcoursEcran.parcours.type, repondre: (issue) => {
       // Seul un accusé « ok » du Studio remplace l'action ; tout autre retour (absent, refus, autre projet, version)
       // garde l'action habituelle pour que le clic ait toujours un effet, avec la raison affichée.
