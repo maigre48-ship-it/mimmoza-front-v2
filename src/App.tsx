@@ -60,6 +60,8 @@ const JetonsPage = differer(() => import("./pages/JetonsPage"), "default");
 
 /* ── Accueil connecté / MimmozIA ─────────────────────────────── */
 const MimmozIAPage = differer(() => import("./spaces/copilot/MimmozIAPage"), "default");
+/** VIS-24 — catalogue des matières et éléments 3D d'extérieur (ouvert dans un nouvel onglet). */
+const PageCatalogueExterieur = differer(() => import("./spaces/copilot/studio3d/PageCatalogueExterieur"), "default");
 const DashboardHomePage = differer(() => import("./pages/DashboardHomePage"), "default");
 const CopilotSpaceOutlet = differer(() => import("./spaces/copilot/components/CopilotSpaceOutlet"), "CopilotSpaceOutlet");
 /** Copilot global (bouton flottant + tiroir) : chargé hors des pages d'entrée publiques. */
@@ -473,6 +475,7 @@ function AppRoot() {
           <Route element={<PrivateRoute />}>
             <Route path="/accueil"   element={<HomeLanding />} />
             <Route path="/mimmozia"  element={<MimmozIAPage />} />
+            <Route path="/mimmozia/catalogue-exterieur" element={<PageCatalogueExterieur />} />
             <Route path="/dashboard" element={<DashboardHomePage />} />
           </Route>
 

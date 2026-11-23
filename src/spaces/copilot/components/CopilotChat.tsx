@@ -255,6 +255,8 @@ export function CopilotChat({
         .catch((e: unknown) => setNoticeParcours(e instanceof Error ? e.message : 'Le lancement a échoué.'));
       return;
     }
+    // VIS-24 : page catalogue (matières et éléments 3D d'extérieur) dans un nouvel onglet — le chat reste ici.
+    if (action.cible === 'catalogue-exterieur') { window.open('/mimmozia/catalogue-exterieur', '_blank', 'noopener'); return; }
     if (action.cible === 'habillage') { ouvrirHabillage(null); return; }
     if (action.cible === 'studio-interieur' || action.cible === 'studio-batiment') {
       montrerPanneau3D();

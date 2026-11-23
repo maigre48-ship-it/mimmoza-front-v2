@@ -61,7 +61,9 @@ export type CleEtape = 'terrain' | 'conception' | 'volume' | 'style' | 'interieu
  *                      Jamais un message à Mimmo (qui reproposerait une mission).
  */
 export type CibleParcours = 'chat' | 'terrain' | 'programme' | 'mission' | 'dimensions' | 'studio-batiment' | 'habillage' | 'studio-interieur' | 'reglages-rendu'
-  | 'feuille-image' | 'feuille-film' | 'feuille-visite' | 'apercu' | 'final' | 'resultats';
+  | 'feuille-image' | 'feuille-film' | 'feuille-visite' | 'apercu' | 'final' | 'resultats'
+  /** VIS-24 — catalogue des matières et éléments 3D d'extérieur, ouvert dans un nouvel onglet. */
+  | 'catalogue-exterieur';
 
 export interface ActionParcours {
   cible: CibleParcours; libelle: string; message?: string;
@@ -301,6 +303,8 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       resume: `${h.resume ?? 'Façade, teinte, menuiseries, balcons, toiture — ou laissez Mimmo proposer.'}${cible}`,
       raison: h.attenduParMimmo ? 'Mimmo attend votre habillage pour chiffrer le rendu.' : null, debloquePar: null,
       action: { cible: 'habillage', libelle: h.resume ? 'Modifier' : 'Choisir' },
+      // VIS-24 : tout ce qui existe pour l'extérieur (matières, toitures, balcons, végétation…), dans un nouvel onglet.
+      actionSecondaire: { cible: 'catalogue-exterieur', libelle: 'Voir le catalogue extérieur' },
       // VIS-21 : Mimmo attend le brief → la carte du brief est dans le fil ; pas de second bouton dans la carte du parcours.
       ...(h.attenduParMimmo ? { carteDansLeFil: 'Mimmo attend votre habillage : répondez avec la carte du brief créatif, plus haut dans la conversation.' } : {}),
       // VIS-18b : sans étude Style & tendances, la cible se règle ici (sinon : dans l'étude).

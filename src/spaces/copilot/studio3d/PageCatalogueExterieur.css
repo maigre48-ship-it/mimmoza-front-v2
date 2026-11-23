@@ -1,0 +1,102 @@
+/* VIS-24 — Page « Catalogue extérieur » (PageCatalogueExterieur.tsx). Thème clair du site : blanc, ardoise, accent violet. */
+.mz-catext { max-width: 1240px; margin: 0 auto; padding: 28px 24px 64px; color: #0f172a; font-size: 14px; line-height: 1.5; }
+.mz-catext button { font: inherit; cursor: pointer; }
+.mz-catext__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* En-tête */
+.mz-catext__retour { display: inline-block; margin-bottom: 10px; color: #6d5dfc; font-size: 13px; font-weight: 600; text-decoration: none; }
+.mz-catext__retour:hover { text-decoration: underline; }
+.mz-catext__tete h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.15; font-weight: 800; letter-spacing: -0.01em; color: #1e1b4b; }
+.mz-catext__chapo { max-width: 78ch; margin: 0 0 20px; color: #475569; font-size: 15px; }
+.mz-catext__chiffres { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mz-catext__chiffres li { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 14px; background: #ffffff; }
+.mz-catext__chiffres strong { font-size: 26px; line-height: 1.1; font-weight: 800; color: #1e1b4b; font-variant-numeric: tabular-nums; }
+.mz-catext__chiffres span { color: #64748b; font-size: 12.5px; }
+.mz-catext__chiffres li.is-oui { border-color: #bbf7d0; background: #f0fdf4; }
+.mz-catext__chiffres li.is-oui strong { color: #166534; }
+.mz-catext__chiffres li.is-reserve { border-color: #fde68a; background: #fffbeb; }
+.mz-catext__chiffres li.is-reserve strong { color: #92400e; }
+.mz-catext__chiffres li.is-non { border-color: #e2e8f0; background: #f8fafc; }
+.mz-catext__chiffres li.is-non strong { color: #475569; }
+
+/* Légende */
+.mz-catext__legende { margin: 22px 0 0; padding: 16px 18px; border: 1px solid #ede9fe; border-radius: 16px; background: #f8f7ff; }
+.mz-catext__legende h2 { margin: 0 0 10px; font-size: 15px; font-weight: 700; color: #1e1b4b; }
+.mz-catext__legende dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin: 0; }
+.mz-catext__legende dl > div { display: flex; align-items: baseline; gap: 10px; }
+.mz-catext__legende dt { flex: 0 0 auto; }
+.mz-catext__legende dd { margin: 0; color: #475569; font-size: 13px; }
+.mz-catext__legende-vignettes { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid #ede9fe; color: #475569; font-size: 13px; }
+
+/* Badges de statut */
+.mz-catext__badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border: 1px solid transparent; border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+.mz-catext__badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mz-catext__badge--oui { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.mz-catext__badge--reserve { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.mz-catext__badge--non { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+.mz-catext__badge--studio { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+.mz-catext__badge--propose { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+.mz-catext__badge--bientot { background: #ffffff; color: #6d28d9; border-color: #c4b5fd; border-style: dashed; }
+
+/* Filtres */
+.mz-catext__filtres { margin: 22px 0 0; padding: 0 0 12px; border-bottom: 1px solid #e2e8f0; }
+.mz-catext__recherche { display: block; }
+.mz-catext__recherche input { width: 100%; max-width: 520px; padding: 9px 14px; border: 1.5px solid #cbd5e1; border-radius: 12px; background: #ffffff; color: #0f172a; font: inherit; }
+.mz-catext__recherche input:focus-visible { outline: 2px solid #6d5dfc; outline-offset: 1px; border-color: #6d5dfc; }
+.mz-catext__puces { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.mz-catext__puces button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1.5px solid #e2e8f0; border-radius: 999px; background: #ffffff; color: #334155; font-size: 13px; font-weight: 500; }
+.mz-catext__puces button:hover { border-color: #a78bfa; }
+.mz-catext__puces button:focus-visible { outline: 2px solid #6d5dfc; outline-offset: 2px; }
+.mz-catext__puces button em { font-style: normal; font-size: 11.5px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.mz-catext__puces button.is-actif { border-color: #6d5dfc; background: #6d5dfc; color: #ffffff; }
+.mz-catext__puces button.is-actif em { color: #ddd6fe; }
+.mz-catext__puces--statuts button::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }
+.mz-catext__puces--statuts .mz-catext__puce--oui::before { background: #16a34a; }
+.mz-catext__puces--statuts .mz-catext__puce--reserve::before { background: #d97706; }
+.mz-catext__puces--statuts .mz-catext__puce--non::before { background: #94a3b8; }
+.mz-catext__puces--statuts .mz-catext__puce--studio::before { background: #0284c7; }
+.mz-catext__puces--statuts .mz-catext__puce--propose::before { background: #7c3aed; }
+.mz-catext__puces--statuts button.is-actif { background: #1e1b4b; border-color: #1e1b4b; }
+.mz-catext__puces .mz-catext__effacer { border-color: transparent; background: transparent; color: #6d5dfc; font-weight: 600; }
+.mz-catext__puces .mz-catext__effacer::before { display: none; }
+.mz-catext__compte { margin: 8px 0 0; color: #64748b; font-size: 12.5px; }
+.mz-catext__vide { margin: 40px 0; padding: 28px; border: 1px dashed #cbd5e1; border-radius: 16px; text-align: center; color: #475569; }
+.mz-catext__vide button { border: 0; background: none; color: #6d5dfc; font-weight: 600; text-decoration: underline; }
+
+/* Familles */
+.mz-catext__famille { margin-top: 34px; }
+.mz-catext__famille-tete { margin-bottom: 14px; }
+.mz-catext__famille-tete h2 { margin: 0; font-size: 21px; font-weight: 800; color: #1e1b4b; }
+.mz-catext__famille-tete p { margin: 2px 0 0; color: #475569; }
+.mz-catext__famille-tete .mz-catext__famille-bilan { color: #64748b; font-size: 12.5px; }
+.mz-catext__grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 14px; }
+
+/* Cartes */
+.mz-catext__carte { display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff; overflow: hidden; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.mz-catext__carte:hover { border-color: #c4b5fd; box-shadow: 0 6px 20px rgba(30, 27, 75, 0.08); }
+.mz-catext__carte[data-rendu='non'] .mz-catext__vignette img { filter: saturate(0.55); }
+.mz-catext__vignette { position: relative; display: grid; place-items: center; height: 132px; color: rgba(255, 255, 255, 0.92); box-shadow: inset 0 -30px 40px -30px rgba(15, 23, 42, 0.28); }
+.mz-catext__vignette.is-claire { color: rgba(30, 41, 59, 0.72); }
+.mz-catext__vignette img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mz-catext__picto { width: 62px; height: 62px; }
+.mz-catext__mention { position: absolute; left: 8px; bottom: 8px; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); color: #334155; font-size: 10.5px; font-weight: 600; }
+.mz-catext__mention--teinte { background: rgba(255, 255, 255, 0.82); color: #64748b; font-weight: 500; }
+.mz-catext__corps { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px 14px; flex: 1; }
+.mz-catext__corps h3 { margin: 0; font-size: 15px; line-height: 1.3; font-weight: 700; color: #0f172a; }
+.mz-catext__application { margin: 0; color: #6d5dfc; font-size: 12px; font-weight: 600; }
+.mz-catext__description { margin: 0; color: #475569; font-size: 13px; }
+.mz-catext__badges { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 0; padding: 0; list-style: none; }
+.mz-catext__note { margin: 6px 0 0; color: #64748b; font-size: 12px; line-height: 1.45; }
+.mz-catext__chemin { margin: auto 0 0; padding-top: 8px; color: #5b21b6; font-size: 12px; }
+.mz-catext__chemin span { color: #64748b; }
+
+.mz-catext__pied { margin-top: 44px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 12.5px; }
+.mz-catext__pied p { max-width: 90ch; margin: 0; }
+
+@media (max-width: 640px) {
+  .mz-catext { padding: 18px 14px 48px; }
+  .mz-catext__tete h1 { font-size: 24px; }
+  .mz-catext__grille { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .mz-catext__vignette { height: 104px; }
+}
+@media (prefers-reduced-motion: reduce) { .mz-catext__carte { transition: none; } }
