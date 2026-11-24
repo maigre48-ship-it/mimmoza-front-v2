@@ -62,7 +62,7 @@ import { habillageDeLaConversation } from '@/spaces/promoteur/shared/briefProjet
 // VIS-17 : bloc ```mimmoza-parcours``` (aperçu validé) masqué dans la bulle de l'utilisateur.
 import { lireBlocParcours } from '@/lib/studio/parcours';
 import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
-import { lireBlocChoix, situationChoix } from '../utils/choixCliquables';
+import { choixTerrainDeSecours, lireBlocChoix, situationChoix } from '../utils/choixCliquables';
 // LOT D1 : réponse longue → aperçu dans le fil + document complet dans le panneau.
 import { ApercuDocument } from '../document/ApercuDocument';
 import { estReponseDocument } from '../document/documentModele';
@@ -120,7 +120,11 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     return { visibleText: message.text.slice(splitAt), factualReport: message.text.slice(0, splitAt).trim() };
   }, [dossier, message.status, message.text]);
   // LOT CHOIX-CLIQUABLES : le bloc ```mimmoza-choix n'est jamais affiché tel quel (puces sous le texte).
-  const choix = useMemo(() => lireBlocChoix(visibleText), [visibleText]);
+  const choix = useMemo(() => {
+    const lu = lireBlocChoix(visibleText);
+    // 24/11 : confirmation du terrain demandée sans bloc → deux boutons Oui / Non quand même.
+    return lu.bloc || isUser ? lu : { ...lu, bloc: choixTerrainDeSecours(lu.visible) };
+  }, [visibleText, isUser]);
   const segments = useMemo(() => decouperSegments(withoutJarvisDraft(choix.visible)), [choix.visible]);
   // LOT F1 : la première phrase-réponse n'est mise en évidence qu'une fois la réponse complète.
   const premierTexte = segments.findIndex((s) => s.kind !== 'chart');

@@ -182,3 +182,14 @@ test('exports : ni le PDF ni Word/Excel/PowerPoint n’impriment le bloc brut', 
   assert.ok(blocs.length > 0);
   assert.ok(blocs.every((x) => !('text' in x) || !/mimmoza-choix|"questions"/.test(x.text)));
 });
+
+test('24/11 — confirmation du terrain demandée sans bloc : deux boutons Oui / Non', async () => {
+  const { choixTerrainDeSecours } = await import('./choixCliquables.ts');
+  const texte = 'La parcelle 64065000AI0002 fait 2 283 m².\n\n✅ Est-ce bien ce terrain que vous confirmez pour votre projet ?\n\nSi oui, je lance l’étape 2.';
+  const bloc = choixTerrainDeSecours(texte)!;
+  assert.equal(bloc.questions.length, 1);
+  assert.equal(bloc.questions[0].libelle, 'Confirmation du terrain');
+  assert.deepEqual(bloc.questions[0].options, ['Oui, c’est ce terrain', 'Non, je veux changer']);
+  assert.equal(composerReponse(bloc, basculerOption(etatVide(), bloc, 'terrain', 'Oui, c’est ce terrain')), 'Confirmation du terrain : Oui, c’est ce terrain');
+  assert.equal(choixTerrainDeSecours('Voici le PLU de la zone UC.'), null);
+});

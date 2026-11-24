@@ -132,6 +132,20 @@ export function lireBlocChoix(texte: string): { visible: string; bloc: BlocChoix
   return { visible: visible.replace(/\n{3,}/g, '\n\n').trim(), bloc };
 }
 
+/**
+ * 24/11 — Mimmo demande de CONFIRMER LE TERRAIN sans joindre de bloc de choix (la question restait en texte, sans bouton) :
+ * deux boutons « Oui, c'est ce terrain » / « Non, je veux changer », même forme que le bloc qu'il écrit d'habitude
+ * (réponse « Confirmation du terrain : Oui, c'est ce terrain »). null si la réponse ne demande pas cette confirmation.
+ */
+export const RE_QUESTION_TERRAIN = /(est-ce\s+bien\s+(?:ce|le|la|cette)\s+(?:terrain|parcelle|assiette)|est-ce\s+le\s+bon\s+terrain|confirmez[- ]vous\s+(?:ce|le|cette)\s+(?:terrain|parcelle|assiette)|confirmer\s+(?:ce|le|cette)\s+(?:terrain|parcelle|assiette)\s*\?)/i;
+export function choixTerrainDeSecours(visible: string): BlocChoix | null {
+  if (!visible || !RE_QUESTION_TERRAIN.test(visible)) return null;
+  return {
+    questions: [{ id: 'terrain', libelle: 'Confirmation du terrain', options: ['Oui, c’est ce terrain', 'Non, je veux changer'], multiple: false, defaut: [] }],
+    libre: false, aToiDeChoisir: false,
+  };
+}
+
 /** Texte sans bloc de choix (exports, lecture vocale). */
 export function sansBlocsChoix(texte: string): string {
   return lireBlocChoix(texte).visible;
