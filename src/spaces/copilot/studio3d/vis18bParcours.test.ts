@@ -177,7 +177,7 @@ test('témoin personnalisé dans le Studio : l’étape « Intérieurs » est fa
   const avec = calculerParcours({ ...s, temoinStudio: { fait: true, resume: 'T3 A204 · séjour scandinave · 18 meubles' } }).etapes[4];
   assert.equal(avec.statut, 'fait'); assert.equal(avec.raison, null);
   assert.match(avec.resume, /^Logement témoin personnalisé dans le Studio : T3 A204/);
-  assert.equal(avec.action.libelle, 'Personnaliser l’intérieur (Studio)');
+  assert.equal(avec.action.libelle, 'Aménager le logement'); // VIS-30 (avant : « Personnaliser l’intérieur (Studio) »)
   assert.equal(calculerParcours({ ...s, temoinStudio: { fait: false, resume: null } }).etapes[4].statut, 'a_faire');
   // Branché sur la lecture RÉELLE de VIS-18a : rien de personnalisé → étape inchangée ; écran → sources.
   assert.equal(calculerParcours(assemblerSourcesEcran(entree({ temoinStudio: lireTemoinPersonnalise(null) }))).etapes[4].statut, 'a_faire');

@@ -104,6 +104,11 @@ export interface EtapeParcours {
    * rendu) : la carte « Votre parcours » du chat n'affiche PAS de bouton concurrent, seulement ce renvoi.
    */
   carteDansLeFil?: string;
+  /**
+   * VIS-30 — étape 5 : aperçu du logement témoin affiché par l'Espace 3D (même bouton que la carte du chat).
+   * `lignes` : résumé du témoin personnalisé (logement, style, sols, nombre de meubles), gamme, vue intérieure prévue.
+   */
+  apercu?: { titre: string; lignes: string[] };
 }
 
 export interface Parcours {
@@ -328,15 +333,24 @@ export function calculerParcours(s: SourcesParcours): Parcours {
     const statut: StatutEtape = gamme || perso ? 'fait' : requis ? 'a_faire' : 'facultative';
     ajouter({
       cle: 'interieurs', titre: 'Intérieurs', statut,
+      // VIS-30 (24/11) : l'étape dit ce qu'on y fait — meubler le logement témoin (page « Aménager l'intérieur » du Studio).
       resume: perso
         ? `Logement témoin personnalisé dans le Studio${perso.resume ? ` : ${perso.resume}` : ''}${gamme ? ` (${gamme})` : ''}.`
         : gamme
         ? `Logement témoin ${typo}${gamme}, meublé par Mimmo — plan, meubles, sols et murs modifiables dans le Studio.`
-        : requis ? 'Vos choix montrent l’intérieur d’un logement : choisissez la gamme du logement témoin (ou ajustez-le dans le Studio).'
-        : 'Facultatif : utile seulement pour une vue intérieure (séjour, chambre…).',
+        : requis ? 'Meublez le logement témoin : plan, meubles, sols et murs. Vos vues montrent l’intérieur d’un logement — sans retouche, Mimmo le meuble selon la gamme.'
+        : 'Meublez le logement témoin : plan, meubles, sols et murs. Facultatif : utile pour une vue intérieure (séjour, chambre…).',
       raison: requis && !gamme && !perso ? 'Vue intérieure prévue : le logement témoin doit être défini.' : null, debloquePar: null,
-      // 23/11 : libellé explicite — c'est ICI que s'ouvre l'atelier d'aménagement (plan, meubles, sols, murs) du Studio.
-      action: { cible: 'studio-interieur', libelle: 'Personnaliser l’intérieur (Studio)' },
+      // 23/11 : c'est ICI que s'ouvre la page d'aménagement (plan, meubles, sols, murs) du Studio, dans son onglet.
+      action: { cible: 'studio-interieur', libelle: 'Aménager le logement' },
+      apercu: {
+        titre: perso ? 'Logement témoin personnalisé' : 'Logement témoin proposé par Mimmo',
+        lignes: [
+          perso ? (perso.resume ?? 'Aménagé dans le Studio.') : 'Pas encore personnalisé : l’architecte d’intérieur de Mimmo le meuble selon la gamme (meubles validés pour les images).',
+          `${gamme ? gamme.charAt(0).toUpperCase() + gamme.slice(1) : 'Gamme standard (par défaut)'}${typo ? ` · ${s.interieurs.typologie}` : ''}`,
+          requis ? 'Vue intérieure prévue : elle montrera ce logement, meublé.' : 'Aucune vue intérieure prévue pour l’instant.',
+        ],
+      },
       // VIS-18b : « Gamme » mène au brief de l'étude quand il y en a une ; sinon petit réglage dans l'étape.
       ...(s.rendu.etudeRattachee ? { actionSecondaire: { cible: 'reglages-rendu' as const, libelle: 'Gamme' } } : { reglage: 'gamme' as const }),
     });

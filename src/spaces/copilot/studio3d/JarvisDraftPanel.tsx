@@ -32,7 +32,7 @@ import { limitesDossier } from './briefCreatif';
 import { ParcoursPanneau, type ActionnerParcours } from './ParcoursGuide';
 // VIS-18b : petits réglages dans les étapes (cible, gamme sans étude ; fond de l'image).
 import { reglageDeLEtape } from './ReglagesParcours';
-import type { CibleParcours, Parcours, TypeParcours } from '@/lib/studio/parcours';
+import { COULEURS_ETAPE, type CibleParcours, type Parcours, type TypeParcours } from '@/lib/studio/parcours';
 import type { CommandeRendu, ParcoursRendu } from './FilmVisitePanel';
 // VIS-28 (24/11) : l'écran des étapes 6 / 7 / 8 s'ouvre sur la feuille du type du parcours (jamais un nouveau choix).
 import { feuilleDeLEtape, TRAVAIL_DU_PARCOURS } from './renduParcours';
@@ -57,7 +57,7 @@ type Field = keyof typeof LABELS;
 /** R2 — résultat de l'ouverture : `parcelle-requise` = poser la question minimale dans le dossier. */
 export type IssueOuvertureStudio = void | 'parcelle-requise';
 
-export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, commandeParcours, etapeDemandee, noticeParcours, onValiderApercu, apercuValide }: {
+export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, onParcours, commandeParcours, etapeDemandee, noticeParcours, onValiderApercu, apercuValide }: {
   messages: readonly ChatMessage[];
   conversationId: string | null;
   /** VIS-17 : parcours calculé (CopilotChat), actions des étapes, commande d'une étape cliquée (panneau ou carte du chat). */
@@ -232,8 +232,17 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   const ETAPE_6 = ['vues', 'scenario', 'pieces'];
   const RENDUS = [...ETAPE_6, 'apercu', 'final'];
   const infoEtape = etapeActive === 'terrain' ? 'Le terrain se désigne dans le chat (adresse, numéros de parcelles ou « Choisir sur la carte »).'
-    : etapeActive === 'interieurs' ? 'Le logement témoin (plan, meubles, sols, murs) se personnalise dans le Studio : bouton « Personnaliser l’intérieur » de l’étape 5, dans le chat. La gamme se choisit sous l’étape.'
     : null;
+  // VIS-30 — écran de l'étape 5 : aperçu du logement témoin et LE bouton de l'étape (même action que la carte du chat :
+  // `onParcours` = actionnerParcours de CopilotChat → page « Aménager l'intérieur » du Studio, dans son onglet).
+  const etapeTemoin = etapeActive === 'interieurs' ? parcours?.etapes.find((e) => e.cle === 'interieurs') ?? null : null;
+  const apercuTemoin = etapeTemoin?.apercu ? <section aria-label="Logement témoin" className="mz-ecran-etape__temoin"
+    style={{ margin: '8px 2px 12px', padding: '10px 12px', border: `1px solid ${COULEURS_ETAPE.interieurs}`, borderRadius: 10, background: '#fff' }}>
+    <p style={{ margin: '0 0 6px', fontWeight: 600, fontSize: 13 }}>{etapeTemoin.apercu.titre}</p>
+    <ul style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 13 }}>{etapeTemoin.apercu.lignes.map((l) => <li key={l}>{l}</li>)}</ul>
+    {onParcours && <button type="button" className="mz-parcours__action is-primaire" style={{ ['--etape' as string]: COULEURS_ETAPE.interieurs }}
+      onClick={() => onParcours(etapeTemoin, etapeTemoin.action)}>{etapeTemoin.action.libelle}</button>}
+  </section> : null;
   // Récapitulatif SANS commande du parcours (elles sont dans la carte du chat) ; seul détail : la carte cadastrale de
   // l'étape 1, quand le chat la demande (« Choisir sur la carte »).
   const parcoursUi = parcours ? <div ref={refParcours}>
@@ -242,6 +251,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
         ? reglageDeLEtape(e, { conversationId, messages: messages as never, onSend, ouvert: reglageOuvert }) : null)} />
     {noteParcours && <p role="status" className="jarvis-dossier__proposal">{noteParcours}</p>}
     {infoEtape && <p className="mz-ecran-etape__vide">{infoEtape}</p>}
+    {apercuTemoin}
     {reglagesOuverts && etude && <div ref={refReglages} style={{ margin: '0 0 12px' }}>
       <BriefProjetRenduSection studyId={etude} source="parcours" />
       <button type="button" className="jarvis-dossier__link" onClick={() => setReglagesOuverts(false)}>Fermer les réglages</button>
