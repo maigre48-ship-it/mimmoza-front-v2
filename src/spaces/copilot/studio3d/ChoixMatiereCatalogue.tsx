@@ -71,7 +71,7 @@ export default function ChoixMatiereCatalogue({ partie, etat, demande, onChoisir
               </span>
               <span className="mz-matcat__nom">{e.nom}</span>
               <span className={`mz-matcat__badge mz-matcat__badge--${e.rendu}`}>{e.rendu === 'oui' ? 'Repris dans les images' : 'Avec réserve'}</span>
-              <span className="mz-matcat__rendu">{phraseRendu(tr)}</span>
+              <span className="mz-matcat__rendu">{phraseRendu(tr, e)}</span>
               {e.rendu === 'reserve' && <span className="mz-matcat__note">{e.noteRendu}</span>}
               <button type="button" className="mz-matcat__choisir" disabled={!!raison || choisie} title={raison ?? undefined}
                 onClick={() => onChoisir(matiereChoisie(partie, e), tr.champs)}>

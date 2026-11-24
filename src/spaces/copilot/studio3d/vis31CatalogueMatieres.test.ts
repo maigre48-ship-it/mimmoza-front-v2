@@ -85,7 +85,11 @@ test('page : le champ de recherche vit dans un état local (plus lié à l’adr
   // Le CSS de la page ne cache pas le champ et ne se met pas sous l'en-tête collant du site.
   const css = readFileSync(path.join(ICI, 'PageCatalogueExterieur.css'), 'utf8');
   assert.doesNotMatch(css, /\.mz-catext__recherche[^{]*\{[^}]*(?:display:\s*none|visibility:\s*hidden|opacity:\s*0)/);
-  assert.doesNotMatch(css, /position:\s*(?:fixed|sticky)/, 'aucun bloc de la page ne passe sous l’en-tête collant du site');
+  // VIS-33 : seul le bandeau « Ma sélection » colle, et SOUS l'en-tête collant du site (hauteur mesurée par la page).
+  assert.doesNotMatch(css, /position:\s*fixed/, 'aucun bloc fixe');
+  const collants = [...css.matchAll(/([^{}]+)\{[^}]*position:\s*sticky[^}]*\}/g)];
+  assert.deepEqual(collants.map((m) => m[1].trim().split('\n').pop()!.trim()), ['.mz-catext__selection'], 'aucun autre bloc collant');
+  assert.match(collants[0][0], /top:\s*var\(--mz-entete-site/, 'le bandeau colle sous l’en-tête du site, pas dessous');
 });
 
 test('page : rendu statique (adresse ?q=tuile) — champ rempli, résultats, compte, renvoi vers l’étape 4', async () => {
@@ -178,15 +182,17 @@ test('choix : valeurs fermées appliquées, matière gardée et dite (avec rése
   const r2 = choisirMatiereCatalogue(r.etat, 'toiture', matiereChoisie('toiture', zinc), traduireMatiere('toiture', zinc).champs, D);
   assert.equal(r2.etat.choix.toiture, 'deux_pans_zinc');
   const phrase = phraseMatieresCatalogue(r2.etat) ?? '';
-  assert.match(phrase, /façade « Pierre de taille » \(rendue pour l’instant comme « Pierre claire », avec réserve\)/);
+  // VIS-32 : la référence exacte part dans le brief → « rendue telle quelle » (valeur fermée « pierre » gardée en repli).
+  assert.match(phrase, /façade « Pierre de taille » \(rendue telle quelle, avec réserve\)/);
   assert.match(phrase, /toiture « Zinc anthracite » \(rendue telle quelle, avec réserve\)/);
   const msg = messageBrief(r2.etat, { type: 'image', limites: LIMITES } as never);
   assert.ok(msg.includes(phrase));
-  // Le bloc reste dans les listes fermées : le serveur (code réel) l'accepte, sans champ « matieres » tant qu'il le refuse.
-  assert.equal(TRANSMETTRE_REFERENCES_CATALOGUE, false);
-  assert.doesNotMatch(msg.split('```')[1], /matieres/);
+  // VIS-32 : le bloc porte les références exactes ; le serveur (code réel) les accepte par sa liste blanche.
+  assert.equal(TRANSMETTRE_REFERENCES_CATALOGUE, true);
+  assert.match(msg.split('```')[1], /"matieres":\{"facade":"av-pierre-de-taille","toiture":"av-zinc-anthracite"\}/);
   const lu = briefDuMessage(msg);
   assert.ok(lu?.ok, JSON.stringify(lu));
+  assert.deepEqual(lu.ok && lu.valeur.brief?.matieres, { facade: 'av-pierre-de-taille', toiture: 'av-zinc-anthracite' });
   assert.equal(lu.ok && lu.valeur.brief?.facade, 'pierre');
   assert.equal(lu.ok && lu.valeur.brief?.toiture, 'deux_pans_zinc');
   // Un clic sur une valeur de la carte remplace la matière du catalogue de la même partie (et seulement elle).
@@ -218,8 +224,10 @@ test('grille « Toutes les matières » : rendu statique honnête (avec réserve
   assert.match(t, new RegExp(`${matieresDeLaPartie('facade').length} matières rendues`));
   assert.match(t, /Avec réserve/);
   assert.match(t, /Rendue telle quelle dans les images/);
-  assert.match(t, /Rendue pour l’instant comme « Pierre claire »/);
-  assert.match(t, /Pas encore d’équivalent dans le rendu/);
+  // VIS-32 : les matières transmises (av-, pm-, rg-) sont rendues telles quelles ; les qm- (moteur de quartier) restent approchées.
+  assert.match(t, /Moellons de grès Repris dans les images Rendue pour l’instant comme « Pierre claire »/);
+  assert.match(t, /Pierre de taille Avec réserve Rendue telle quelle dans les images/);
+  assert.match(t, /Panneaux métalliques Repris dans les images Rendue telle quelle dans les images/);
   assert.match(t, /Utiliser pour la façade/);
   assert.match(html, /<input type="search"/);
   const toits = texte(renderToStaticMarkup(h(m.default as never, { partie: 'toiture', etat: { choix: { ...CHOIX_DEFAUT }, touches: [] }, demande: { ...D, limites: { ...LIMITES, ailes: true } }, onChoisir: () => {}, onFermer: () => {} })));

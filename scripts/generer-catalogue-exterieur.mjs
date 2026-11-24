@@ -52,6 +52,16 @@ export const FAMILLES = [
   { id: 'ciel', libelle: 'Ciel, lumière et voisinage', description: 'Ambiances lumineuses, ciels, horizon et bâtiments voisins.' },
 ];
 
+/** VIS-33 : étiquette de la vignette d'une carte (dit honnêtement ce qu'on voit). */
+export const MENTIONS_APERCU = {
+  texture: 'Photo de la texture',
+  modele: 'Vignette du modèle 3D',
+  couleur: 'Couleur seule, pas de photo',
+  dessinee: 'Couleur seule : texture dessinée, pas de photo',
+  aExtraire: 'Couleur seule : photo pas encore extraite',
+  schema: 'Schéma, pas de photo',
+};
+
 const lire = (racine, rel) => readFileSync(join(racine, rel), 'utf8');
 /** Apostrophe typographique dans les textes montrés à l'écran. */
 const typo = (t) => t.replace(/'/g, '’');
@@ -296,13 +306,20 @@ export function construire(studio = STUDIO_DEFAUT, site = SITE_DEFAUT) {
   const prouve = (racine, rel, motif) => { if (!lire(racine, rel).includes(motif)) throw new Error(`preuve absente : « ${motif} » dans ${rel}`); return rel; };
 
   const image = (dossier, nom) => (nom && existsSync(join(site, 'public', 'catalogue-exterieur', dossier, `${nom}.jpg`)) ? `/catalogue-exterieur/${dossier}/${nom}.jpg` : null);
+  // VIS-33 (24/11) — « je ne vois pas tout » : une pastille unie était étiquetée « Aperçu indicatif » même quand le
+  // Studio possède la photo de la texture (voirie, enduits : assets/materials/<jeu>/, jonctions vers le disque D:, que le
+  // script des vignettes ne lisait pas). L'étiquette d'une pastille dit maintenant POURQUOI il n'y a pas de photo.
+  const photosAExtraire = new Set();
   const apercuMatiere = (couleur, jeu) => {
     const img = jeu ? image('textures', jeu.replace(/^acg-(4k-)?/, '')) : null;
-    return img ? { type: 'texture', couleur, image: img, mention: 'Photo de la texture' } : { type: 'teinte', couleur, image: null, mention: 'Aperçu indicatif' };
+    if (img) return { type: 'texture', couleur, image: img, mention: MENTIONS_APERCU.texture };
+    if (jeu && /^gen-/.test(jeu)) return { type: 'teinte', couleur, image: null, mention: MENTIONS_APERCU.dessinee };
+    if (jeu) { photosAExtraire.add(jeu); return { type: 'teinte', couleur, image: null, mention: MENTIONS_APERCU.aExtraire }; }
+    return { type: 'teinte', couleur, image: null, mention: MENTIONS_APERCU.couleur };
   };
   const apercuObjet = (famille, vignette) => {
     const img = image('elements', vignette);
-    return img ? { type: 'modele', couleur: TEINTE_FAMILLE[famille], image: img, mention: 'Vignette du modèle 3D' } : { type: 'teinte', couleur: TEINTE_FAMILLE[famille], image: null, mention: 'Aperçu indicatif' };
+    return img ? { type: 'modele', couleur: TEINTE_FAMILLE[famille], image: img, mention: MENTIONS_APERCU.modele } : { type: 'teinte', couleur: TEINTE_FAMILLE[famille], image: null, mention: MENTIONS_APERCU.schema };
   };
 
   // Choix du brief par matière av-*.
@@ -418,7 +435,7 @@ export function construire(studio = STUDIO_DEFAUT, site = SITE_DEFAUT) {
   const OUI_CHAT = 'Choisi dans le chat, dessiné par le Studio et repris dans les images.';
   const STUDIO_SEUL = 'Dessiné par le Studio et envoyé tel quel au rendu. Non proposé dans le chat ; pas encore vérifié sur une image livrée.';
   const element = (id, famille, nom, description, application, extra) => pousser({ id: `elt:${id}`, famille, nature: 'element', nom, description, application,
-    apercu: { type: 'teinte', couleur: TEINTE_FAMILLE[famille], image: null, mention: 'Aperçu indicatif' }, chat: 'non', studio: true, rendu: 'reserve', noteRendu: STUDIO_SEUL, sources: [], ...extra });
+    apercu: { type: 'teinte', couleur: TEINTE_FAMILLE[famille], image: null, mention: MENTIONS_APERCU.schema }, chat: 'non', studio: true, rendu: 'reserve', noteRendu: STUDIO_SEUL, sources: [], ...extra });
   const duChat = (champ, liste, valeurs, ref = null) => {
     const choix = valeurs.map((v) => { const o = opt(liste, v); if (!o.disponible) throw new Error(`brief : ${champ}=${v} n’est plus disponible — revoir son statut`); return { champ, valeur: v, libelle: o.libelle }; });
     return { chat: 'propose', choixBrief: choix, rendu: 'oui', noteRendu: OUI_CHAT, refStudio: ref, sources: [SRC_BRIEF, ...(ref ? [typeStudio(ref)] : [])] };
@@ -526,7 +543,8 @@ export function construire(studio = STUDIO_DEFAUT, site = SITE_DEFAUT) {
   const ids = new Set();
   for (const e of trie) { if (ids.has(e.id)) throw new Error(`identifiant en double : ${e.id}`); ids.add(e.id); }
   const textures = registre.elements.filter((e) => e.type === 'texture' && !e.categorie.startsWith('interieur'));
-  return { entrees: trie, misAJourRegistre: registre.misAJourLe, textures: { total: textures.length, certifiees: textures.filter((t) => t.certifie).length } };
+  return { entrees: trie, misAJourRegistre: registre.misAJourLe, textures: { total: textures.length, certifiees: textures.filter((t) => t.certifie).length },
+    photosAExtraire: [...photosAExtraire].sort() };
 }
 
 // ── Écriture du module ────────────────────────────────────────────────────────
@@ -555,7 +573,7 @@ export type StatutChat = 'propose' | 'bientot' | 'non';
 export type StatutRendu = 'oui' | 'reserve' | 'non';
 
 export interface ApercuEntree {
-  /** 'texture' = photo de la vraie texture ; 'modele' = vignette du vrai modèle 3D ; 'teinte' = simple pastille de couleur (aperçu indicatif). */
+  /** 'texture' = photo de la vraie texture ; 'modele' = vignette du vrai modèle 3D ; 'teinte' = pastille de couleur ou schéma (pas une photo : « mention » dit pourquoi). */
   readonly type: 'texture' | 'modele' | 'teinte';
   /** Teinte déclarée par le Studio (matières) ou teinte neutre de la famille (éléments). */
   readonly couleur: string;
@@ -599,6 +617,9 @@ export interface EntreeCatalogueExterieur {
 export interface FamilleCatalogue { readonly id: FamilleExterieur; readonly libelle: string; readonly description: string }
 
 export const DATE_REGISTRE_PHOTOREALISME = ${q(misAJourRegistre)};
+
+/** VIS-33 : étiquettes possibles d'une vignette (une pastille dit pourquoi elle n'a pas de photo). */
+export const MENTIONS_APERCU = ${q(MENTIONS_APERCU)} as const;
 
 export const FAMILLES_EXTERIEUR: readonly FamilleCatalogue[] = [
 ${FAMILLES.map((f) => `  { id: ${q(f.id)}, libelle: ${q(f.libelle)}, description: ${q(f.description)} },`).join('\n')}
@@ -722,4 +743,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const parFamille = FAMILLES.map((f) => `${f.libelle} ${r.entrees.filter((e) => e.famille === f.id).length}`).join(' · ');
   console.log(`${MODULE} : ${r.entrees.length} entrées (${parFamille}).`);
   console.log(`Textures d’extérieur au registre : ${r.textures.total} (dont ${r.textures.certifiees} validées).`);
+  if (r.photosAExtraire.length) {
+    console.log(`ATTENTION (VIS-33) : ${r.photosAExtraire.length} texture(s) du Studio sans vignette — leurs cartes restent en « couleur seule » :`);
+    console.log(`  ${r.photosAExtraire.join(', ')}`);
+    console.log('  → disque D: branché, lancer : python scripts\\vignettes-catalogue-exterieur.py ..\\mimmozia-studio  puis relancer ce script.');
+  }
 }

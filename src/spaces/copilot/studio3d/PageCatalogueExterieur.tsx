@@ -17,14 +17,31 @@
 // pendant le rendu des 256 cartes se perdaient (« brique » tapé → « bque », 0 résultat ; preuve : _to_delete/vis31).
 // Le texte tapé vit maintenant dans un état local (mise à jour immédiate) ; l'adresse suit après une courte pause, et le
 // filtrage du gros catalogue est différé (useDeferredValue) pour que la frappe reste fluide.
+//
+// VIS-33 (24/11) — « je ne vois pas tout et je ne peux pas choisir ce que je prends » :
+//   · vignettes : les textures de voirie et les enduits ont maintenant leur vraie photo quand le Studio la possède ; une
+//     pastille unie dit pourquoi elle n'a pas de photo (mention générée : MENTIONS_APERCU) ;
+//   · « Choisir pour… » sur chaque matière utilisable pour le bâtiment (parties compatibles : matieresParPartie.ts) ;
+//     voirie et abords : « Choisi automatiquement selon le quartier » (pas de champ dans le brief) ;
+//   · bandeau collant « Ma sélection » + « Utiliser dans mon projet » : la sélection est partagée, par conversation
+//     (?conversation=…), avec la carte d'habillage de l'étape 4 du chat (selectionCatalogue.ts). Le prix et la
+//     validation du brief restent dans le chat.
 // =============================================================================
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  CATALOGUE_EXTERIEUR, DATE_REGISTRE_PHOTOREALISME, FAMILLES_EXTERIEUR, LIBELLES_CHAT, LIBELLES_RENDU, LIBELLE_STUDIO,
+  CATALOGUE_EXTERIEUR, DATE_REGISTRE_PHOTOREALISME, FAMILLES_EXTERIEUR, LIBELLES_CHAT, LIBELLES_RENDU, LIBELLE_STUDIO, MENTIONS_APERCU,
   compterCatalogue, filtrerCatalogue, filtreDepuisAdresse,
   type EntreeCatalogueExterieur, type FamilleExterieur, type FiltreCatalogue, type StatutRendu,
 } from './catalogueExterieur';
+// VIS-33 : choisir une matière pour une partie du bâtiment, et la sélection partagée avec la carte d'habillage du chat.
+import { PARTIES_MATIERE, LIBELLES_PARTIE, type PartieMatiere } from './briefCreatif';
+import { candidatesDeLaPartie } from './matieresParPartie';
+import { phraseRendu, traduireMatiere } from './matieresCatalogue';
+import {
+  aEnvoyer, choisirDansPage, choixEnVigueur, conversationDepuisAdresse, ecouterSelection, ecrireSelection, envoyerAuProjet,
+  lignesSelection, lireSelection, nouvelAuteur, retirerDansPage, type SelectionCatalogue,
+} from './selectionCatalogue';
 import './PageCatalogueExterieur.css';
 
 const CHAMPS: Readonly<Record<string, string>> = {
@@ -60,10 +77,72 @@ function Picto({ famille }: { famille: FamilleExterieur }) {
   return <svg className="mz-catext__picto" viewBox="0 0 48 48" aria-hidden="true" {...commun}>{dessin}</svg>;
 }
 
-function Carte({ e }: { e: EntreeCatalogueExterieur }) {
-  const chemins = [...new Set(e.choixBrief.map((c) => `${CHAMPS[c.champ] ?? c.champ} › ${c.libelle}`))];
+/** VIS-33 : parties du bâtiment compatibles avec chaque matière (même règle que « Toutes les matières » de la carte). */
+const PARTIES_PAR_REF: ReadonlyMap<string, readonly PartieMatiere[]> = (() => {
+  const m = new Map<string, PartieMatiere[]>();
+  for (const p of PARTIES_MATIERE) for (const e of candidatesDeLaPartie(p)) if (e.refStudio) m.set(e.refStudio, [...(m.get(e.refStudio) ?? []), p]);
+  return m;
+})();
+const partiesDe = (e: EntreeCatalogueExterieur): readonly PartieMatiere[] => (e.nature === 'matiere' && e.refStudio ? PARTIES_PAR_REF.get(e.refStudio) ?? [] : []);
+const Majuscule = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** Pourquoi une matière n'a pas de bouton « Choisir pour… » (dit sur la carte, jamais de faux bouton). */
+function raisonSansChoix(e: EntreeCatalogueExterieur): string {
+  if (/^Quartier|de quartier$/.test(e.application)) return 'Choisi automatiquement selon le quartier.';
+  if (e.famille === 'sols') return 'Sols du terrain : posés automatiquement (pas encore de choix dans le brief).';
+  if (e.famille === 'vegetation') return 'Feuillage de la vue 3D : posé automatiquement.';
+  if (e.rendu === 'non') return 'Pas encore utilisable : pas encore rendue dans les images.';
+  return 'Posée automatiquement avec sa partie (pas de choix séparé dans le brief).';
+}
+
+interface ChoixCarte {
+  readonly selection: SelectionCatalogue;
+  readonly onChoisir: (e: EntreeCatalogueExterieur, p: PartieMatiere) => void;
+  readonly onRetirer: (p: PartieMatiere) => void;
+}
+
+function ZoneChoix({ e, selection, onChoisir, onRetirer }: { e: EntreeCatalogueExterieur } & ChoixCarte) {
+  const [ouvert, setOuvert] = useState(false);
+  const parties = partiesDe(e);
+  if (e.nature !== 'matiere') return null;
+  if (!parties.length) return <p className="mz-catext__auto">{raisonSansChoix(e)}</p>;
+  const choisiePour = parties.filter((p) => choixEnVigueur(selection, p)?.ref === e.refStudio);
   return (
-    <article className="mz-catext__carte" data-rendu={e.rendu}>
+    <div className="mz-catext__choix">
+      {choisiePour.map((p) => (
+        <button key={p} type="button" className="mz-catext__choisie" aria-pressed="true" title="Retirer de ma sélection" onClick={() => onRetirer(p)}>
+          ✓ Choisie pour : {LIBELLES_PARTIE[p]} <span aria-hidden="true">×</span>
+        </button>
+      ))}
+      {parties.length > choisiePour.length && (
+        <button type="button" className="mz-catext__choisir" aria-expanded={ouvert} onClick={() => setOuvert(!ouvert)}>
+          {parties.length === 1 ? `Choisir pour : ${LIBELLES_PARTIE[parties[0]]}` : 'Choisir pour…'}
+        </button>
+      )}
+      {ouvert && (
+        <ul className="mz-catext__parties" aria-label={`Choisir ${e.nom} pour`}>
+          {parties.filter((p) => !choisiePour.includes(p)).map((p) => {
+            const en = choixEnVigueur(selection, p);
+            return (
+              <li key={p}>
+                <button type="button" onClick={() => { onChoisir(e, p); setOuvert(false); }}>
+                  <strong>{Majuscule(LIBELLES_PARTIE[p])}</strong>
+                  <span>{phraseRendu(traduireMatiere(p, e), e)}{en ? ` Remplace « ${en.nom} ».` : ''}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Carte({ e, choix }: { e: EntreeCatalogueExterieur; choix: ChoixCarte }) {
+  const chemins = [...new Set(e.choixBrief.map((c) => `${CHAMPS[c.champ] ?? c.champ} › ${c.libelle}`))];
+  const choisie = partiesDe(e).some((p) => choixEnVigueur(choix.selection, p)?.ref === e.refStudio);
+  return (
+    <article className={`mz-catext__carte${choisie ? ' is-choisie' : ''}`} data-rendu={e.rendu}>
       <div className={`mz-catext__vignette${teinteClaire(e.apercu.couleur) ? ' is-claire' : ''}`} style={{ backgroundColor: e.apercu.couleur }}>
         {e.apercu.image
           ? <img src={e.apercu.image} alt="" loading="lazy" decoding="async" />
@@ -81,6 +160,7 @@ function Carte({ e }: { e: EntreeCatalogueExterieur }) {
         </ul>
         <p className="mz-catext__note">{e.noteRendu}</p>
         {chemins.length > 0 && <p className="mz-catext__chemin"><span>Dans le chat :</span> {chemins.join(' · ')}</p>}
+        <ZoneChoix e={e} {...choix} />
       </div>
     </article>
   );
@@ -106,6 +186,57 @@ export default function PageCatalogueExterieur() {
   }, [filtre]);
   const toutes = useMemo(() => [...parFamille.values()].reduce((a, b) => a + b, 0), [parFamille]);
 
+  // VIS-33 — « Ma sélection », partagée avec la carte d'habillage de la conversation (autre onglet).
+  const conversation = useMemo(() => conversationDepuisAdresse(params.toString()), [params]);
+  const auteur = useRef('');
+  if (!auteur.current) auteur.current = nouvelAuteur('page');
+  const [selection, setSelection] = useState<SelectionCatalogue>(() => lireSelection(conversation));
+  const [envoi, setEnvoi] = useState<string | null>(null);
+  useEffect(() => {
+    let s = lireSelection(conversation);
+    // Choix faits page ouverte SEULE, puis page rouverte depuis un projet : ils passent dans le brouillon du projet.
+    if (conversation && !aEnvoyer(s)) {
+      const seule = lireSelection(null);
+      if (aEnvoyer(seule)) {
+        s = ecrireSelection(conversation, { ...s, brouillon: seule.brouillon }, auteur.current);
+        ecrireSelection(null, { ...seule, brouillon: {} }, auteur.current);
+      }
+    }
+    setSelection(s);
+    return ecouterSelection(conversation, auteur.current, (x) => setSelection(x));
+  }, [conversation]);
+  const majSelection = (f: (s: SelectionCatalogue) => SelectionCatalogue) => {
+    setEnvoi(null);
+    setSelection(ecrireSelection(conversation, f(lireSelection(conversation)), auteur.current));
+  };
+  const choixCarte: ChoixCarte = {
+    selection,
+    onChoisir: (e, p) => majSelection((s) => choisirDansPage(s, p, { ref: e.refStudio!, nom: e.nom })),
+    onRetirer: (p) => majSelection((s) => retirerDansPage(s, p)),
+  };
+  // Le bandeau « Ma sélection » colle SOUS l'en-tête collant du site (hauteur mesurée : 56 px mobile, plus sur ordinateur).
+  const racine = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const mesurer = () => {
+      try {
+        const h = [...document.querySelectorAll('header')]
+          .filter((x) => window.getComputedStyle(x).position === 'sticky' && x.getBoundingClientRect().height > 0)
+          .reduce((m, x) => Math.max(m, x.getBoundingClientRect().height), 0);
+        racine.current?.style.setProperty('--mz-entete-site', `${Math.round(h)}px`);
+      } catch { /* mesure impossible : repli CSS (64 px) */ }
+    };
+    mesurer();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(mesurer) : null;
+    document.querySelectorAll('header').forEach((x) => ro?.observe(x));
+    window.addEventListener('resize', mesurer);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', mesurer); };
+  }, []);
+  const utiliser = () => {
+    if (!conversation) return;
+    setSelection(ecrireSelection(conversation, envoyerAuProjet(lireSelection(conversation)), auteur.current));
+    setEnvoi('C’est dans l’habillage de votre projet : revenez à l’onglet du chat (étape 4 « Style & façades »). Le prix et la validation du brief restent dans le chat.');
+  };
+
   useEffect(() => {
     const avant = document.title;
     document.title = 'Catalogue extérieur — MimmozIA';
@@ -125,13 +256,14 @@ export default function PageCatalogueExterieur() {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saisie]);
-  const toutEffacer = () => { ecrite.current = ''; setSaisie(''); setParams(new URLSearchParams(), { replace: true }); };
+  // VIS-33 : la conversation reste dans l'adresse (sinon la sélection ne reviendrait plus dans le projet).
+  const toutEffacer = () => { ecrite.current = ''; setSaisie(''); setParams(new URLSearchParams(conversation ? { conversation } : {}), { replace: true }); };
   const basculer = (cle: keyof Pick<FiltreCatalogue, 'chat' | 'studio'>) => changer(cle, filtre[cle] ? null : '1');
   const filtreActif = Boolean(filtre.famille || filtre.rendu || filtre.chat || filtre.studio || saisie.trim());
   const sections = FAMILLES_EXTERIEUR.map((f) => ({ f, entrees: visibles.filter((e) => e.famille === f.id) })).filter((s) => s.entrees.length > 0);
 
   return (
-    <div className="mz-catext">
+    <div className="mz-catext" ref={racine}>
       <header className="mz-catext__tete">
         <Link className="mz-catext__retour" to="/mimmozia">← MimmozIA</Link>
         <h1>Catalogue extérieur</h1>
@@ -141,8 +273,8 @@ export default function PageCatalogueExterieur() {
           et s’il apparaît vraiment dans les images rendues.
         </p>
         <p className="mz-catext__usage">
-          Pour habiller votre projet avec une de ces matières : dans le chat, étape 4 « Style &amp; façades » → « Choisir » (ou
-          « Modifier »), puis « Toutes les matières » sous la façade, le soubassement, les menuiseries, les garde-corps ou la toiture.
+          Pour habiller votre projet : « Choisir pour… » sur une matière, puis « Utiliser dans mon projet » dans « Ma sélection ».
+          Vos choix arrivent dans la carte d’habillage du chat (étape 4 « Style &amp; façades »), où vous validez le brief.
         </p>
         <ul className="mz-catext__chiffres" aria-label="Le catalogue en chiffres">
           <li><strong>{total.total}</strong><span>entrées, dont {total.matieres} matières et {total.elements} éléments</span></li>
@@ -153,6 +285,8 @@ export default function PageCatalogueExterieur() {
           <li className="is-non"><strong>{total.rendu.non}</strong><span>pas encore rendus</span></li>
         </ul>
       </header>
+
+      <BandeauSelection selection={selection} conversation={conversation} envoi={envoi} onRetirer={choixCarte.onRetirer} onUtiliser={utiliser} />
 
       <section className="mz-catext__legende" aria-label="Comment lire les statuts">
         <h2>Comment lire cette page</h2>
@@ -165,8 +299,9 @@ export default function PageCatalogueExterieur() {
           <div><dt><span className="mz-catext__badge mz-catext__badge--bientot">{LIBELLES_CHAT.bientot.libelle}</span></dt><dd>{LIBELLES_CHAT.bientot.explication}</dd></div>
         </dl>
         <p className="mz-catext__legende-vignettes">
-          Vignettes : « Photo de la texture » et « Vignette du modèle 3D » montrent le vrai fichier utilisé. « Aperçu indicatif » est une simple
-          pastille de couleur ou un schéma : ce n’est pas une image du rendu.
+          Vignettes : « {MENTIONS_APERCU.texture} » et « {MENTIONS_APERCU.modele} » montrent le vrai fichier utilisé. « Couleur seule » est une
+          simple pastille de la teinte (le Studio n’a pas de photo, ou la texture est dessinée par programme) ; « {MENTIONS_APERCU.schema} » est
+          un pictogramme. Ni l’une ni l’autre n’est une image du rendu.
         </p>
       </section>
 
@@ -213,7 +348,7 @@ export default function PageCatalogueExterieur() {
               </p>
             </div>
             <div className="mz-catext__grille">
-              {entrees.map((e) => <Carte key={e.id} e={e} />)}
+              {entrees.map((e) => <Carte key={e.id} e={e} choix={choixCarte} />)}
             </div>
           </section>
         );
@@ -226,5 +361,44 @@ export default function PageCatalogueExterieur() {
         </p>
       </footer>
     </div>
+  );
+}
+
+const LIBELLE_ETAT = { projet: 'Dans le projet', a_envoyer: 'À envoyer', retrait_a_envoyer: 'Retrait à envoyer' } as const;
+
+/** VIS-33 — bandeau collant « Ma sélection » : partie → matière, retirer, et un seul bouton « Utiliser dans mon projet ». */
+function BandeauSelection({ selection, conversation, envoi, onRetirer, onUtiliser }: {
+  selection: SelectionCatalogue; conversation: string | null; envoi: string | null; onRetirer: (p: PartieMatiere) => void; onUtiliser: () => void;
+}) {
+  const lignes = lignesSelection(selection);
+  const refus = PARTIES_MATIERE.filter((p) => selection.refus[p] && !lignes.some((l) => l.partie === p && l.etat === 'projet'));
+  const pret = conversation && aEnvoyer(selection);
+  return (
+    <section className="mz-catext__selection" aria-label="Ma sélection">
+      <div className="mz-catext__selection-tete">
+        <h2>Ma sélection</h2>
+        {conversation
+          ? <button type="button" className="mz-catext__utiliser" disabled={!pret} onClick={onUtiliser}>Utiliser dans mon projet</button>
+          : <button type="button" className="mz-catext__utiliser" disabled>Ouvrez un projet dans le chat pour utiliser ces matières</button>}
+      </div>
+      {lignes.length === 0
+        ? <p className="mz-catext__selection-vide">Aucune matière choisie. Utilisez « Choisir pour… » sur une matière.</p>
+        : (
+          <ul className="mz-catext__selection-lignes">
+            {lignes.map((l) => (
+              <li key={l.partie} data-etat={l.etat}>
+                <span className="mz-catext__selection-partie">{Majuscule(LIBELLES_PARTIE[l.partie])}</span>
+                <span className="mz-catext__selection-nom">{l.etat === 'retrait_a_envoyer' ? <s>{l.choix.nom}</s> : l.choix.nom}</span>
+                <span className="mz-catext__selection-etat">{LIBELLE_ETAT[l.etat]}</span>
+                {l.etat !== 'retrait_a_envoyer' && <button type="button" onClick={() => onRetirer(l.partie)}>Retirer</button>}
+              </li>
+            ))}
+          </ul>
+        )}
+      {refus.map((p) => <p key={p} className="mz-catext__selection-refus" role="status">Refusé par la carte d’habillage ({LIBELLES_PARTIE[p]}) : {selection.refus[p]}</p>)}
+      {!conversation && lignes.length > 0 && <p className="mz-catext__selection-note">Votre sélection est gardée sur cet appareil : ouvrez le catalogue depuis un projet du chat (étape 4) pour l’utiliser.</p>}
+      {conversation && !pret && lignes.length > 0 && !envoi && <p className="mz-catext__selection-note">Tout est déjà dans l’habillage de votre projet.</p>}
+      {envoi && <p className="mz-catext__selection-ok" role="status">{envoi}</p>}
+    </section>
   );
 }

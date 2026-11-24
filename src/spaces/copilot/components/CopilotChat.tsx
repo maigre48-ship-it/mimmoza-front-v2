@@ -34,6 +34,7 @@ import type { CommandeParcours } from '../studio3d/JarvisDraftPanel';
 import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from '../studio3d/parcours.store';
 import { messageValidationApercu } from '@/lib/studio/parcours';
 import { lancerMissionDuDevis, suivreMissionUi } from '../agent/lancementMission';
+import { adresseCatalogueConversation } from '../studio3d/selectionCatalogue';
 
 /** Fenêtre « Espace 3D » : ouverte, agrandie, réduite en bande sur le côté, ou fermée. */
 type EtatFenetre3D = 'ouvert' | 'large' | 'reduit' | 'ferme';
@@ -256,7 +257,8 @@ export function CopilotChat({
       return;
     }
     // VIS-24 : page catalogue (matières et éléments 3D d'extérieur) dans un nouvel onglet — le chat reste ici.
-    if (action.cible === 'catalogue-exterieur') { window.open('/mimmozia/catalogue-exterieur', '_blank', 'noopener'); return; }
+    // VIS-33 : la conversation part dans l'adresse : les matières choisies dans la page reviennent dans SA carte d'habillage.
+    if (action.cible === 'catalogue-exterieur') { window.open(adresseCatalogueConversation(currentConversationId ?? null), '_blank', 'noopener'); return; }
     if (action.cible === 'habillage') { ouvrirHabillage(null); return; }
     if (action.cible === 'studio-interieur' || action.cible === 'studio-batiment') {
       montrerPanneau3D();

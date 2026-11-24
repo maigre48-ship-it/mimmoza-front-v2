@@ -316,8 +316,8 @@ export interface DemandeBrief {
   type: TypeRenduBrief | null;
   /** Ambiances proposées par le serveur pour ce type (l'image n'a pas de nuit). */
   ambiances: Ambiance[];
-  /** Brief connu (modification) ; null si aucun. */
-  actuel: (ChoixBrief & { defauts: string[] }) | null;
+  /** Brief connu (modification) ; null si aucun. VIS-32 : `matieres` = références du catalogue déjà choisies. */
+  actuel: (ChoixBrief & { defauts: string[]; matieres?: Partial<Record<PartieMatiere, string>> }) | null;
   apercu: ApercuVolume | null;
   limites: LimitesBrief;
   /** VIS-16 : carte pré-remplie avec l'habillage du brief projet enregistré (serveur : `prerempli: "brief_projet"`). */
@@ -359,11 +359,12 @@ function lireActuel(v: unknown): DemandeBrief['actuel'] {
     return CHOIX_DEFAUT[champ] as T;
   };
   const teinte = detail('teinte', TEINTES);
+  const matieres = lireMatieresConnues(v.matieres);
   return {
     facade: v.facade, ouvertures: v.ouvertures, balcons: v.balcons, attique: v.attique, rdc: v.rdc, ambiance: v.ambiance,
     toiture: detail('toiture', TOITURES), teinte: TEINTES_PAR_FACADE[v.facade].includes(teinte) ? teinte : 'naturelle',
     garde_corps: detail('garde_corps', GARDE_CORPS), menuiseries: detail('menuiseries', MENUISERIES), soubassement: detail('soubassement', SOUBASSEMENTS),
-    defauts,
+    defauts, ...(matieres ? { matieres } : {}),
   };
 }
 
@@ -439,9 +440,10 @@ export interface EtatBrief {
 //     claire, « Aluminium bronze » → menuiseries bronze…) ;
 //   - sinon, par la valeur fermée la PLUS PROCHE (« Pierre de taille » → pierre claire), dite « approchée » ;
 //   - sans équivalent (« Panneaux métalliques »), le rendu garde la valeur fermée en place — dit tel quel.
-// La référence exacte (refStudio) n'est PAS encore envoyée dans le bloc : le serveur refuse tout champ inconnu
-// (« Champ de brief inconnu »). Elle partira quand le serveur ET la machine de rendu la liront (journal VIS-31) :
-// passer alors TRANSMETTRE_REFERENCES_CATALOGUE à true.
+// VIS-32 (24/11) : la référence exacte (refStudio) PART dans le bloc (`brief.matieres`, liste blanche du serveur :
+// matieresParPartie.ts) pour les matières que la machine de rendu pose telles quelles (av-, pm-, rg-) : elles sont
+// « rendues telles quelles ». La traduction fermée ci-dessus reste appliquée en REPLI (machine de rendu d'avant VIS-32,
+// référence non trouvée dans le Studio) ; les qm- (moteur de quartier) restent traduites, comme en VIS-31.
 export type PartieMatiere = 'facade' | 'soubassement' | 'menuiseries' | 'garde_corps' | 'toiture';
 export const PARTIES_MATIERE: readonly PartieMatiere[] = ['facade', 'soubassement', 'menuiseries', 'garde_corps', 'toiture'];
 /** Partie du bâtiment que règle un champ de la carte. */
@@ -462,10 +464,23 @@ export interface MatiereCatalogueChoisie {
   exacte: boolean;
   /** Ce que le rendu montre à sa place quand elle n'est pas exacte (« Pierre claire ») ; null = pas d'équivalent. */
   rendueComme: string | null;
+  /** VIS-32 : vrai = la référence part dans le brief et la machine de rendu la pose telle quelle. */
+  transmise?: boolean;
+  /** VIS-32 : relue d'un brief connu (référence seule) ; nom et statut complétés par la carte (catalogue chargé à la demande). */
+  aResoudre?: boolean;
 }
 export type MatieresCatalogueChoisies = Partial<Record<PartieMatiere, MatiereCatalogueChoisie>>;
-/** VIS-31 : faux tant que le serveur refuse le champ `matieres` du brief (voir plus haut). */
-export const TRANSMETTRE_REFERENCES_CATALOGUE = false;
+/** VIS-32 : vrai — le serveur accepte le champ `matieres` du brief (liste blanche) et la machine de rendu le lit. */
+export const TRANSMETTRE_REFERENCES_CATALOGUE = true;
+/** VIS-32 : référence que la machine de rendu pose telle quelle (même règle que matieresParPartie.ts, sans charger le catalogue). */
+export const RE_REFERENCE_TRANSMISSIBLE = /^(?:av|pm|rg)-[a-z0-9-]{1,60}$/;
+/** VIS-32 : références de matières d'un brief connu (bloc relu, devis) → par partie ; null si aucune. */
+export function lireMatieresConnues(v: unknown): Partial<Record<PartieMatiere, string>> | null {
+  if (!estObj(v)) return null;
+  const out: Partial<Record<PartieMatiere, string>> = {};
+  for (const p of PARTIES_MATIERE) { const r = v[p]; if (typeof r === 'string' && RE_REFERENCE_TRANSMISSIBLE.test(r)) out[p] = r; }
+  return Object.keys(out).length ? out : null;
+}
 
 /** Retire la matière du catalogue d'une partie (l'utilisateur a repris une valeur de la carte). */
 export function retirerMatiereCatalogue(etat: EtatBrief, partie: PartieMatiere): EtatBrief {
@@ -508,7 +523,7 @@ export function phraseMatieresCatalogue(etat: Pick<EtatBrief, 'matieres'>): stri
   const morceaux = PARTIES_MATIERE.filter((p) => m[p]).map((p) => {
     const x = m[p]!;
     const reserve = x.rendu === 'reserve' ? ', avec réserve' : '';
-    if (x.exacte) return `${LIBELLES_PARTIE[p]} « ${x.nom} » (rendue telle quelle${reserve})`;
+    if (x.exacte || x.transmise) return `${LIBELLES_PARTIE[p]} « ${x.nom} » (rendue telle quelle${reserve})`;
     if (x.rendueComme) return `${LIBELLES_PARTIE[p]} « ${x.nom} » (rendue pour l’instant comme « ${x.rendueComme} »${reserve})`;
     return `${LIBELLES_PARTIE[p]} « ${x.nom} » (pas encore d’équivalent dans le rendu${reserve})`;
   });
@@ -528,6 +543,16 @@ export function etatInitial(d: Pick<DemandeBrief, 'actuel' | 'ambiances'> & { li
   if (!d.ambiances.includes(choix.ambiance)) { choix.ambiance = d.ambiances[0] ?? 'jour'; touches = touches.filter((c) => c !== 'ambiance'); }
   // Lot brief-formes : toit à deux pans connu mais bâtiment à ailes → toit-terrasse proposé à nouveau.
   if (d.limites?.ailes && toitEnPente(choix.toiture)) { choix.toiture = 'terrasse'; touches = touches.filter((c) => c !== 'toiture'); }
+  // VIS-32 : matières du catalogue du brief connu, relues à la réouverture (nom et statut complétés par la carte).
+  const connues = a?.matieres ?? null;
+  if (connues) {
+    const matieres: MatieresCatalogueChoisies = {};
+    for (const p of PARTIES_MATIERE) {
+      const ref = connues[p];
+      if (ref) matieres[p] = { ref, nom: ref, rendu: 'oui', noteRendu: '', exacte: true, rendueComme: null, transmise: true, aResoudre: true };
+    }
+    if (Object.keys(matieres).length) return { choix, touches, matieres };
+  }
   return { choix, touches };
 }
 
@@ -606,8 +631,10 @@ export function briefAEnvoyer(etat: EtatBrief, mimmoChoisit = false): Obj {
   for (const c of CHAMPS_CARTE) if (champs.includes(c)) b[c] = etat.choix[c];
   if (mimmoChoisit || CHAMPS_CARTE.some((c) => !champs.includes(c))) b.a_toi_de_choisir = true;
   // VIS-31 : références exactes du catalogue — seulement quand le serveur les accepte (voir TRANSMETTRE_REFERENCES_CATALOGUE).
-  if (TRANSMETTRE_REFERENCES_CATALOGUE && etat.matieres && Object.keys(etat.matieres).length) {
-    b.matieres = Object.fromEntries(PARTIES_MATIERE.filter((p) => etat.matieres?.[p]).map((p) => [p, etat.matieres![p]!.ref]));
+  // VIS-32 : seulement les matières transmises (av-, pm-, rg-) ; les autres restent traduites (valeurs fermées ci-dessus).
+  const transmises = PARTIES_MATIERE.filter((p) => etat.matieres?.[p]?.transmise && RE_REFERENCE_TRANSMISSIBLE.test(etat.matieres[p]!.ref));
+  if (TRANSMETTRE_REFERENCES_CATALOGUE && transmises.length) {
+    b.matieres = Object.fromEntries(transmises.map((p) => [p, etat.matieres![p]!.ref]));
   }
   return b;
 }
@@ -712,6 +739,8 @@ export interface BriefCourant extends ChoixBrief {
   defauts: string[];
   /** D'où vient le brief : bloc d'un message (carte ou fiche) ou devis de rendu. */
   origine: 'message' | 'devis';
+  /** VIS-32 : références des matières du catalogue choisies (relues à la réouverture de la carte). */
+  matieres?: Partial<Record<PartieMatiere, string>>;
 }
 
 /** Bloc ```mimmoza-brief``` d'un message → choix (valeurs absentes = proposées) ; null si absent ou refusé par les listes. */
@@ -736,7 +765,8 @@ export function briefDuBloc(texte: string): BriefCourant | null {
   if (choix.attique && toitEnPente(choix.toiture)) { if (!defauts.includes('attique') && !defauts.includes('toiture')) return null; if (defauts.includes('attique')) choix.attique = false; else choix.toiture = 'terrasse'; }
   if (choix.rdc === 'commerces' && choix.soubassement !== 'aucun') { if (!defauts.includes('rdc') && !defauts.includes('soubassement')) return null; if (defauts.includes('rdc')) choix.rdc = 'logements'; else choix.soubassement = 'aucun'; }
   if (b.style !== undefined && b.style !== null && !STYLES.some((s) => s.valeur === b.style)) return null;
-  return { ...choix, defauts, origine: 'message' };
+  const matieres = lireMatieresConnues(b.matieres);
+  return { ...choix, defauts, origine: 'message', ...(matieres ? { matieres } : {}) };
 }
 
 /**
@@ -763,7 +793,7 @@ export function demandeFiche(actuel: BriefCourant | null, apercu: ApercuVolume |
     actuel: actuel ? {
       facade: actuel.facade, ouvertures: actuel.ouvertures, balcons: actuel.balcons, attique: actuel.attique, rdc: actuel.rdc, ambiance: actuel.ambiance,
       toiture: actuel.toiture, teinte: actuel.teinte, garde_corps: actuel.garde_corps, menuiseries: actuel.menuiseries, soubassement: actuel.soubassement,
-      defauts: actuel.defauts,
+      defauts: actuel.defauts, ...(actuel.matieres ? { matieres: { ...actuel.matieres } } : {}),
     } : null,
     apercu, limites: avecAiles(limites, apercu),
   };

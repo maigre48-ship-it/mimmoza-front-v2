@@ -19,16 +19,20 @@
 // VIS-31 (24/11) : sous la façade, le soubassement, les menuiseries, les garde-corps et la toiture, « Toutes les
 // matières » ouvre la grille du catalogue extérieur (ChoixMatiereCatalogue, chargée à la demande) : toutes les
 // matières rendues, pleinement ou avec réserve, et ce que le rendu en montre vraiment (matieresCatalogue.ts).
+// VIS-33 (24/11) : les matières choisies dans la page catalogue extérieur (« Utiliser dans mon projet ») arrivent dans
+// cette carte, et inversement (synchroSelectionCarte.ts) ; le prix et la validation restent ici, dans le chat.
 // =============================================================================
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Palette, Sparkles } from 'lucide-react';
 import { useCopilotStore } from '../store/copilotStore';
 import {
   BIENTOT, ECRANS, QUESTIONS, STYLES, TEINTES_PAR_FACADE, briefEnvoyeApres, choisir, choisirMatiereCatalogue, demandeDepassee, choixAppliques, etatInitial,
   libelleTeinte, messageBrief, optionsDe, phraseMatieresCatalogue, raisonIndisponible, recapitulatif, retirerMatiereCatalogue,
-  type ChampCarte, type DemandeBrief, type EtatBrief, type PartieMatiere,
+  PARTIES_MATIERE, type ChampCarte, type DemandeBrief, type EtatBrief, type PartieMatiere,
 } from './briefCreatif';
 import { VignetteTravee } from './VignetteTravee';
+// VIS-33 — sélection partagée avec la page catalogue extérieur (autre onglet), par conversation.
+import { useSynchroSelectionCarte } from './synchroSelectionCarte';
 // VIS-04 — le brief projet de l'étude (Style & tendances, programme, vues) part avec l'habillage, qui y est mémorisé.
 import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
 import './CarteBriefCreatif.css';
@@ -83,6 +87,29 @@ export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFerm
   const [catalogueOuvert, setCatalogueOuvert] = useState<PartieMatiere | null>(null);
   const [refusCatalogue, setRefusCatalogue] = useState<string | null>(null);
   const phraseMatieres = phraseMatieresCatalogue(etat);
+  // VIS-33 : « Utiliser dans mon projet » de la page catalogue arrive ici ; un choix fait ici repart vers la page.
+  const refusSelection = useSynchroSelectionCarte(conversationId, etat, setEtat, demande);
+  // VIS-32 : matières du catalogue relues d'un brief connu (référence seule) → nom et statut, catalogue chargé à la demande.
+  const aResoudre = PARTIES_MATIERE.filter((p) => etat.matieres?.[p]?.aResoudre).join(',');
+  useEffect(() => {
+    if (!aResoudre) return;
+    let actif = true;
+    void import('./matieresCatalogue').then(({ matiereDepuisRef }) => {
+      if (!actif) return;
+      setEtat((s) => {
+        if (!s.matieres) return s;
+        let e = s;
+        for (const p of PARTIES_MATIERE) {
+          const m = e.matieres?.[p];
+          if (!m?.aResoudre) continue;
+          const complete = matiereDepuisRef(p, m.ref);
+          e = complete ? { ...e, matieres: { ...e.matieres, [p]: complete } } : retirerMatiereCatalogue(e, p);
+        }
+        return e;
+      });
+    }).catch(() => { /* hors ligne : la référence reste affichée telle quelle, elle part quand même dans le brief */ });
+    return () => { actif = false; };
+  }, [aResoudre]);
 
   const recap = recapitulatif(etat.choix, demande);
   const fini = envoye ?? envoyeDansLeFil;
@@ -165,7 +192,7 @@ export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFerm
                     {enPlace && (
                       <span className={`mz-brief__catalogue-choix${enPlace.rendu === 'reserve' ? ' is-reserve' : ''}`}>
                         Catalogue : <strong>{enPlace.nom}</strong>{enPlace.rendu === 'reserve' ? ' · avec réserve' : ''}
-                        {!enPlace.exacte && (enPlace.rendueComme ? ` · rendue comme « ${enPlace.rendueComme} »` : ' · pas encore d’équivalent dans le rendu')}
+                        {enPlace.exacte || enPlace.transmise ? ' · rendue telle quelle' : enPlace.rendueComme ? ` · rendue comme « ${enPlace.rendueComme} »` : ' · pas encore d’équivalent dans le rendu'}
                         <button type="button" onClick={() => setEtat((s) => retirerMatiereCatalogue(s, partie))}>Retirer</button>
                       </span>
                     )}
@@ -206,6 +233,7 @@ export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFerm
 
       <footer className="mz-brief__pied">
         <p className="mz-brief__recap" aria-live="polite"><strong>Votre brief :</strong> {recap}{phraseMatieres && <><br />{phraseMatieres}</>}</p>
+        {refusSelection && <p className="mz-brief__note" role="status">{refusSelection}</p>}
         <div className="mz-brief__actions">
           <button type="button" className="mz-brief__btn mz-brief__btn--leger" onClick={() => envoyer(true)} disabled={!onSend || enCours}
             title={etat.touches.length ? 'Mimmo garde vos choix et propose le reste' : 'Mimmo choisit tout'}>

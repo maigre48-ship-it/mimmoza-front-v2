@@ -9,9 +9,11 @@
 // Seules les matières RENDUES (pleinement ou avec réserve) sont proposées ; « avec réserve » est toujours affiché.
 // Module séparé de briefCreatif.ts : le catalogue (≈ 100 Ko) n'est téléchargé qu'à l'ouverture de « Toutes les matières ».
 // =============================================================================
-import { CATALOGUE_EXTERIEUR, normaliserTexte, type EntreeCatalogueExterieur } from './catalogueExterieur.ts';
+import { type EntreeCatalogueExterieur } from './catalogueExterieur.ts';
+// VIS-32 : candidates et liste blanche partagées avec le serveur (module pur).
+import { candidatesDeLaPartie, motsEntree, referenceTransmissible } from './matieresParPartie.ts';
 import {
-  FACADES, SOUBASSEMENTS, TOITURES, libelleTeinte,
+  FACADES, SOUBASSEMENTS, TOITURES, TRANSMETTRE_REFERENCES_CATALOGUE, libelleTeinte,
   type ChoixBrief, type Facade, type GardeCorps, type MatiereCatalogueChoisie, type Menuiseries, type PartieMatiere, type Soubassement,
   type Teinte, type Toiture,
 } from './briefCreatif.ts';
@@ -25,28 +27,14 @@ export interface TraductionMatiere {
   readonly rendueComme: string | null;
 }
 
-const RENDUES = CATALOGUE_EXTERIEUR.filter((e) => e.nature === 'matiere' && e.rendu !== 'non' && !!e.refStudio && /^(?:av|pm|rg|qm)-/.test(e.refStudio));
-const mots = (e: EntreeCatalogueExterieur): string => normaliserTexte(`${e.nom} ${e.refStudio ?? ''}`);
-const relieA = (e: EntreeCatalogueExterieur, champ: string): boolean => e.choixBrief.some((c) => c.champ === champ);
-
+const mots = motsEntree;
 const RE_MINERAL = /pierre|gres|silex|moellon|meuliere|calcaire|marbre/;
-/** Matières candidates de chaque partie (catalogue, rendues seulement). */
-const CANDIDATES: Readonly<Record<PartieMatiere, (e: EntreeCatalogueExterieur) => boolean>> = {
-  facade: (e) => relieA(e, 'facade') || relieA(e, 'teinte') || (e.famille === 'facades' && e.application !== 'Quartier : soubassement'),
-  soubassement: (e) => relieA(e, 'soubassement')
-    || (e.famille === 'facades' && (/soubassement/i.test(e.application) || /pierre|gres|silex|moellon|meuliere|calcaire|beton|brique/.test(mots(e)))),
-  menuiseries: (e) => relieA(e, 'menuiseries')
-    || (e.famille === 'menuiseries' && ['Cadres des fenêtres et des portes', 'Menuiseries en bois peint', 'Fenêtres et vitrages'].includes(e.application) && !/verre/.test(mots(e))),
-  garde_corps: (e) => e.famille === 'balcons',
-  toiture: (e) => relieA(e, 'toiture')
-    || (e.famille === 'toitures' && ['Couverture du toit', 'Couverture et zinguerie'].includes(e.application) && !/gouttiere/.test(mots(e))),
-};
 
 const ORDRE_TRADUCTION: Record<Traduction, number> = { exacte: 0, approchee: 1, aucune: 2 };
 
 /** Matières proposées pour une partie : exactes d'abord, puis approchées, puis sans équivalent ; rendues avant « avec réserve ». */
 export function matieresDeLaPartie(partie: PartieMatiere): EntreeCatalogueExterieur[] {
-  return RENDUES.filter(CANDIDATES[partie]).sort((a, b) =>
+  return candidatesDeLaPartie(partie).sort((a, b) =>
     ORDRE_TRADUCTION[traduireMatiere(partie, a).traduction] - ORDRE_TRADUCTION[traduireMatiere(partie, b).traduction]
     || (a.rendu === b.rendu ? 0 : a.rendu === 'oui' ? -1 : 1)
     || a.nom.localeCompare(b.nom, 'fr'));
@@ -132,18 +120,32 @@ export function traduireMatiere(partie: PartieMatiere, e: EntreeCatalogueExterie
   }
 }
 
+/** VIS-32 : vrai = la référence part dans le brief et la machine de rendu la pose telle quelle (av-, pm-, rg-). */
+export const estTransmise = (e: Pick<EntreeCatalogueExterieur, 'refStudio'>): boolean => TRANSMETTRE_REFERENCES_CATALOGUE && referenceTransmissible(e.refStudio);
+
 /** Matière choisie, telle que la carte la garde (et la dit dans le message). */
 export function matiereChoisie(partie: PartieMatiere, e: EntreeCatalogueExterieur): MatiereCatalogueChoisie {
   const tr = traduireMatiere(partie, e);
+  const transmise = estTransmise(e);
   return {
     ref: e.refStudio ?? e.id, nom: e.nom, rendu: e.rendu === 'oui' ? 'oui' : 'reserve', noteRendu: e.noteRendu,
-    exacte: tr.traduction === 'exacte', rendueComme: tr.traduction === 'exacte' ? null : tr.rendueComme,
+    exacte: tr.traduction === 'exacte' || transmise, rendueComme: tr.traduction === 'exacte' || transmise ? null : tr.rendueComme,
+    ...(transmise ? { transmise: true } : {}),
   };
 }
 
-/** Phrase courte « dans le rendu » d'une carte du sélecteur. */
-export function phraseRendu(tr: TraductionMatiere): string {
-  if (tr.traduction === 'exacte') return 'Rendue telle quelle dans les images.';
+/**
+ * VIS-32 — matière d'un brief connu (référence seule, relue à la réouverture de la carte) → matière complète (nom, statut,
+ * traduction) ; null si la référence n'est plus proposée pour cette partie (elle est alors retirée de la carte).
+ */
+export function matiereDepuisRef(partie: PartieMatiere, ref: string): MatiereCatalogueChoisie | null {
+  const e = candidatesDeLaPartie(partie).find((x) => x.refStudio === ref);
+  return e ? matiereChoisie(partie, e) : null;
+}
+
+/** Phrase courte « dans le rendu » d'une carte du sélecteur (`e` : l'entrée, pour savoir si elle est transmise telle quelle). */
+export function phraseRendu(tr: TraductionMatiere, e?: Pick<EntreeCatalogueExterieur, 'refStudio'>): string {
+  if (tr.traduction === 'exacte' || (e && estTransmise(e))) return 'Rendue telle quelle dans les images.';
   if (tr.traduction === 'approchee') return `Rendue pour l’instant comme « ${tr.rendueComme} » (matière la plus proche).`;
   return 'Pas encore d’équivalent dans le rendu : le choix est noté, le rendu garde la matière actuelle.';
 }

@@ -10,6 +10,12 @@ Fabrique de PETITES images (256 px) à partir de fichiers RÉELS du Studio, sans
 Seuls les jeux cités par une matière du Studio reçoivent une vignette ; les jeux d'intérieur (tissus, cuirs,
 carrelages, parquets) sont ignorés.
 
+VIS-33 (24/11) — « je ne vois pas tout » : la plupart des matières de voirie et des enduits (acg-asphalt033,
+acg-tiles038, acg-plaster003, grass001…) ne sont PAS dans les .zip : elles vivent dans
+`mimmozia-studio/assets/materials/<jeu>/` (convention acquise `color.jpg`, ou `<jeu>_basecolor.jpg`), que ce script
+ne lisait pas. Ces dossiers sont des JONCTIONS vers le SSD D: (D:\Mimmoza-assets\...) : lancer le script sous Windows,
+disque D: branché. Les jeux `gen-*` (textures dessinées par programme) n'ont pas de photo : jamais de vignette.
+
 Usage (PowerShell, depuis mimmoza-front-v2) :
     python scripts/vignettes-catalogue-exterieur.py ..\mimmozia-studio
     python scripts/vignettes-catalogue-exterieur.py ..\mimmozia-studio 0 15     # par tranche (début, fin)
@@ -25,7 +31,7 @@ STUDIO = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(SITE
 DEBUT = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 FIN = int(sys.argv[3]) if len(sys.argv) > 3 else 10 ** 6
 SORTIE = os.path.join(SITE, 'public', 'catalogue-exterieur')
-INTERIEUR = re.compile(r'^(fabric|leather|tiles|woodfloor|marble014)', re.I)
+INTERIEUR = re.compile(r'^(fabric|leather|tiles|woodfloor|marble014|carpet)', re.I)
 ELEMENTS = re.compile(r'(tree|shrub|flower|grass|plant|sapling|searsia|bench)', re.I)
 TAILLE = 256
 
@@ -43,6 +49,15 @@ def jeux_utiles() -> set:
 
 
 UTILES = jeux_utiles()
+
+
+def jeux_de_voirie() -> set:
+    """VIS-33 : jeux des matières de rue (dalles acg-tiles038 / acg-tiles143…) — exemptés du filtre « intérieur »."""
+    with open(os.path.join(STUDIO, 'src/core/quartier/materiaux/catalogue.ts'), encoding='utf-8') as f:
+        return {re.sub(r'^acg-(4k-)?', '', n.lower()) for n in re.findall(r"jeu: '([a-z0-9-]+)'", f.read(), re.I)}
+
+
+VOIRIE = jeux_de_voirie()
 
 
 def vignette(img: Image.Image) -> Image.Image:
@@ -106,8 +121,40 @@ def elements() -> None:
         print('element', f)
 
 
+def textures_des_materiaux() -> None:
+    """VIS-33 : jeux de `assets/materials/<jeu>/` (acg-…, acg-4k-…, ambientCG) — carte de couleur réelle."""
+    racine = os.path.join(STUDIO, 'assets', 'materials')
+    dossier = os.path.join(SORTIE, 'textures')
+    os.makedirs(dossier, exist_ok=True)
+    illisibles = []
+    # Les jeux 2K (acg-…) passent avant les 4K (acg-4k-…) : même photo, lecture plus rapide.
+    for d in sorted(os.listdir(racine), key=lambda n: (n.startswith('acg-4k-'), n)):
+        jeu = re.sub(r'^acg-(4k-)?', '', d.lower())
+        if d.startswith('gen-') or d.startswith('.') or (INTERIEUR.match(jeu) and jeu not in VOIRIE) or jeu not in UTILES:
+            continue
+        cible = os.path.join(dossier, jeu + '.jpg')
+        if os.path.exists(cible):
+            continue
+        try:
+            noms = os.listdir(os.path.join(racine, d))
+        except OSError:
+            illisibles.append(d)
+            continue
+        couleur = [n for n in noms if n.lower() in ('color.jpg', f'{d.lower()}_basecolor.jpg') or n.lower().endswith(('_color.jpg', '_basecolor.jpg'))]
+        if not couleur:
+            print('sans carte de couleur :', d)
+            continue
+        img = Image.open(os.path.join(racine, d, couleur[0]))
+        img.draft('RGB', (TAILLE * 2, TAILLE * 2))
+        vignette(img).save(cible, 'JPEG', quality=82, optimize=True)
+        print('texture (assets/materials)', jeu)
+    if illisibles:
+        print(f'ILLISIBLES ({len(illisibles)}) — jonctions vers le disque D: non branché ? :', ', '.join(illisibles))
+
+
 if __name__ == '__main__':
     textures()
     if DEBUT == 0:
         textures_du_site()
+        textures_des_materiaux()
         elements()

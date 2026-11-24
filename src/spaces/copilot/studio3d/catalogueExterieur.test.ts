@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  CATALOGUE_EXTERIEUR, FAMILLES_EXTERIEUR, LIBELLES_CHAT, LIBELLES_RENDU, ROUTE_CATALOGUE_EXTERIEUR,
+  CATALOGUE_EXTERIEUR, FAMILLES_EXTERIEUR, LIBELLES_CHAT, LIBELLES_RENDU, MENTIONS_APERCU, ROUTE_CATALOGUE_EXTERIEUR,
   adresseCatalogueExterieur, compterCatalogue, entreesDeLaFamille, entreesDuChoix, filtreDepuisAdresse, filtrerCatalogue, normaliserTexte,
 } from './catalogueExterieur.ts';
 import {
@@ -44,11 +44,14 @@ test('honnêteté : un choix du chat a ses choix ; « bientôt » n’est jamais
     if (e.chat === 'bientot') assert.equal(e.rendu, 'non', `${e.id} : annoncé « bientôt » mais dit rendu`);
     if (e.apercu.type === 'teinte') {
       assert.equal(e.apercu.image, null, `${e.id} : une pastille n’a pas d’image`);
-      assert.equal(e.apercu.mention, 'Aperçu indicatif', `${e.id} : une pastille doit être dite indicative`);
+      // VIS-33 : une pastille dit POURQUOI elle n'a pas de photo (plus jamais « Aperçu indicatif » sous « Texture photo validée »).
+      const pastilles: readonly string[] = [MENTIONS_APERCU.couleur, MENTIONS_APERCU.dessinee, MENTIONS_APERCU.aExtraire, MENTIONS_APERCU.schema];
+      assert.ok(pastilles.includes(e.apercu.mention), `${e.id} : une pastille doit dire qu’elle n’est pas une photo (${e.apercu.mention})`);
+      assert.equal(e.apercu.mention === MENTIONS_APERCU.schema, e.nature === 'element', `${e.id} : schéma ⇔ élément`);
     } else {
       assert.ok(e.apercu.image?.startsWith('/catalogue-exterieur/'), `${e.id} : image hors du dossier du catalogue`);
       assert.ok(existsSync(join(SITE, 'public', e.apercu.image ?? '')), `${e.id} : image absente de public/ (${e.apercu.image})`);
-      assert.notEqual(e.apercu.mention, 'Aperçu indicatif');
+      assert.equal(e.apercu.mention, e.apercu.type === 'texture' ? MENTIONS_APERCU.texture : MENTIONS_APERCU.modele);
       assert.equal(e.apercu.type === 'texture', e.nature === 'matiere', `${e.id} : texture ⇔ matière`);
     }
   }
@@ -90,12 +93,10 @@ test('parité avec le brief du chat : ce qui est annoncé « bientôt » l’est
   assert.equal(bientot.length, attendus, 'une entrée « bientôt » du catalogue n’est annoncée nulle part dans le brief');
 });
 
-test('teintes : le catalogue reprend la teinte du Studio ; écart connu avec l’aperçu du brief pour « Enduit clair »', () => {
-  // VIS-31 : le brief (briefCreatif.ts, MATIERE_FACADE) montre « Enduit clair » en blanc cassé lumineux #ebe4d6 (choix
-  // d'Albé) ; le Studio rend encore l'enduit beige #d9c9ab (lot P10, archvizLibrary.ts av-enduit-beige). Écart VOULU en
-  // attendant le Studio (journal VIS-31) ; ce test échouera quand le Studio aura repris #ebe4d6 et le catalogue régénéré :
-  // retirer alors `enduit_clair` de cette liste.
-  const ECARTS_CONNUS: Readonly<Record<string, string>> = { enduit_clair: '#d9c9ab' };
+test('teintes : le catalogue reprend la teinte du Studio, la même que l’aperçu du brief', () => {
+  // VIS-32 : le Studio a repris l'« enduit clair » du brief (#ebe4d6, av-enduit-beige et enduit-beige) — l'écart VIS-31
+  // (#d9c9ab) a disparu, plus aucune exception. Un écart futur s'ajoute ici, avec sa raison.
+  const ECARTS_CONNUS: Readonly<Record<string, string>> = {};
   for (const [facade, m] of Object.entries(MATIERE_FACADE)) {
     const [e] = entreesDuChoix('facade', facade);
     assert.ok(e, `façade ${facade}`);

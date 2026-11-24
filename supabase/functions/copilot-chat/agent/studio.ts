@@ -103,6 +103,8 @@ import { estVueCatalogue, libelleCourtVue, MAX_VUES_PAR_IMAGE, phraseVuesDisponi
 import { avecLivraisonParDefaut, validerOptionLivraison } from '../../../../src/lib/studio/livraisonCommerciale.ts';
 // VIS-15 : assiette groupée (plusieurs parcelles) — parcelles demandées / couvertes par la conception.
 import { idusDeLaConception, idusDeLaDemande, libelleAssiette, type AssietteFonciere } from './assiette.ts';
+// VIS-32 : liste blanche des matières du catalogue extérieur par partie (module pur partagé avec le site).
+import { LIBELLES_PARTIE_CATALOGUE, PARTIES_CATALOGUE, lireMatieresBrief, matiereAutorisee, type MatieresBrief, type PartieCatalogue } from '../../../../src/spaces/copilot/studio3d/matieresParPartie.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
 export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
@@ -706,6 +708,14 @@ export interface BriefRendu {
   precisions: string | null;
   /** Champs pris par défaut (non précisés par l'utilisateur ou « à toi de choisir »), dans l'ordre de CHAMPS_BRIEF. */
   defauts: ChampBrief[];
+  /**
+   * VIS-32 — matières EXACTES du catalogue extérieur choisies à l'étape 4 (« Toutes les matières »), par partie : `refStudio`
+   * de la liste blanche (matieresParPartie.ts). Absent : rien de plus que les valeurs fermées. Les valeurs fermées restent
+   * le REPLI (machine de rendu d'avant VIS-32, référence non trouvée dans le Studio).
+   */
+  matieres?: MatieresBrief;
+  /** VIS-32 — matières reçues mais ignorées (hors liste blanche, partie impossible ici) : DITES, jamais tues. Pas dans le jeton. */
+  matieresIgnorees?: string[];
 }
 
 /** Valeurs par défaut : immeuble de logements collectifs en zone urbaine (aucune hypothèse PLU). */
@@ -785,12 +795,14 @@ const ENUMS_BRIEF: Record<ChampBrief, readonly (string | boolean)[]> = {
  */
 export function validerBrief(brut: unknown): Validation<BriefRendu> {
   if (!estObj(brut)) return { ok: false, erreur: 'Brief illisible : objet attendu (style, facade, ouvertures, balcons, attique, rdc, ambiance, toiture, teinte, garde_corps, menuiseries, soubassement, precisions, a_toi_de_choisir).' };
-  const permises = [...CHAMPS_BRIEF, 'precisions', 'a_toi_de_choisir'];
+  const permises = [...CHAMPS_BRIEF, 'precisions', 'a_toi_de_choisir', 'matieres'];
   const inconnue = Object.keys(brut).find((k) => !permises.includes(k));
   if (inconnue) return { ok: false, erreur: `Champ de brief inconnu : ${inconnue}.` };
   if (brut.a_toi_de_choisir !== undefined && typeof brut.a_toi_de_choisir !== 'boolean') return { ok: false, erreur: 'a_toi_de_choisir doit être un booléen.' };
   const fournis = CHAMPS_BRIEF.filter((c) => brut[c] !== undefined && brut[c] !== null);
-  if (!fournis.length && brut.a_toi_de_choisir !== true) return { ok: false, erreur: 'Brief vide : donnez au moins un choix, ou a_toi_de_choisir: true si l’utilisateur laisse Mimmo choisir.' };
+  // VIS-32 : matières du catalogue (liste blanche) — jamais un refus : une référence inconnue est ignorée et dite.
+  const lues = lireMatieresBrief(brut.matieres);
+  if (!fournis.length && brut.a_toi_de_choisir !== true && !Object.keys(lues.matieres).length) return { ok: false, erreur: 'Brief vide : donnez au moins un choix, ou a_toi_de_choisir: true si l’utilisateur laisse Mimmo choisir.' };
   const b: Obj = { ...BRIEF_DEFAUT };
   for (const c of fournis) {
     const v = brut[c];
@@ -821,8 +833,43 @@ export function validerBrief(brut: unknown): Validation<BriefRendu> {
     if (t.length > BRIEF_PRECISIONS_MAX) return { ok: false, erreur: `precisions : ${BRIEF_PRECISIONS_MAX} caractères au plus.` };
     precisions = t || null;
   }
-  return { ok: true, valeur: { ...(b as Omit<BriefRendu, 'precisions' | 'defauts'>), precisions, defauts: CHAMPS_BRIEF.filter((c) => !fournis.includes(c)) } };
+  const { matieres, ignorees } = matieresCoherentes(lues.matieres, b as Omit<BriefRendu, 'precisions' | 'defauts'>);
+  ignorees.unshift(...lues.ignorees);
+  return { ok: true, valeur: {
+    ...(b as Omit<BriefRendu, 'precisions' | 'defauts'>), precisions, defauts: CHAMPS_BRIEF.filter((c) => !fournis.includes(c)),
+    ...(Object.keys(matieres).length ? { matieres } : {}), ...(ignorees.length ? { matieresIgnorees: ignorees } : {}),
+  } };
 }
+
+/**
+ * VIS-32 — matières du catalogue compatibles avec les valeurs fermées du brief (mêmes règles que la carte du site) :
+ * pas de garde-corps sans balcon, pas de soubassement sous des vitrines, couverture accordée à la forme du toit
+ * (tuile / ardoise / zinc / cuivre → deux pans ; végétalisée → toiture végétalisée ; membrane → toit-terrasse).
+ */
+function matieresCoherentes(m: MatieresBrief, b: Omit<BriefRendu, 'precisions' | 'defauts'>): { matieres: MatieresBrief; ignorees: string[] } {
+  const matieres: MatieresBrief = {};
+  const ignorees: string[] = [];
+  for (const p of PARTIES_CATALOGUE) {
+    const ref = m[p];
+    if (!ref) continue;
+    const nom = matiereAutorisee(p, ref)?.nom ?? ref;
+    let raison: string | null = null;
+    if (p === 'garde_corps' && b.balcons === 'aucun') raison = 'sans balcon, pas de garde-corps';
+    if (p === 'soubassement' && (b.rdc === 'commerces' || b.soubassement === 'aucun')) raison = b.rdc === 'commerces' ? 'pas de soubassement avec des vitrines' : 'aucun soubassement demandé';
+    if (p === 'toiture') {
+      const pente = /tuile|ardoise|zinc|cuivre/.test(ref);
+      if (pente && !toitEnPente(b.toiture)) raison = 'couverture d’un toit à deux pans, toit choisi plat';
+      else if (/vegetal/.test(ref) && b.toiture !== 'vegetalisee') raison = 'toiture végétalisée non choisie';
+      else if (/membrane/.test(ref) && b.toiture !== 'terrasse') raison = 'membrane d’un toit-terrasse, autre toit choisi';
+    }
+    if (raison) ignorees.push(`${LIBELLES_PARTIE_CATALOGUE[p]} « ${nom} » ignorée (${raison})`);
+    else matieres[p] = ref;
+  }
+  return { matieres, ignorees };
+}
+
+/** VIS-32 — clés courtes des parties dans le jeton de devis (forme « 3: »). */
+const CLE_PARTIE_JETON: Record<PartieCatalogue, string> = { facade: 'f', soubassement: 's', menuiseries: 'm', garde_corps: 'g', toiture: 't' };
 
 
 /**
@@ -835,18 +882,28 @@ export function validerBrief(brut: unknown): Validation<BriefRendu> {
 export function encoderBrief(b: BriefRendu): string {
   const rangs = CHAMPS_BRIEF.map((c) => ENUMS_BRIEF[c].indexOf(b[c]).toString(36)).join('');
   const masque = CHAMPS_BRIEF.reduce((m, c, i) => (b.defauts.includes(c) ? m | (1 << i) : m), 0).toString(16);
+  // VIS-32 : avec des matières du catalogue, forme « 3: » = forme « 2: » + « . » + « f=av-…,t=pm-… » (parties dans l'ordre).
+  // Sans matière : forme « 2: » inchangée (devis identiques à ceux d'avant le lot). Le prix ne dépend pas des matières.
+  const mat = b.matieres ? PARTIES_CATALOGUE.filter((p) => b.matieres![p]).map((p) => `${CLE_PARTIE_JETON[p]}=${b.matieres![p]}`).join(',') : '';
+  if (mat) return `3:${rangs}.${masque}.${mat}${b.precisions ? `.${b.precisions}` : ''}`;
   return `2:${rangs}.${masque}${b.precisions ? `.${b.precisions}` : ''}`;
 }
 
 /** Relit le brief compact d'un jeton signé (forme « 2: » ou ancienne) ; null si absent ou d'une forme inattendue. */
 export function briefDuJeton(b: unknown): BriefRendu | null {
   if (typeof b !== 'string') return null;
-  const m2 = /^2:([0-9a-z]{12})\.([0-9a-f]{1,3})(?:\.([\s\S]+))?$/.exec(b);
+  // VIS-32 : forme « 3: » (matières du catalogue) relue en « 2: » + matières.
+  const m3 = /^3:([0-9a-z]{12})\.([0-9a-f]{1,3})\.([fsmgt]=[a-z0-9-]{1,63}(?:,[fsmgt]=[a-z0-9-]{1,63}){0,4})(?:\.([\s\S]+))?$/.exec(b);
+  const m2 = m3 ? [m3[0], m3[1], m3[2], m3[4]] as const : /^2:([0-9a-z]{12})\.([0-9a-f]{1,3})(?:\.([\s\S]+))?$/.exec(b);
   const m1 = m2 ? null : /^(\d{7})\.([0-9a-f]{1,2})(?:\.([\s\S]+))?$/.exec(b);
   const m = m2 ?? m1;
   if (!m) return null;
   const champs = m2 ? CHAMPS_BRIEF : CHAMPS_BRIEF.slice(0, 7);
   const brut: Obj = {};
+  if (m3) {
+    const parCle = Object.fromEntries(PARTIES_CATALOGUE.map((p) => [CLE_PARTIE_JETON[p], p]));
+    brut.matieres = Object.fromEntries(m3[3].split(',').map((x) => [parCle[x[0]], x.slice(2)]));
+  }
   for (const [i, c] of champs.entries()) {
     const v = ENUMS_BRIEF[c][parseInt(m[1][i], 36)];
     if (v === undefined) return null;
@@ -907,6 +964,13 @@ export interface DetailsHabillage {
   gardeCorps?: 'metal' | 'glass' | 'solid';
   menuiseries?: 'av-aluminium-noir' | 'av-aluminium-blanc' | 'av-aluminium-bronze';
   soubassement?: 'pierre-claire-contemp' | 'beton-brut' | 'brique-rouge';
+  /**
+   * VIS-32 — matières EXACTES du catalogue (refStudio de la liste blanche), par partie : la machine de rendu
+   * (worker/src/batimentsScene.ts::habillerDetails) les pose À LA PLACE de la matière de la valeur fermée.
+   */
+  matieres?: MatieresBrief;
+  /** VIS-32 — parties dont la matière est « avec réserve » au catalogue (la machine de rendu le dit dans ses avertissements). */
+  matieresAvecReserve?: PartieCatalogue[];
 }
 
 /**
@@ -919,6 +983,12 @@ export function detailsHabillage(b: BriefRendu): DetailsHabillage | null {
   if (b.balcons !== 'aucun') d.gardeCorps = ({ metal: 'metal', verre: 'glass', plein: 'solid' } as const)[b.garde_corps];
   if (b.menuiseries !== 'gris') d.menuiseries = ({ anthracite: 'av-aluminium-noir', blanc: 'av-aluminium-blanc', bronze: 'av-aluminium-bronze' } as const)[b.menuiseries];
   if (b.soubassement !== 'aucun') d.soubassement = ({ pierre: 'pierre-claire-contemp', beton: 'beton-brut', brique: 'brique-rouge' } as const)[b.soubassement];
+  // VIS-32 : matières exactes (déjà passées par la liste blanche dans validerBrief / briefDuJeton).
+  if (b.matieres && Object.keys(b.matieres).length) {
+    d.matieres = { ...b.matieres };
+    const reserve = PARTIES_CATALOGUE.filter((p) => b.matieres![p] && matiereAutorisee(p, b.matieres![p])?.rendu === 'reserve');
+    if (reserve.length) d.matieresAvecReserve = reserve;
+  }
   return Object.keys(d).length ? d : null;
 }
 
@@ -927,6 +997,17 @@ export function commandeAvecBrief(commande: string | null, b: BriefRendu | null,
   if (!commande || !b) return commande;
   const clauses = clausesBrief(b, plusieurs);
   return clauses.length ? `${commande.trim().replace(/\.+$/, '')}, ${clauses.join(', ')}.` : commande;
+}
+
+/** VIS-32 — « matières du catalogue (rendues telles quelles) : façade « Pierre de taille » (avec réserve), … » ; null sans matière. */
+export function phraseMatieresBrief(b: Pick<BriefRendu, 'matieres'>): string | null {
+  const m = b.matieres;
+  if (!m) return null;
+  const morceaux = PARTIES_CATALOGUE.filter((p) => m[p]).map((p) => {
+    const a = matiereAutorisee(p, m[p]);
+    return `${LIBELLES_PARTIE_CATALOGUE[p]} « ${a?.nom ?? m[p]} »${a?.rendu === 'reserve' ? ' (avec réserve)' : ''}`;
+  });
+  return morceaux.length ? `matières du catalogue (rendues telles quelles) : ${morceaux.join(', ')}` : null;
 }
 
 /** Ligne lisible du brief (devis, brief texte transmis au Studio). */
@@ -945,6 +1026,9 @@ export function libelleBrief(b: BriefRendu): string {
     b.balcons !== 'aucun' && b.garde_corps !== 'metal' ? `${LIB_BRIEF.garde_corps[b.garde_corps]}${d('garde_corps')}` : null,
     b.menuiseries !== 'gris' ? `${LIB_BRIEF.menuiseries[b.menuiseries]}${d('menuiseries')}` : null,
     b.soubassement !== 'aucun' ? `${LIB_BRIEF.soubassement[b.soubassement]}${d('soubassement')}` : null,
+    // VIS-32 : matières exactes du catalogue (rendues telles quelles) et matières ignorées (dites).
+    phraseMatieresBrief(b),
+    b.matieresIgnorees?.length ? `matières du catalogue ignorées : ${b.matieresIgnorees.join(' ; ')}` : null,
   ].filter((x): x is string => !!x).join(' · ') + (b.precisions ? ` · précisions : « ${b.precisions} »` : '');
 }
 
@@ -968,7 +1052,11 @@ export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', 
   if (b.attique) r.push(`Attique : le Studio l’ajoute AU-DESSUS des niveaux du volume d’étude (retrait de 2 m)${batiments >= 2 ? ', sur chaque bâtiment' : ''} — la hauteur totale dépasse celle du volume calculé, à vérifier au regard du PLU.`);
   if (toitEnPente(b.toiture)) r.push(`Toit à deux pans (pente de 35°) : le Studio l’ajoute AU-DESSUS du dernier niveau (≈ 5,9 m au faîtage pour 16 m de profondeur)${batiments >= 2 ? ', sur chaque bâtiment' : ''} — la hauteur totale dépasse celle du volume calculé, à vérifier au regard du PLU.`);
   if (b.soubassement !== 'aucun') r.push('Soubassement : bandeau de 60 cm au pied des façades (matière demandée), interrompu devant les portes.');
-  if (b.facade === 'brique' && b.teinte === 'claire') r.push('Brique claire : matière dessinée par le Studio (sans texture photographique, contrairement à la brique rouge).');
+  if (b.facade === 'brique' && b.teinte === 'claire' && !b.matieres?.facade) r.push('Brique claire : matière dessinée par le Studio (sans texture photographique, contrairement à la brique rouge).');
+  // VIS-32 : matières exactes « avec réserve » et matières ignorées — dites dans le devis.
+  const reserve = PARTIES_CATALOGUE.filter((p) => b.matieres?.[p] && matiereAutorisee(p, b.matieres[p])?.rendu === 'reserve');
+  if (reserve.length) r.push(`Matières du catalogue avec réserve : ${reserve.map((p) => { const a = matiereAutorisee(p, b.matieres![p])!; return `${LIBELLES_PARTIE_CATALOGUE[p]} « ${a.nom} » (${a.noteRendu.replace(/\.$/, '')})`; }).join(' ; ')}.`);
+  if (b.matieresIgnorees?.length) r.push(`Matières du catalogue non retenues : ${b.matieresIgnorees.join(' ; ')} — la valeur choisie dans la carte est rendue à la place.`);
   // VIS-04 : précisions interprétées par le Studio ; ce qu'il ne comprend pas est listé dans le résultat (jamais ignoré).
   // VIS-14 (B1) : SEULEMENT avec un brief projet enregistré (worker : sans brief, non interprétées — comportement
   // d'avant VIS-04) ; les négations (« pas de… », « sans… », « éviter… ») ne sont jamais appliquées.
