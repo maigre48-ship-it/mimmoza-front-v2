@@ -81,6 +81,12 @@ import { modifierAile, modifierCorps } from '../../../../src/spaces/copilot/stud
 import { empreinteModele, type ModeleBatiment } from '../../../../src/lib/studio/modeleBatiment.ts';
 import { referenceModeleDuMessage, type ReferenceModele } from '../../../../src/lib/studio/modeleBatimentMessage.ts';
 import { depotModeleSupabase, dimensionsDessin, ecartsModeleVolume, modeleContraint, modeleParEmpreinte, reservesModele, type DepotModele } from './dessin-batiment.ts';
+// VIS-34 : LE PROJET EN VIGUEUR — le dessin validé est enregistré AVEC la 3D préparée de la conversation (entree / resume),
+// puis relu par le parcours, la charge du Studio et la fiche du rendu (une seule source de vérité, côté serveur).
+import {
+  blocChoixPortee, contradictionProgramme, creerProjetEnVigueur, lignesProjet, lireProjetEnVigueur, lireResumeProjet, PORTEE_DEFAUT, rappelProjetFiche,
+  resumerProjetEnVigueur, type PorteeDessin, type ProjetEnVigueur, type ResumeProjetEnVigueur,
+} from '../../../../src/lib/studio/projetEnVigueur.ts';
 import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
 // LOT X3 : projet d'extension de la conversation (maison conservée). LOT X4 site : rendu ouvert (drapeau), projet transmis
@@ -209,6 +215,8 @@ export interface EntreePreparation {
   gabarit_niveaux: number | null;
   /** Lot C7b : bandes mesurées depuis le côté voie présumé. Absent si non mesurées (empreinte alors inchangée). */
   bandes?: MesureBandes;
+  /** VIS-34 : bâtiment DESSINÉ validé = projet en vigueur de la conversation (dessin complet, empreinte, portée). Absent : le volume du moteur est le projet. */
+  projet_en_vigueur?: ProjetEnVigueur;
 }
 
 export interface ResumePreparation {
@@ -238,6 +246,8 @@ export interface ResumePreparation {
   gabarit_retenu?: string;
   /** VIS-15 : assiette groupée (« AI0001 + AI0002 (2 349 m²) ») quand la conception porte sur plusieurs parcelles. */
   assiette?: string;
+  /** VIS-34 : description courte du projet en vigueur (dessin validé) — lue par le parcours et la carte « 3D préparée ». */
+  projet_en_vigueur?: ResumeProjetEnVigueur;
 }
 
 /** Lot formes-batiment : forme du volume préparé et classement des formes par le moteur (suggestion). */
@@ -1491,6 +1501,9 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
     modele?: ModeleBatiment | null;
   } = {}): Validation<Obj> {
   const decrit = descriptionPourBrief(options.description, brief);
+  // VIS-34 : projet en vigueur ENREGISTRÉ avec cette 3D préparée (dessin validé de la conversation) — le serveur le joint
+  // lui-même à la fiche, quel que soit l'appelant ; `options.modele` (chemin VIS-25) ne sert plus que de repli.
+  const projetVigueur = lireProjetEnVigueur(p.entree, conversationId);
   // Composition ou plusieurs bâtiments : ni style ni éléments (le Studio les poserait sur le premier bâtiment seulement).
   const decritSansStyle: DescriptionBatiment | null = decrit ? { ...decrit, style: 'contemporain' } : null;
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
@@ -1547,15 +1560,26 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
     ? { ...projet, site: { ...projet.site, facadesVoie: facadesVoie.map((f) => ({ ...f, debut: [...f.debut], fin: [...f.fin] })) } }
     : projet;
   return { ok: true, valeur: {
-    version: 1, charge, draft, titre: titreRendu(draft), conversation_id: conversationId, origine: 'mimmo', preparation_id: p.id,
+    // VIS-34 : le titre du rendu est celui du PROJET EN VIGUEUR (le dessin), jamais « 12 logements » d'un programme remplacé.
+    version: 1, charge, draft, titre: projetVigueur && projetVigueur.portee === 'projet' ? `${projetVigueur.nom}${entree.commune ? ` — ${entree.commune}` : ''}`.slice(0, 120) : titreRendu(draft),
+    conversation_id: conversationId, origine: 'mimmo', preparation_id: p.id,
     ...(brief ? { brief_rendu: brief } : {}),
     ...(brief && multi ? { habillage_batiments: (() => { const h = habillageBatiments(brief); return { ...h, clauses: clausesHabillageAvecDescription(h.clauses, decrit) }; })() } : {}),
     // VIS-22 : la description voyage aussi telle quelle (la machine de rendu journalise ce qui n'est pas encore reproduit).
     ...(decrit ? { description_batiment: decrit } : {}),
     // VIS-25 lot B : le bâtiment DESSINÉ (un bâtiment seul, chemin commande) : la machine de rendu le construit à partir du modèle.
-    ...(decrit && options.modele && !multi && !composition ? (() => {
+    // VIS-34 : source ENREGISTRÉE d'abord (dessin de la préparation, avec sa PORTÉE : 'projet' = il remplace tout, 'batiment' =
+    // un seul bâtiment — appliquée par la machine de rendu, VIS-35), même avec plusieurs bâtiments préparés ; à défaut le
+    // dessin retrouvé dans le fil (repli VIS-25 : un bâtiment seul, portée « projet »).
+    ...(projetVigueur ? (() => {
+      const c = modeleContraint(projetVigueur.modele, v.niveaux);
+      return {
+        modele_batiment: { v: 1, empreinte: projetVigueur.empreinte, modele: c.modele, portee: projetVigueur.portee, nom: projetVigueur.nom, ...(c.notes.length ? { notes: c.notes } : {}) },
+        projet_en_vigueur: rappelProjetFiche(projetVigueur),
+      };
+    })() : decrit && options.modele && !multi && !composition ? (() => {
       const c = modeleContraint(options.modele, v.niveaux);
-      return { modele_batiment: { v: 1, empreinte: empreinteModele(options.modele), modele: c.modele, ...(c.notes.length ? { notes: c.notes } : {}) } };
+      return { modele_batiment: { v: 1, empreinte: empreinteModele(options.modele), modele: c.modele, portee: PORTEE_DEFAUT, ...(c.notes.length ? { notes: c.notes } : {}) } };
     })() : {}),
     // Lot brief-unifié : bâtiment seul ou composition nommée — clauses et balcons sont déjà dans la commande ;
     // seuls les DÉTAILS (garde-corps, menuiseries, soubassement) voyagent à part, posés par le worker (scene.mts).
@@ -1688,6 +1712,11 @@ export interface EnvStudio {
    * (bloc ```mimmoza-modele-ref```, relu par index.ts), jamais fournie par le modèle.
    */
   modeleCarte?: ReferenceModele | null;
+  /**
+   * VIS-34 : portée choisie par l'utilisateur pour son dessin (« Ce dessin remplace tout le projet » / « Il remplace un
+   * seul bâtiment »), relue par index.ts dans le message REÇU (porteeDuMessage), jamais fournie par le modèle.
+   */
+  porteeCarte?: PorteeDessin | null;
 }
 
 /** Identifiant stable de la requête : le même objet de contexte est passé à chaque outil d'une requête. */
@@ -1898,6 +1927,21 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       if (!modeleDecrit) noteModele = 'Le bâtiment dessiné n’a pas été retrouvé dans la conversation : seule sa description (forme, hauteur, habillage) est appliquée.';
     } else if (!batiment) modeleDecrit = (await modeleDuFil(env.depot, env.userId, env.conversationId))?.modele ?? null;
   }
+  // VIS-34 — PROJET EN VIGUEUR déjà enregistré avec la dernière 3D préparée de la conversation : le dessin RESTE le projet
+  // (action directe « Préparer », nouvel habillage, autre onglet…) tant qu'aucune autre forme n'est choisie (fiche, forme
+  // demandée, nouvelle description). Sa portée choisie est gardée : la question n'est jamais posée deux fois.
+  let projetPrecedent: ProjetEnVigueur | null = null;
+  let batimentsPrecedents = 0;
+  if (!ext && !env.mission && env.userId && env.conversationId) {
+    try {
+      const prec = await env.depot.preparation(env.userId, { conversationId: env.conversationId });
+      projetPrecedent = prec ? lireProjetEnVigueur(prec.entree, env.conversationId) : null;
+      const r = prec && estObj(prec.resume) ? prec.resume : null;
+      batimentsPrecedents = projetPrecedent ? lireResumeProjet(r)?.batiments_moteur ?? 0 : r && fini(r.batiments) ? r.batiments : 0;
+    } catch { /* lecture facultative : sans elle, portée par défaut */ }
+  }
+  if (!modeleDecrit && !noteModele && projetPrecedent && !carte?.ok && !formeVoulue && !batiment && !refModele) modeleDecrit = projetPrecedent.modele;
+  const porteeDessin: PorteeDessin = modeleDecrit ? (env.porteeCarte ?? (projetPrecedent?.portee_choisie ? projetPrecedent.portee : PORTEE_DEFAUT)) : PORTEE_DEFAUT;
   let noteForme: string | null = null;
   // VIS-26 lot D : la 3D préparée SUIT le dessin — plan du volume principal et hauteur, plafonnés par le moteur.
   const dessin = modeleDecrit ? dimensionsDessin(modeleDecrit) : null;
@@ -1921,11 +1965,43 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     }
   }
   if (!p.ok) return erreur(p.raison, 'partial');
+  // VIS-34 — portée « projet » (défaut) : le dessin EST le bâtiment du projet. Si le moteur avait réparti le programme en
+  // plusieurs bâtiments, la 3D préparée est refaite avec UN seul bâtiment (compact, sinon en barre) qui suit le plan et la
+  // hauteur du dessin : plus de « 2 plots + la maison dessinée ». Portée « batiment » : les bâtiments du moteur sont gardés.
+  const batimentsMoteur = Math.max(p.resume.batiments, batimentsPrecedents);
+  if (modeleDecrit && porteeDessin === 'projet' && p.resume.batiments > 1 && !carte?.ok) {
+    for (const f of ['plot', 'barre'] as const) {
+      const seul = await preparerVolume(c, { forme: f, niveaux: niveauxDemandes, ...planDessin });
+      if (seul.ok && seul.resume.batiments === 1) { p = seul; break; }
+    }
+  }
   if (noteForme) p.resume.alertes = [noteForme, ...p.resume.alertes].slice(0, 8);
   const notesDescription = description ? [noteForme, ...p.resume.alertes.filter((x) => x.startsWith('Hauteur demandée'))].filter((x): x is string => !!x) : [];
+  // VIS-34 — le dessin validé est ENREGISTRÉ avec la 3D préparée (entree : dessin complet + portée ; resume : description
+  // courte). La ligne est propre à (calcul, dessin, portée, conversation) : elle ne passe jamais d'une conversation à l'autre.
+  let projet: ProjetEnVigueur | null = null;
+  let questionPortee = false;
+  let contradictionADire: string | null = null;
+  let empreintePrep = p.empreinte;
+  let entreePrep: EntreePreparation = p.entree;
+  let resumePrep: ResumePreparation = p.resume;
+  if (modeleDecrit && env.conversationId && !env.mission && !ext) {
+    const choisie = env.porteeCarte != null || projetPrecedent?.portee_choisie === true;
+    questionPortee = !choisie && projetPrecedent?.question_posee !== true && batimentsMoteur > 1;
+    const contradiction = porteeDessin === 'projet' ? contradictionProgramme(modeleDecrit, p.entree.programme_volume as { logements?: number | null; libelle?: string | null } | null) : null;
+    contradictionADire = contradiction && projetPrecedent?.contradiction !== contradiction ? contradiction : null;
+    projet = creerProjetEnVigueur(modeleDecrit, {
+      portee: porteeDessin, porteeChoisie: choisie, questionPosee: questionPortee || projetPrecedent?.question_posee === true, contradiction, conversationId: env.conversationId,
+    });
+    entreePrep = { ...p.entree, projet_en_vigueur: projet };
+    resumePrep = { ...p.resume, projet_en_vigueur: resumerProjetEnVigueur(projet, { batimentsPrepares: p.resume.batiments, batimentsMoteur }) };
+    empreintePrep = await sha256Hex(jsonCanonique({ base: p.empreinte, projet: {
+      empreinte: projet.empreinte, portee: projet.portee, choisie: projet.portee_choisie, question: projet.question_posee, contradiction, conversation: env.conversationId,
+    } }));
+  }
   const id = await env.depot.enregistrerPreparation(env.userId!, {
-    conception_id: c.id, conversation_id: env.conversationId, idu: c.idu, empreinte: p.empreinte,
-    entree: p.entree, volume: p.volume, resume: p.resume, origine: env.mission ? 'mission' : 'chat', version_calcul: VERSION_CALCUL,
+    conception_id: c.id, conversation_id: env.conversationId, idu: c.idu, empreinte: empreintePrep,
+    entree: entreePrep, volume: p.volume, resume: resumePrep, origine: env.mission ? 'mission' : 'chat', version_calcul: VERSION_CALCUL,
   });
   if (ext) {
     // LOT X10 — ni volume, ni forme, ni logements : seulement ce qui sert à l'image de l'extension.
@@ -1944,19 +2020,25 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   return {
     status: 'ok', source: SOURCE_STUDIO,
     data: {
-      preparation_id: id, conception_id: c.id, idu: c.idu, commune: c.commune, empreinte: p.empreinte,
+      preparation_id: id, conception_id: c.id, idu: c.idu, commune: c.commune, empreinte: empreintePrep,
       calcul: 'déterministe — moteur du Dossier 3D (volumeParcelle + implantationProgramme), aucune IA',
+      // VIS-34 : le projet en vigueur (dessin validé) et sa portée, tels qu'enregistrés avec cette 3D préparée.
+      ...(projet && resumePrep.projet_en_vigueur ? { projet_en_vigueur: {
+        empreinte: projet.empreinte, nom: projet.nom, portee: projet.portee, portee_choisie: projet.portee_choisie,
+        lignes: lignesProjet(resumePrep.projet_en_vigueur), batiments_prepares: p.resume.batiments, batiments_du_moteur: batimentsMoteur,
+        question_portee: questionPortee, ...(contradictionADire ? { contradiction_programme: contradictionADire } : {}),
+      } } : {}),
       // VIS-22 : description du bâtiment appliquée (forme / niveaux demandés au moteur) et ce qui n'est pas encore reproduit.
       ...(description && !env.mission ? { batiment_decrit: {
         description: phraseDescription(description), ecarts: [...notesDescription, ...(noteModele ? [noteModele] : [])],
         // VIS-25 lot B : avec un bâtiment dessiné, ce que la description VIS-22 ne savait pas reproduire l'est par le modèle.
         pas_encore_reproduit: modeleDecrit ? [] : nonReproduits(description),
-        ...(modeleDecrit ? { modele: { empreinte: empreinteModele(modeleDecrit), ecarts: ecartsModeleVolume(modeleDecrit, p.volume as unknown as Parameters<typeof ecartsModeleVolume>[1]) } } : {}),
+        ...(modeleDecrit ? { modele: { empreinte: empreinteModele(modeleDecrit), ecarts: ecartsModeleVolume(modeleDecrit, p.volume as unknown as Parameters<typeof ecartsModeleVolume>[1], porteeDessin) } } : {}),
       } } : {}),
       // VIS-15 : écart de gabarit et assiette groupée, à dire tels quels.
       ...(p.resume.gabarit_retenu ? { gabarit_retenu: p.resume.gabarit_retenu } : {}),
       ...(p.resume.assiette ? { assiette: p.resume.assiette } : {}),
-      volume: env.mission ? resumeCompact(p.resume) : p.resume,
+      volume: env.mission ? resumeCompact(p.resume) : resumePrep,
       // Lot formes-batiment : forme retenue et classement des formes par le moteur (suggestion, l'utilisateur choisit).
       // (Mission : résultat plafonné à 3 000 caractères → seulement la suggestion.)
       ...(p.resume.forme ? { forme_retenue: p.resume.forme.retenue, origine_forme: p.resume.forme.origine,
@@ -1971,6 +2053,22 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       (p.resume.assiette ? `ASSIETTE GROUPÉE : ${p.resume.assiette}. ` : '') +
       (description && !env.mission ? 'BÂTIMENT DÉCRIT par l’utilisateur (`batiment_decrit`) : la forme et la hauteur demandées ont été soumises au moteur — dis en une phrase ce qui a été retenu, ' +
         'reprends tels quels les `ecarts` s’il y en a, et cite en une phrase ce qui n’est `pas_encore_reproduit` (jamais « copie exacte »). L’habillage décrit est enregistré : ne le redemande pas. ' : '') +
+      // VIS-34 : le dessin validé est LE projet de la conversation — Mimmo parle du dessin, pose UNE fois la question de portée, dit UNE fois la contradiction.
+      (projet ? `PROJET EN VIGUEUR (\`projet_en_vigueur\`) : le bâtiment dessiné « ${projet.nom} » est désormais LE projet de cette conversation — ` +
+        (projet.portee === 'batiment' && p.resume.batiments > 1
+          ? `il remplace UN SEUL des ${p.resume.batiments} bâtiments préparés ; les autres sont gardés. `
+          : `il remplace TOUT ce qui était préparé${batimentsMoteur > 1 ? ` (les ${batimentsMoteur} bâtiments placés par le moteur ne sont plus le projet)` : ''}. `) +
+        'Décris LE DESSIN (son nom, ses volumes, ses niveaux : `projet_en_vigueur.lignes`), jamais les bâtiments ni les logements du volume d’étude comme s’ils étaient le projet : ' +
+        'le volume d’étude ne sert plus qu’à poser le dessin sur le terrain et à vérifier hauteur et emprise. Le parcours, le Studio et les images partent de ce dessin. ' +
+        (questionPortee
+          ? `QUESTION DE PORTÉE — à poser UNE seule fois, maintenant : le projet préparé comptait ${batimentsMoteur} bâtiments. Dis en une phrase que, par défaut, le dessin remplace TOUT le projet, ` +
+            `demande si c’est bien ce qui est voulu, et TERMINE ta réponse par ce bloc recopié TEL QUEL (rien après) :\n${blocChoixPortee()}\n`
+          : 'Ne pose AUCUNE question sur ce que le dessin remplace (c’est réglé). ') +
+        (contradictionADire
+          ? `CONTRADICTION AVEC LE PROGRAMME — dis-la UNE fois, telle quelle : « ${contradictionADire} » puis propose en une phrase de mettre le programme à jour ` +
+            '(« Voulez-vous que je mette le programme à jour ? ») en précisant que ce n’est pas obligatoire : le Studio et les images partent déjà du dessin. ' +
+            'Ne lance rien, ne propose aucun devis ni aucune mission sans sa demande explicite, et ne la redis pas ensuite. '
+          : '') : '') +
       'Volume d’étude INDICATIF, calculé par le moteur (ne recalcule rien de tête, cite ces chiffres tels quels). ' +
       'Reprends chaque vérification avec son verdict : « dans la limite de la règle citée » seulement si verdict dans_la_limite, sinon « à vérifier » ou « non contrôlé » ; ' +
       'n’écris jamais « conforme ». Rien n’a été envoyé au Studio : l’utilisateur ouvre la 3D d’un clic. ' +
@@ -2006,6 +2104,14 @@ async function resoudreSource(input: Obj, env: EnvStudio): Promise<{ ok: true; s
     const v = await env.depot.derniereVersion(uid, conception.id);
     if (v) return { ok: true, source: { genre: 'version', conception_id: conception.id, n: v.n, modele_ref: v.modele_ref }, conceptionId: conception.id };
     if (voulu === 'version') return { ok: false, res: erreur('Aucune version enregistrée dans l’Atelier 3D pour cette conception : enregistrez une version, ou rendez la 3D préparée (source « preparation »).', 'not_found') };
+  }
+  // VIS-34 : la 3D préparée DE LA CONVERSATION d'abord (elle porte le projet en vigueur : dessin validé et portée) ; avant,
+  // la dernière préparation de la dernière conception du COMPTE servait, même préparée dans une autre conversation.
+  if (!prep && env.conversationId) {
+    try {
+      const d = await env.depot.preparation(uid, { conversationId: env.conversationId });
+      if (d && (!estUuid(input.conception_id) || d.conception_id === input.conception_id)) prep = d;
+    } catch { /* repli : préparation de la conception */ }
   }
   prep ??= await env.depot.preparation(uid, { conceptionId: conception?.id ?? null, conversationId: conception?.id ? null : env.conversationId });
   if (!prep) return { ok: false, res: erreur('Rien à rendre : préparez d’abord la 3D de la conception (studio_preparer_3d), ou enregistrez une version dans l’Atelier 3D.', 'not_found') };
@@ -2175,6 +2281,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       let modeleDevis: ModeleBatiment | null = null;
       if (j.mb && !avecExtension) {
         modeleDevis = await modeleParEmpreinte(depotModeleDe(env.depot), uid, j.c, j.mb);
+        // VIS-34 : le dessin du devis est aussi enregistré avec la 3D préparée (source qui fait foi) : il suffit.
+        if (!modeleDevis) { const pv = lireProjetEnVigueur(prep.entree, j.c); if (pv?.empreinte === j.mb) modeleDevis = pv.modele; }
         if (!modeleDevis) return erreur('Le bâtiment dessiné de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer pour établir un nouveau devis, présente-le et attends l’accord.');
       }
       const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension, briefProjet,
@@ -2419,6 +2527,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     modeleDevis = decritDevis ? (await modeleDuFil(env.depot, uid, env.conversationId))?.modele ?? null : null;
     const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet, description: decritDevis, modele: modeleDevis });
     mb = f.ok && estObj(f.valeur.modele_batiment) && typeof f.valeur.modele_batiment.empreinte === 'string' ? f.valeur.modele_batiment.empreinte : null;
+    // VIS-34 : dessin enregistré avec la 3D préparée (même sans description dans le fil) → ses réserves figurent au devis.
+    modeleDevis ??= lireProjetEnVigueur(src.source.preparation.entree, env.conversationId)?.modele ?? null;
     if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
     plusieurs = ((f.valeur.charge as { compositionArchitecture?: unknown[] }).compositionArchitecture?.length ?? 0) >= 2;
     nbBatiments = (f.valeur.charge as { batiments?: unknown[] }).batiments?.length ?? 0;
@@ -2944,7 +3054,9 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
       else if (q.conceptionId) r = r.eq('conception_id', q.conceptionId);
       else if (q.conversationId) r = r.eq('conversation_id', q.conversationId);
       else return null;
-      const { data, error } = await r.order('cree_le', { ascending: false }).limit(1);
+      // VIS-34 : la préparation COURANTE est la dernière mise à jour (un même calcul repris ne change que maj_le) — même
+      // règle que l'écran (preparationBase.ts) ; avant, cree_le pouvait désigner une préparation plus ancienne.
+      const { data, error } = await r.order('maj_le', { ascending: false }).order('cree_le', { ascending: false }).limit(1);
       lever(error);
       return (data?.[0] ?? null) as PreparationLue | null;
     },

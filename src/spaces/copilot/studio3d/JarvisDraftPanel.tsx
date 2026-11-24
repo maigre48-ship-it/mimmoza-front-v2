@@ -23,6 +23,20 @@ import { messageErreur } from "@/components/ui/messageErreur";
 // Lot fiche-3d : programme, dimensions (forme, L × l × niveaux) et style tirés du moteur et du brief créatif.
 import { DimensionsFiche, ProgrammeFiche, StyleFiche } from './FicheProjet3D';
 import { useFiche3D } from './useFiche3D';
+// VIS-34 : projet en vigueur (dessin validé) lu dans la 3D préparée de la conversation — l'Espace 3D le DIT.
+import { usePreparationCourante } from './preparationBase';
+import { chiffresProjet, type ResumeProjetEnVigueur } from '@/lib/studio/projetEnVigueur';
+
+/** VIS-34 : rappel, dans la fiche du volume d'étude, que le projet est le bâtiment DESSINÉ (texte lisible : classe `mz-fiche3d__note`). */
+function NoteProjetDessine({ projet, quoi }: { projet: ResumeProjetEnVigueur | null; quoi: 'programme' | 'dimensions' }) {
+  if (!projet) return null;
+  const un = projet.portee === 'batiment' && projet.batiments_prepares > 1;
+  return <p className="mz-fiche3d__note" role="note">
+    {quoi === 'programme'
+      ? <>{un ? 'Un des bâtiments du projet est' : 'Votre projet est'} le bâtiment dessiné « {projet.nom} » ({chiffresProjet(projet)}). Les chiffres ci-dessous sont ceux du volume d’étude qui sert à le poser sur le terrain, pas ceux du dessin.{!un && projet.contradiction ? ` ${projet.contradiction} Demandez à Mimmo de mettre le programme à jour.` : ''}</>
+      : <>Le Studio et les images construisent le dessin « {projet.nom} ». Ce volume sert à le poser sur le terrain et à vérifier hauteur et emprise ; choisir une autre forme ici remplace le dessin par ce volume.</>}
+  </p>;
+}
 import { apercuDepuisEvaluation } from './ficheDimensions';
 import type { EtatHabillage } from './FicheProjet3D';
 // Lot brief-formes : limites du dossier (bâtiment à ailes → pas de toit à deux pans).
@@ -149,6 +163,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   const volume = useContexteVolume(messages, conversationId, draft);
   // Lot fiche-3d : volume préparé par Mimmo (moteur) — préremplit programme et dimensions, jamais le texte du modèle.
   const fiche3d = useFiche3D(messages, conversationId);
+  const projetDessine = usePreparationCourante(messages as never, conversationId)?.projet ?? null;
   const ficheOk = fiche3d.etat === 'ok' ? fiche3d : null;
   const styleFiche = <StyleFiche messages={messages} apercu={ficheOk ? apercuDepuisEvaluation(ficheOk.ev) : null}
     limites={limitesDossier(ficheOk?.ev.corps)} onSend={onSend} habillage={habillage ?? null} onHabillage={onHabillage} />;
@@ -272,8 +287,8 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     <div style={cache('volume', ...(rendu ? [] : RENDUS))}><PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus={!rendu} /></div>
     <div style={cache(...RENDUS)}>{panneauRendu()}</div>
     {ficheOk && <dl className="jarvis-dossier__fields" style={cache('conception', 'volume', 'style')}>
-      <div style={cache('conception')} className="jarvis-dossier__field jarvis-dossier__field--large"><dt>Programme</dt><dd><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
-      <div style={cache('volume')} className="jarvis-dossier__field jarvis-dossier__field--large" ref={refDimensions}><dt>{LABELS.dimensions}</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} onSend={onSend} /></dd></div>
+      <div style={cache('conception')} className="jarvis-dossier__field jarvis-dossier__field--large"><dt>Programme</dt><dd><NoteProjetDessine projet={projetDessine} quoi="programme" /><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
+      <div style={cache('volume')} className="jarvis-dossier__field jarvis-dossier__field--large" ref={refDimensions}><dt>{LABELS.dimensions}</dt><dd><NoteProjetDessine projet={projetDessine} quoi="dimensions" /><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} onSend={onSend} /></dd></div>
       <div style={cache('style')} className="jarvis-dossier__field jarvis-dossier__field--large"><dt>{LABELS.style}</dt><dd>{styleFiche}</dd></div>
     </dl>}
     {habillageSansFiche && <dl className="jarvis-dossier__fields" style={cache('style')}>
@@ -458,8 +473,8 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
               style={cache(key === 'dimensions' ? 'volume' : key === 'style' ? 'style' : 'conception')}
               className={`jarvis-dossier__field${(key === 'style' || ((key === 'programme' || key === 'dimensions') && ficheOk)) ? ' jarvis-dossier__field--large' : ''}`}>
               <dt><span>{String(index + 1).padStart(2, '0')}</span> {label}</dt>
-              {key === 'programme' && ficheOk ? <dd><ProgrammeFiche fiche={ficheOk} texteModele={draft.programme} /></dd>
-                : key === 'dimensions' && ficheOk ? <dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={draft.dimensions} onSend={onSend} /></dd>
+              {key === 'programme' && ficheOk ? <dd><NoteProjetDessine projet={projetDessine} quoi="programme" /><ProgrammeFiche fiche={ficheOk} texteModele={draft.programme} /></dd>
+                : key === 'dimensions' && ficheOk ? <dd><NoteProjetDessine projet={projetDessine} quoi="dimensions" /><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={draft.dimensions} onSend={onSend} /></dd>
                 : key === 'style' ? <dd>{styleFiche}</dd>
                 : <dd className={draft[key] ? '' : 'is-missing'}>{draft[key] ?? 'À préciser'}{key === 'dimensions' && fiche3d.etat === 'chargement' ? ' · lecture du volume calculé…' : ''}</dd>}
             </div>)}

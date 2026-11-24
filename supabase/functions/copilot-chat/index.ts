@@ -90,6 +90,9 @@ import { CONSIGNE_RESTER_DANS_LE_CHAT, estPageMimmozIA, outilHorsChat, refusRout
 import { blocParcoursServeur, fusionnerTextesUtilisateur, missionConceptionDeReference, MESSAGES_BLOCS_PARCOURS, MESSAGES_RECENTS_PARCOURS, MOTIFS_BLOCS_PARCOURS } from './agent/parcours-chat.ts';
 // VIS-18b : fond de l'image choisi dans l'étape 6 du parcours (instantané de l'écran), repris par le devis d'image.
 import { fondDuParcours } from '../../../src/lib/studio/parcours.ts';
+// VIS-34 : réponse à la question de portée du dessin (« tout le projet » / « un seul bâtiment »), lue dans le message REÇU.
+import { porteeDuMessage } from '../../../src/lib/studio/projetEnVigueur.ts';
+import { consignePorteeDessin } from './agent/dessin-batiment.ts';
 // LOT X3 : extensions de maison — parcours guidé par le serveur (BD TOPO, estimation, moteur d'extension, DP / PC indicatifs).
 import {
   CONSIGNE_EXTENSION, DELAI_PATRIMOINE_MS, depotExtensionSupabase, detecterIntentionExtension, executerOutilExtension, OUTIL_EXTENSION_MAISON,
@@ -4842,6 +4845,8 @@ function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
     batimentCarte: (brut.batiment_carte ?? null) as EnvStudio['batimentCarte'],
     // VIS-25 lot B : référence (empreinte) du bâtiment DESSINÉ, relue dans le message REÇU (jamais par le modèle).
     modeleCarte: (brut.modele_carte ?? null) as EnvStudio['modeleCarte'],
+    // VIS-34 : portée choisie pour le dessin, relue dans le message REÇU (jamais par le modèle).
+    porteeCarte: (brut.portee_carte ?? null) as EnvStudio['porteeCarte'],
     // VIS-18b : fond choisi dans le parcours (instantané de l'écran du tour, relu défensivement ; jamais persisté).
     fondParcours: (brut.fond_parcours ?? null) as EnvStudio['fondParcours'],
   };
@@ -10573,8 +10578,9 @@ async function buildParcoursBlock(conversationId: string, userId: string, instan
       // VIS-21 : les 10 dernières conceptions — une conception terminée n'est pas masquée par un devis postérieur.
       admin.from('agent_missions').select('id, type, statut, criteres, cree_le').eq('conversation_id', conversationId).eq('user_id', userId)
         .eq('type', 'conception').order('cree_le', { ascending: false }).limit(10),
+      // VIS-34 : préparation COURANTE = dernière mise à jour (même règle que l'écran et que l'outil de rendu).
       admin.from('studio_preparations').select('idu, resume').eq('conversation_id', conversationId).eq('user_id', userId)
-        .order('cree_le', { ascending: false }).limit(1),
+        .order('maj_le', { ascending: false }).limit(1),
       admin.from('studio_jobs').select('id, type, statut, options, resultat, cree_le').eq('conversation_id', conversationId).eq('user_id', userId)
         .order('cree_le', { ascending: false }).limit(12),
       // VIS-19 : au lieu de 60 messages complets — les 20 derniers (type de parcours demandé) et les seuls messages
@@ -11034,7 +11040,10 @@ async function runOrchestrator(params: {
   // (« habillage enregistré, ne prépare rien » contredirait « prépare la 3D »).
   const batimentCarte = (ctx as unknown as Record<string, unknown>).batiment_carte as EnvStudio['batimentCarte'];
   const modeleCarte = (ctx as unknown as Record<string, unknown>).modele_carte as EnvStudio['modeleCarte'];
+  // VIS-34 : réponse à la question de portée du dessin (jamais avec une carte dans le même message).
+  const porteeCarte = (ctx as unknown as Record<string, unknown>).portee_carte as EnvStudio['porteeCarte'];
   const consigneCarte = modeleCarte ? consigneModeleCarte(modeleCarte, null)
+    : porteeCarte ? consignePorteeDessin(porteeCarte)
     : batimentCarte ? consigneBatimentCarte(batimentCarte)
     : [consigneBriefCarte(briefCarte ?? null), consigneFormeCarte(formeCarte ?? null)].filter(Boolean).join('\n\n');
   const systemBase = params.priorToolResults
@@ -11054,7 +11063,7 @@ async function runOrchestrator(params: {
   // VIS-16 : « Préparer la plaquette » (bouton de fin de conception) = demande de rendu : outils Studio au tour.
   const plaquetteAuTour = agentDisponible(ctx.vertical) && demandePlaquette(userText);
   const studioAuTour = agentDisponible(ctx.vertical)
-    && (Boolean(briefCarte) || Boolean(formeCarte) || Boolean(batimentCarte) || plaquetteAuTour || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
+    && (Boolean(briefCarte) || Boolean(formeCarte) || Boolean(batimentCarte) || Boolean(porteeCarte) || plaquetteAuTour || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
   // LOT X3 : parcours « extension de maison » — demandé dans ce message, ou poursuivi (dernière question de Mimmo
   // issue du parcours ET réponse qui y répond). Dans ces deux cas, le premier tour est IMPOSÉ sur l'outil.
@@ -11076,7 +11085,7 @@ async function runOrchestrator(params: {
   // de plus », « toit en ardoise ») → tour sur studio_retoucher_batiment, avec les identifiants du dernier modèle. Lecture
   // bornée (JWT + conversation) faite seulement quand le message ressemble à une retouche ou suit une carte du dessin.
   const conversationIdTour = typeof (ctx as unknown as Record<string, unknown>).conversation_id === 'string' ? (ctx as unknown as Record<string, string>).conversation_id : null;
-  const modeleConversation = DESSIN_MODELE_ACTIF && agentDisponible(ctx.vertical) && !modeleCarte && !batimentCarte && !parcoursEnCours
+  const modeleConversation = DESSIN_MODELE_ACTIF && agentDisponible(ctx.vertical) && !modeleCarte && !batimentCarte && !porteeCarte && !parcoursEnCours
     && !suiteDuParcoursMaison(texteAssistantPrecedent) && (intentionRetoucheModele(userText) || suiteDuDessin(texteAssistantPrecedent))
     ? await dernierModele(depotModeleSupabase(getAdmin()), auth?.userId ?? null, conversationIdTour, memoireModele(ctx)) : null;
   const retoucheModeleAuTour = modeleConversation !== null && !nouveauDessinDemande(userText) && intentionRetoucheModele(userText);
@@ -11103,11 +11112,11 @@ async function runOrchestrator(params: {
   // pendant un parcours d'extension ou de maison neuve (leurs photos et leurs réponses leur appartiennent), ni sur le
   // message du bouton « Reproduire en 3D » (bloc : la 3D est préparée, la carte n'est pas reproposée).
   const photoAuTour = PHOTOS_DU_TOUR.has(ctx as unknown as object);
-  const batimentAuTour = agentDisponible(ctx.vertical) && !batimentCarte && !plansAuTour && !extensionAuTour && !parcoursEnCours && !maisonAuTour && !parcoursMaisonEnCours
+  const batimentAuTour = agentDisponible(ctx.vertical) && !batimentCarte && !porteeCarte && !plansAuTour && !extensionAuTour && !parcoursEnCours && !maisonAuTour && !parcoursMaisonEnCours
     && (intentionDessinBatiment(userText, photoAuTour) || (suiteDuDessin(texteAssistantPrecedent) && userText.trim().length > 0));
   // VIS-25 lot B : dessin libre (« dessine-moi un phare ») aussi ; le modèle COMPOSÉ remplace l'outil VIS-22 dans les consignes.
   // L'outil VIS-22 reste servi pour la suite d'une ANCIENNE carte (aucun modèle composé dans la conversation).
-  const dessinModeleAuTour = DESSIN_MODELE_ACTIF && agentDisponible(ctx.vertical) && !retoucheModeleAuTour && !batimentCarte && !modeleCarte && !plansAuTour
+  const dessinModeleAuTour = DESSIN_MODELE_ACTIF && agentDisponible(ctx.vertical) && !retoucheModeleAuTour && !batimentCarte && !modeleCarte && !porteeCarte && !plansAuTour
     && !extensionAuTour && !parcoursEnCours && !maisonAuTour && !parcoursMaisonEnCours && intentionDessinModele(userText, photoAuTour);
   const ancienneCarteAuTour = batimentAuTour && !dessinModeleAuTour && !retoucheModeleAuTour && !retoucheProposee && modeleConversation === null
     && (!DESSIN_MODELE_ACTIF || !intentionDessinBatiment(userText, photoAuTour));
@@ -12034,6 +12043,8 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).batiment_carte = descriptionDuMessage(payload.message);
     // VIS-25 lot B : même principe pour la référence du bâtiment DESSINÉ (bloc ```mimmoza-modele-ref``` du même bouton).
     (effectiveContext as unknown as Record<string,unknown>).modele_carte = referenceModeleDuMessage(payload.message);
+    // VIS-34 : même principe pour la réponse à la question de portée du dessin (jamais persistée dans le contexte).
+    (effectiveContext as unknown as Record<string,unknown>).portee_carte = porteeDuMessage(payload.message);
     // VIS-18b : fond de l'image choisi dans le parcours (même principe : posé après l'instantané, jamais persisté).
     (effectiveContext as unknown as Record<string,unknown>).fond_parcours = fondDuParcours(instantaneParcours);
     // LOT X3 : le parcours d'extension lit les réponses dans le message REÇU (même principe : jamais persisté).

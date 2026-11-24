@@ -20,6 +20,8 @@ import { fondDe, type OptionsFond } from '../../../lib/studio/fondImage.ts';
 import { dernierePreparation, lignesCarte, type MessageOutils, type ReferencePreparation } from './preparationStudio.ts';
 import { briefCourant, demandeEnCours, recapitulatif } from './briefCreatif.ts';
 import { latestJarvisDraft } from './jarvisDraft.ts';
+// VIS-34 : projet en vigueur (dessin validé) — les étapes 2 et 3 décrivent le dessin.
+import { resumeConceptionProjet, resumeVolumeProjet } from '../../../lib/studio/projetEnVigueur.ts';
 
 type MessageEcran = MessageOutils & { id: string; role: string; text: string; status?: string };
 
@@ -73,9 +75,15 @@ export function assemblerSourcesEcran(e: EntreeEcran): SourcesParcours {
   const mission = reference.mission ?? undefined;
   const lignes = prep ? lignesCarte(prep) : [];
   const terrainFinal = terrain ?? terrainDesCriteres(mission?.criteres);
+  // VIS-34 : dessin en vigueur (3D préparée de la conversation) → l'étape 2 décrit LE DESSIN et dit la contradiction
+  // éventuelle avec le programme ; l'étape 3 aussi (plus jamais « Plots · 12 logements » pour une maison dessinée).
+  const projet = prep?.projet ?? null;
+  const conceptionFinie = mission ? ['terminee', 'budget_atteint'].includes(mission.statut) : false;
   const conception = mission
-    ? { statut: mission.statut, resume: programmeDesCriteres(mission.criteres) ?? (lignes.length ? lignes.join(' · ') : null), missionId: mission.id,
+    ? { statut: mission.statut, missionId: mission.id,
+      resume: projet && conceptionFinie ? resumeConceptionProjet(projet, programmeDesCriteres(mission.criteres)) : programmeDesCriteres(mission.criteres) ?? (lignes.length ? lignes.join(' · ') : null),
       ...(reference.autreDevis ? { autreDevisEnAttente: true } : {}) }
+    : projet ? null
     : ficheDimensionnee ? { statut: 'fiche', resume: fiche!.programme } : null;
 
   // Habillage : brief validé dans le fil (ou devis), sinon celui mémorisé dans le brief projet de l'étude.
@@ -90,7 +98,7 @@ export function assemblerSourcesEcran(e: EntreeEcran): SourcesParcours {
     terrain: terrainFinal,
     conception,
     volume: prep
-      ? { pret: true, resume: lignes.length ? [...lignes, ...prep.alertes.slice(0, 1)].join(' · ') : '3D préparée par Mimmo.' }
+      ? { pret: true, resume: projet ? resumeVolumeProjet(projet) : lignes.length ? [...lignes, ...prep.alertes.slice(0, 1)].join(' · ') : '3D préparée par Mimmo.' }
       : ficheDimensionnee ? { pret: true, resume: `Projet décrit : ${fiche!.dimensions}` } : { pret: false, resume: null },
     habillage: { resume: habillage, attenduParMimmo: !!demandeEnCours(e.messages) },
     interieurs: interieursDe(e),

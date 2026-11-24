@@ -53,7 +53,7 @@ export interface TravailAvecFiche { type: string; fiche: object; options: unknow
  * Le travail avec le dessin en vigueur dans `fiche.modele_batiment` (ou inchangé). `note` : ce qui n'est pas joint ou pas
  * plafonné, à dire ; null sinon.
  */
-export function travailAvecModele<T extends TravailAvecFiche>(travail: T, modele: ModeleBatiment | null): { travail: T; note: string | null; modeleBatiment: FicheModeleBatiment | null } {
+export function travailAvecModele<T extends TravailAvecFiche>(travail: T, modele: ModeleBatiment | null, portee?: 'projet' | 'batiment' | null): { travail: T; note: string | null; modeleBatiment: FicheModeleBatiment | null } {
   if (!modele) return { travail, note: null, modeleBatiment: null };
   const options = estObj(travail.options) ? travail.options : {};
   if (options.existant === 'conserver') return { travail, note: NOTE_EXTENSION, modeleBatiment: null };
@@ -63,6 +63,7 @@ export function travailAvecModele<T extends TravailAvecFiche>(travail: T, modele
   const batiments = Array.isArray(charge.batiments) && charge.batiments.length > 0;
   if (composition && !batiments) return { travail, note: NOTE_COMPOSITION, modeleBatiment: null };
   const niveaux = niveauxDeLaFiche(fiche.draft, charge);
-  const mb = ficheModeleBatiment(modele, niveaux, REFS_CATALOGUE_SITE);
+  // VIS-34 : la portée du projet en vigueur ('projet' | 'batiment') voyage avec le dessin (`fiche.modele_batiment.portee`).
+  const mb = ficheModeleBatiment(modele, niveaux, REFS_CATALOGUE_SITE, portee);
   return { travail: { ...travail, fiche: { ...fiche, modele_batiment: mb } }, note: niveaux === null ? NOTE_HAUTEUR_INCONNUE : null, modeleBatiment: mb };
 }

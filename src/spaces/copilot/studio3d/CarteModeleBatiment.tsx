@@ -12,7 +12,10 @@
 import { useMemo, useState } from 'react';
 import { useCopilotStore } from '../store/copilotStore';
 import { messageReproduireModele } from '@/lib/studio/modeleBatimentMessage';
-import { etatCarte, troisDPreparee, facadePrincipale, groupesListe, LIBELLE_PORTEE, phrasePortee, planVuDeDessus, type CarteModele } from './modeleBatimentChat';
+import { etatCarte, troisDPreparee, facadePrincipale, groupesListe, libellePortee, phrasePortee, planVuDeDessus, type CarteModele } from './modeleBatimentChat';
+// VIS-34 : la carte dit la VÉRITÉ du projet en vigueur (3D préparée de la conversation, lue en base).
+import { usePreparationCourante } from './preparationBase';
+import { phrasePortee as phraseRemplacement, placeDuDessin } from '@/lib/studio/projetEnVigueur';
 import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from './parcours.store';
 import './CarteModeleBatiment.css';
 
@@ -28,6 +31,8 @@ const AIDE_PORTEE = {
   '3d': 'Construit dans le Studio 3D, mais pas encore repris dans les images.',
   aucune: 'Gardé dans le dessin, mais ni le Studio ni les images ne savent encore le dessiner.',
 } as const;
+/** VIS-34 : tant que ce dessin n'est pas le projet en vigueur, c'est une prévision, pas un état. */
+const AIDE_PREVU = 'Ce sera le cas dès que ce dessin sera le bâtiment du projet (bouton « Reproduire en 3D »).';
 
 function Apercu({ carte }: { carte: CarteModele }) {
   const plan = useMemo(() => planVuDeDessus(carte.modele), [carte.modele]);
@@ -68,7 +73,12 @@ function Apercu({ carte }: { carte: CarteModele }) {
 
 export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
   const messages = useCopilotStore((s) => s.messages);
+  const conversationId = useCopilotStore((s) => s.currentConversationId);
   const etat = useMemo(() => etatCarte(messages, messageId, carte.empreinte), [messages, messageId, carte.empreinte]);
+  // VIS-34 : projet en vigueur de la conversation (base) → ce dessin est-il LE projet, UN bâtiment du projet, ou pas (encore) en vigueur ?
+  const preparation = usePreparationCourante(messages as never, conversationId ?? null);
+  const projetVigueur = preparation?.projet ?? null;
+  const place = placeDuDessin(carte.empreinte, projetVigueur);
   const [cliquee, setCliquee] = useState(false);
   // VIS-26 lot D : 3D de CE dessin préparée → lien discret « Voir dans le Studio » (même parcours que l'étape « Bâtiment »).
   const preparee = useMemo(() => troisDPreparee(messages, messageId, carte.empreinte), [messages, messageId, carte.empreinte]);
@@ -118,7 +128,7 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
             <div className={`mz-mod__rang${l.portee !== 'images' ? ' is-3d' : ''}`} key={`${l.categorie}-${l.id}`}>
               <span className="mz-mod__nom">{l.libelle}</span>
               <span className="mz-mod__detail">{l.detail}</span>
-              <span className={`mz-mod__portee is-${l.portee === '3d' ? 'seul3d' : l.portee}`} title={AIDE_PORTEE[l.portee]}>{LIBELLE_PORTEE[l.portee]}</span>
+              <span className={`mz-mod__portee is-${l.portee === '3d' ? 'seul3d' : l.portee}`} title={place === 'pas_en_vigueur' && l.portee !== 'aucune' ? AIDE_PREVU : AIDE_PORTEE[l.portee]}>{libellePortee(l.portee, place)}</span>
               {l.note && <p className="mz-mod__note">{l.note}</p>}
             </div>
           ))}
@@ -138,13 +148,20 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
 
       <footer className="mz-mod__pied">
         <div className="mz-mod__bilan">
-          <span>{phrasePortee(groupes)}</span>
+          <span>{phrasePortee(groupes, place)}</span>
           <span className="mz-mod__aide">Pour changer quelque chose, dites-le à Mimmo (« ajoute une lucarne », « un étage de plus »). La hauteur et l’emprise sont vérifiées sur votre terrain.</span>
         </div>
         <button type="button" className="mz-mod__bouton" onClick={reproduire} disabled={!onSend || envoyee || remplacee}>
           {envoyee ? 'Envoyé à la 3D' : remplacee ? 'Version remplacée' : 'Reproduire en 3D'}
         </button>
       </footer>
+      {/* VIS-34 : ce que ce dessin est DANS le projet (source : 3D préparée de la conversation, en base). */}
+      {place !== 'pas_en_vigueur' && projetVigueur && !remplacee && (
+        <p className="mz-mod__envoye" role="status">Projet en vigueur : ce dessin. {phraseRemplacement(projetVigueur)}</p>
+      )}
+      {place === 'pas_en_vigueur' && projetVigueur && !remplacee && envoyee && preparee && (
+        <p className="mz-mod__remplacee" role="status">Le projet en vigueur est un autre dessin (« {projetVigueur.nom} ») : celui-ci n’est ni dans la 3D ni dans les images.</p>
+      )}
       {envoyee && !preparee && <p className="mz-mod__envoye" role="status">Mimmo prépare la 3D dans la conversation.</p>}
       {envoyee && preparee && !remplacee && (
         <p className="mz-mod__envoye" role="status">

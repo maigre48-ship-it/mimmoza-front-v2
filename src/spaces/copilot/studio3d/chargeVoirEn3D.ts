@@ -32,6 +32,10 @@ import { descriptionCourante } from './descriptionBatimentChat';
 import { modeleCourant } from './modeleBatimentChat';
 import type { ModeleBatiment } from '@/lib/studio/modeleBatiment';
 import { useCopilotStore } from '../store/copilotStore';
+// VIS-34 : le dessin en vigueur et sa portée sont lus dans la 3D préparée de la conversation (base), puis seulement dans le chat.
+import { chargerProjetEnVigueur, projetEnVigueurEnCache } from './preparationBase';
+import { empreinteModele } from '@/lib/studio/modeleBatiment';
+import { PORTEE_DEFAUT, type PorteeDessin } from '@/lib/studio/projetEnVigueur';
 
 /** Terrain retenu pour la conversation, ou celui qui vient d'être confirmé. */
 export type TerrainCharge = Pick<ConfirmedTerrain, 'parcel' | 'point' | 'implantation' | 'accesses'> & {
@@ -135,10 +139,32 @@ function descriptionDeLaConversation(conversationId: string): DescriptionBatimen
  * La description VIS-22 du même message reste appliquée à la commande (repli si le Studio ne lit pas le complément).
  */
 export function modeleDeLaConversation(conversationId: string): ModeleBatiment | null {
+  return projetDeLaConversation(conversationId)?.modele ?? null;
+}
+
+/** VIS-34 : le dessin en vigueur, sa portée et son empreinte ; `source` dit d'où il vient (base enregistrée, ou repli chat). */
+export interface DessinEnVigueur { modele: ModeleBatiment; portee: PorteeDessin; empreinte: string; nom: string | null; source: 'base' | 'chat' }
+
+/**
+ * VIS-34 — PROJET EN VIGUEUR de la conversation. Source qui fait foi : la 3D préparée de la conversation en base
+ * (`studio_preparations.entree.projet_en_vigueur`, écrite par le serveur quand le dessin est validé) — valable après
+ * rechargement, dans un autre onglet, et pour une conversation qui n'est pas celle affichée. REPLI (base muette, pas
+ * encore lue, ou dessin validé avant VIS-34) : la mémoire du chat comme avant (dernier « Reproduire en 3D »), portée « projet ».
+ */
+export function projetDeLaConversation(conversationId: string): DessinEnVigueur | null {
+  const base = projetEnVigueurEnCache(conversationId);
+  if (base) return { modele: base.modele, portee: base.portee, empreinte: base.empreinte, nom: base.nom, source: 'base' };
   try {
     const etat = useCopilotStore.getState();
-    return etat.currentConversationId === conversationId ? modeleCourant(etat.messages) : null;
+    const m = etat.currentConversationId === conversationId ? modeleCourant(etat.messages) : null;
+    return m ? { modele: m, portee: PORTEE_DEFAUT, empreinte: empreinteModele(m), nom: m.nom ?? null, source: 'chat' } : null;
   } catch { return null; }
+}
+
+/** VIS-34 : même chose, après avoir RELU la base (à appeler avant d'ouvrir le Studio ou de lancer un rendu). */
+export async function projetDeLaConversationRelu(conversationId: string): Promise<DessinEnVigueur | null> {
+  await chargerProjetEnVigueur(conversationId).catch(() => undefined);
+  return projetDeLaConversation(conversationId);
 }
 
 /** Le projet avec la révision suivante de la conversation (comme à chaque envoi à Studio). */

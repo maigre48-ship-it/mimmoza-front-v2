@@ -1,0 +1,46 @@
+{
+  "_source": "Cas réel du 24/11/2026 — conversation 0113d281-835a-43af-9442-da7d4608c0a7, conception d10c05ed (Ascain, AI0002). Parcelle sans ses voisines, règles abrégées, dessin tel qu'écrit par Mimmo (studio_dessiner_batiment).",
+  "conception": {
+    "id": "d10c05ed-4baa-4a75-a016-2463ee035186",
+    "idu": "64065000AI0002",
+    "commune": "Ascain",
+    "parcelle": {
+      "idu": "64065000AI0002", "source": "API Carto IGN — cadastre (contenance cadastrale)", "surface_m2": 2283,
+      "geometrie": {"type": "MultiPolygon", "coordinates": [[[[-1.62138314, 43.34842995], [-1.62115568, 43.34818375], [-1.6210962, 43.34811961], [-1.62105021, 43.34806976], [-1.62101086, 43.34802719], [-1.62053462, 43.3475121], [-1.62057694, 43.34751633], [-1.62065978, 43.34751468], [-1.62076856, 43.34749912], [-1.62082957, 43.34751003], [-1.62086819, 43.34752045], [-1.62090609, 43.3475419], [-1.62093588, 43.34756082], [-1.62096429, 43.34758096], [-1.62100377, 43.34761432], [-1.62104468, 43.3476625], [-1.62117855, 43.34785502], [-1.62126076, 43.34795613], [-1.62130915, 43.34800831], [-1.62135228, 43.34805171], [-1.62139705, 43.34809422], [-1.621418, 43.34812135], [-1.62146652, 43.34823498], [-1.62148356, 43.34829967], [-1.62138438, 43.34842845], [-1.62138314, 43.34842995]]]]}
+    },
+    "regles_plu": [
+      {"cle": "hauteur_max_m", "texte": "UC (zone générale) (7 m) ou UCa (9 m), au choix du constructeur", "nature": "chiffree", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": 7, "article": "UC 10, p. 28", "alternatives": [{"valeur": 7, "libelle": "UC (zone générale)"}, {"valeur": 9, "libelle": "UCa"}]},
+      {"cle": "niveaux_max", "texte": "Le règlement de la zone UC ne fixe pas de nombre maximal de niveaux", "nature": "non_reglementee", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": null, "article": "UC 10, p. 28"},
+      {"cle": "emprise_sol_max_pct", "texte": "L'emprise au sol des constructions ne doit pas excéder 40 %", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": 40, "article": "UC 9, p. 28"},
+      {"cle": "recul_voie_m", "texte": "RD 918 (20 m) ou voies dont la plate-forme ne dépasse pas 10 m (5 m)", "nature": "chiffree", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": 5, "article": "UC 6, p. 26", "alternatives": [{"valeur": 20, "libelle": "RD 918"}, {"valeur": 5, "libelle": "voies dont la plate-forme ne dépasse pas 10 m"}, {"valeur": 10, "libelle": "autres voies"}]},
+      {"cle": "recul_limites_m", "texte": "La distance comptée horizontalement de la construction aux limites", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": 3, "article": "UC 7, p. 27"},
+      {"cle": "recul_limites_formule", "source": "PLU Ascain (test)", "statut": "manquant", "valeur": null},
+      {"cle": "pleine_terre_min_pct", "texte": "35 % minimum de l'unité foncière doit être maintenu en pleine terre", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": 35, "article": "UC 13, p. 32"},
+      {"cle": "stationnement_par_logement", "texte": "logements (règle générale) : 1 place pour 60 m² de plancher", "nature": "chiffree", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": 2, "article": "UC 12, p. 31"},
+      {"cle": "mixite_sociale_pct", "texte": "Pour toute nouvelle opération d'aménagement ou de construction", "source": "PLU Ascain (test)", "statut": "confirme", "valeur": 60, "article": "UC 2, p. 24"}
+    ],
+    "programme": {"gabarit": "R+2", "toiture": "pentes", "typologies": {"T2": 2, "T3": 5, "T4": 4, "T5": 1}, "nb_logements": 12, "sdp_cible_m2": null, "shab_cible_m2": null, "stationnement": 17}
+  },
+  "dessin": {
+    "modele": {"v": 1, "nom": "Maison hexagonale avec tourelle et garage", "type": "maison", "style": "contemporain", "origine": "texte",
+      "volumes": [
+        {"id": "corps", "nom": "Corps principal hexagonal", "plan": {"type": "polygone", "points": [[0, -6], [5.2, -3], [5.2, 3], [0, 6], [-5.2, 3], [-5.2, -3]]}, "role": "principal", "toit": {"forme": "pyramide", "pente": 38, "debord": 0.6}, "niveaux": 1, "position": {"x": 0, "y": 0}, "hauteurEtage": 3, "soubassement": 0.5},
+        {"id": "garage", "nom": "Garage accolé à gauche", "plan": {"type": "rectangle", "largeur": 6, "profondeur": 7}, "role": "garage", "toit": {"forme": "un_pan", "pente": 10, "debord": 0.3, "basVers": "gauche"}, "niveaux": 1, "position": {"x": -9.2, "y": -0.5}, "hauteurEtage": 2.6, "soubassement": 0},
+        {"id": "tourelle", "nom": "Tourelle à droite", "plan": {"type": "cercle", "rayon": 2}, "role": "autre", "toit": {"forme": "conique", "pente": 55, "debord": 0.3}, "niveaux": 2, "position": {"x": 7, "y": 0}, "hauteurEtage": 2.8, "soubassement": 0.5}
+      ],
+      "elements": [{"id": "cheminee", "type": "cheminee", "point": {"x": 1.5, "y": 2, "z": 0}, "volume": "corps"}],
+      "matieres": {"murs": {"couleur": "#e8e0d4", "famille": "enduit", "refStudio": "av-enduit-clair"}, "volets": {"couleur": "#5c4a35", "famille": "bois"}, "toiture": {"couleur": "#4a3728", "famille": "tuile"}, "menuiseries": {"couleur": "#3a3a3a", "famille": "bois"}, "soubassement": {"famille": "pierre", "refStudio": "av-pierre-calcaire"}},
+      "remarques": "Plan hexagonal régulier pour le corps principal avec toit en pyramide. Tourelle cylindrique R+1 avec toit conique à droite. Garage accolé à gauche avec toit en appentis.",
+      "ouvertures": [
+        {"id": "porte-entree", "type": "porte", "allege": 0, "facade": "avant", "niveau": 0, "volume": "corps", "hauteur": 2.1, "largeur": 1.1, "position": 5.2},
+        {"id": "fen-corps-av-0", "type": "fenetre", "allege": 0.9, "facade": "avant", "niveau": 0, "nombre": 2, "volets": "battants", "volume": "corps", "entraxe": 3, "hauteur": 1.4, "largeur": 1.2},
+        {"id": "fen-corps-gauche-0", "type": "fenetre", "allege": 0.9, "facade": "gauche", "niveau": 0, "nombre": 1, "volets": "battants", "volume": "corps", "hauteur": 1.4, "largeur": 1.2},
+        {"id": "fen-corps-droite-0", "type": "fenetre", "allege": 0.9, "facade": "droite", "niveau": 0, "nombre": 1, "volets": "battants", "volume": "corps", "hauteur": 1.4, "largeur": 1.2},
+        {"id": "porte-garage", "type": "porte_garage", "allege": 0, "facade": "avant", "niveau": 0, "volume": "garage", "hauteur": 2.1, "largeur": 2.8},
+        {"id": "fen-garage-av", "type": "fenetre", "allege": 1, "facade": "avant", "niveau": 0, "volume": "garage", "hauteur": 0.9, "largeur": 0.9, "position": 5},
+        {"id": "fen-tourelle-0", "type": "fenetre", "allege": 0.9, "facade": "avant", "niveau": 0, "volets": "battants", "volume": "tourelle", "hauteur": 1.2, "largeur": 0.8},
+        {"id": "fen-tourelle-1", "type": "fenetre", "allege": 0.9, "facade": "avant", "niveau": 1, "volets": "battants", "volume": "tourelle", "hauteur": 1.2, "largeur": 0.8}
+      ]},
+    "origine": "texte"
+  }
+}

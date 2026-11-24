@@ -337,6 +337,18 @@ export function consigneModeleCarte(ref: ReferenceModele | null, trouve: boolean
     'Si l’outil répond qu’aucune conception n’existe, dis que le dessin est gardé dans la conversation et qu’il faut d’abord choisir le terrain et le programme (étapes 1 et 2) — sans proposer d’autre page.';
 }
 
+/**
+ * VIS-34 — consigne ajoutée au système quand le message REÇU répond à la question de portée (« Ce dessin remplace tout le
+ * projet » / « Il remplace un seul bâtiment ») : la 3D est préparée à nouveau avec cette portée, qui est enregistrée.
+ */
+export function consignePorteeDessin(portee: 'projet' | 'batiment' | null | undefined): string {
+  if (portee !== 'projet' && portee !== 'batiment') return '';
+  return `PORTÉE DU DESSIN choisie par l’utilisateur (dernier message) : ${portee === 'batiment' ? 'le dessin remplace UN SEUL bâtiment du projet préparé, les autres sont gardés' : 'le dessin remplace TOUT le projet préparé'}. ` +
+    'Appelle MAINTENANT studio_preparer_3d SANS aucun paramètre (le serveur relit lui-même le dessin et ce choix, et les enregistre). ' +
+    'Ensuite, confirme en UNE ou DEUX phrases ce que le projet contient désormais (d’après `projet_en_vigueur`), sans reposer la question et sans bloc de choix. ' +
+    'Si l’outil ne renvoie pas `projet_en_vigueur`, dis simplement qu’aucun bâtiment dessiné n’est en cours dans cette conversation. N’appelle pas studio_lancer_rendu.';
+}
+
 // ---- Écarts entre le dessin et la 3D préparée -------------------------------------
 
 const fr = (x: number): string => String(Math.round(x * 10) / 10).replace('.', ',');
@@ -360,7 +372,7 @@ export interface VolumePrepareLu { niveaux?: number | null; emprise?: { largeurM
  * Écarts honnêtes entre le bâtiment dessiné et la 3D préparée par le moteur (qui garde la main : terrain, PLU, gabarit).
  * La 3D préparée est un volume d'étude ; le Studio et les images partent du DESSIN, posé sur ce terrain.
  */
-export function ecartsModeleVolume(m: ModeleBatiment, v: VolumePrepareLu | null): string[] {
+export function ecartsModeleVolume(m: ModeleBatiment, v: VolumePrepareLu | null, portee: 'projet' | 'batiment' = 'projet'): string[] {
   if (!v) return [];
   const out: string[] = [];
   const p = volumePrincipal(m);
@@ -384,7 +396,10 @@ export function ecartsModeleVolume(m: ModeleBatiment, v: VolumePrepareLu | null)
     }
   }
   if (Array.isArray(v.batiments) && v.batiments.length > 1) {
-    out.push(`Le moteur a réparti le programme en ${v.batiments.length} bâtiments : le dessin ne remplace pas ces bâtiments ; seul son habillage leur est appliqué (le dessin complet est construit pour un bâtiment seul).`);
+    // VIS-34 : la PORTÉE dit ce que le dessin remplace (plus d'heuristique « seul l'habillage est appliqué »).
+    out.push(portee === 'batiment'
+      ? `Le projet préparé compte ${v.batiments.length} bâtiments : le dessin en remplace UN seul (votre choix) ; les autres sont gardés tels que le moteur les a placés.`
+      : `Le moteur n’a pas pu ramener le projet à un seul bâtiment sur ce terrain (${v.batiments.length} bâtiments préparés) : dans le Studio et les images, le dessin remplace quand même TOUT le projet.`);
   }
   if (m.volumes.length > 1 || m.elements.length > 0) {
     out.push(`La 3D préparée du chat reprend le plan et la hauteur du volume principal${plan} ; elle reste un volume d’étude simple : ${m.volumes.length > 1 ? 'les autres volumes, ' : ''}les toits, les ouvertures et les éléments du dessin sont construits dans le Studio et dans les images.`);

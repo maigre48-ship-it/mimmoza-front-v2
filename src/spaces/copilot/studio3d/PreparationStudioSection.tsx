@@ -72,7 +72,10 @@ export function PreparationStudioSection({ messages, conversationId, onOpenStudi
       <header className="mzia-volume__tete">
         <h3><span className="mzia-volume__ref">3D préparée par Mimmo</span> <span className="mzia-volume__zone">{ref.idu}{ref.commune ? ` · ${ref.commune}` : ''}</span></h3>
       </header>
-      <p>Volume d’étude calculé par le moteur du Dossier 3D à partir de la fiche de conception (parcelle cadastrale, règles PLU enregistrées, programme). Valeurs indicatives, conformité à vérifier par un professionnel.</p>
+      {/* VIS-34 : un dessin validé est LE projet ; le volume d'étude ne sert plus qu'à le poser et à vérifier hauteur et emprise. */}
+      {ref.projet
+        ? <p>Projet en vigueur : le bâtiment que vous avez dessiné. Le volume d’étude du moteur sert seulement à le poser sur le terrain et à vérifier hauteur et emprise. Valeurs indicatives, conformité à vérifier par un professionnel.</p>
+        : <p>Volume d’étude calculé par le moteur du Dossier 3D à partir de la fiche de conception (parcelle cadastrale, règles PLU enregistrées, programme). Valeurs indicatives, conformité à vérifier par un professionnel.</p>}
       <ul>{lignesCarte(ref).map(l => <li key={l}>{l}</li>)}</ul>
       {ref.controles.length > 0 && <details>
         <summary>Vérifications ({ref.controles.length})</summary>

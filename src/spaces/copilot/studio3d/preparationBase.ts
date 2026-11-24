@@ -9,11 +9,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { dernierePreparation, referenceDepuisLigne, type MessageOutils, type ReferencePreparation } from './preparationStudio';
+// VIS-34 : le PROJET EN VIGUEUR (dessin validé + portée) est enregistré avec la préparation (entree.projet_en_vigueur) :
+// il est relu ici, pour toute la page — après rechargement et dans un autre onglet aussi (plus seulement la mémoire du chat).
+import { lireProjetEnVigueur, type ProjetEnVigueur } from '@/lib/studio/projetEnVigueur';
 
 /** Émis quand la préparation de la conversation a pu changer (détail : id de conversation). */
 export const EVENEMENT_PREPARATION_BASE = 'mzia-preparation-base';
 
 const cache = new Map<string, ReferencePreparation | null>();
+/** VIS-34 : dessin en vigueur de la conversation, tel qu'enregistré en base (null : aucun ; absent : pas encore lu). */
+const projets = new Map<string, ProjetEnVigueur | null>();
+
+/** VIS-34 : projet en vigueur en cache (undefined : la base n'a pas encore répondu pour cette conversation). */
+export function projetEnVigueurEnCache(conversationId: string | null): ProjetEnVigueur | null | undefined {
+  return conversationId ? projets.get(conversationId) : null;
+}
+
+/** VIS-34 : relit la base puis rend le projet en vigueur ; undefined si la base n'a jamais pu répondre (repli : chat). */
+export async function chargerProjetEnVigueur(conversationId: string): Promise<ProjetEnVigueur | null | undefined> {
+  await chargerPreparationBase(conversationId).catch(() => null);
+  return projets.get(conversationId);
+}
 
 /** Référence en cache (undefined : pas encore lue). */
 export function preparationBaseEnCache(conversationId: string | null): ReferencePreparation | null | undefined {
@@ -23,10 +39,12 @@ export function preparationBaseEnCache(conversationId: string | null): Reference
 /** Relit la dernière préparation de la conversation (RLS : celles de l'utilisateur) et prévient les écrans. */
 export async function chargerPreparationBase(conversationId: string): Promise<ReferencePreparation | null> {
   const { data, error } = await supabase.from('studio_preparations')
-    .select('id,conception_id,idu,resume,commune:entree->>commune').eq('conversation_id', conversationId)
+    .select('id,conception_id,idu,resume,commune:entree->>commune,projet:entree->projet_en_vigueur').eq('conversation_id', conversationId)
     .order('maj_le', { ascending: false }).limit(1);
   if (error) return cache.get(conversationId) ?? null;
   const ref = Array.isArray(data) && data.length ? referenceDepuisLigne(data[0]) : null;
+  // VIS-34 : dessin complet relu SANS confiance (modèle revalidé, empreinte recalculée, conversation vérifiée).
+  projets.set(conversationId, Array.isArray(data) && data.length ? lireProjetEnVigueur((data[0] as { projet?: unknown }).projet, conversationId) : null);
   const avant = cache.get(conversationId);
   cache.set(conversationId, ref);
   if (avant === undefined || avant?.preparationId !== ref?.preparationId || JSON.stringify(avant) !== JSON.stringify(ref)) {

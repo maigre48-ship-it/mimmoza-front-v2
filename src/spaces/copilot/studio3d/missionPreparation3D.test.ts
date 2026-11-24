@@ -107,6 +107,14 @@ test('charge réelle mission : ne consulte pas étude active et conserve le lien
     // VIS-04 : brief projet — en mission (autoriserEtudeActive:false), le brief de l'étude active n'est JAMAIS lu.
     if(nom==='@/lib/studio/briefProjet')return {facadeDesChamps:(c:unknown)=>(c===null?null:(()=>{throw Error('brief inattendu');})())};
     if(nom.includes('briefProjet.store'))return {champsBriefDeLaConversation:()=>{lecturesActives++;throw Error('Brief de l’étude active interdit en mission');}};
+    // VIS-22 / VIS-25 / VIS-34 : description, dessin et projet en vigueur — aucun dans cette conversation de mission.
+    if(nom==='@/lib/studio/descriptionBatiment')return {commandeAvecDescription:(c:unknown)=>c};
+    if(nom==='./descriptionBatimentChat')return {descriptionCourante:()=>null};
+    if(nom==='./modeleBatimentChat')return {modeleCourant:()=>null};
+    if(nom==='../store/copilotStore')return {useCopilotStore:{getState:()=>({currentConversationId:null,messages:[]})}};
+    if(nom==='./preparationBase')return {chargerProjetEnVigueur:async()=>null,projetEnVigueurEnCache:()=>null};
+    if(nom==='@/lib/studio/modeleBatiment')return {empreinteModele:()=>'mb1-00000000'};
+    if(nom==='@/lib/studio/projetEnVigueur')return {PORTEE_DEFAUT:'projet'};
     throw Error('Dépendance non prévue '+nom);
   };
   try{

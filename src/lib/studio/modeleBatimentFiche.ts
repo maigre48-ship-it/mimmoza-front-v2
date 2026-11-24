@@ -39,9 +39,13 @@ export function modeleContraint(m: ModeleBatiment, niveauxMax: number | null | u
 }
 
 /** Champ `modele_batiment` de la fiche d'un rendu (même forme que l'Edge ; lu tel quel par la machine de rendu). */
-export interface FicheModeleBatiment { v: 1; empreinte: string; modele: ModeleBatiment; notes?: string[] }
+/**
+ * VIS-34 — `portee` : ce que le dessin remplace dans le projet préparé ('projet' = tout, 'batiment' = un seul bâtiment).
+ * ABSENT = 'projet'. Porté À CÔTÉ du modèle (le contrat ModeleBatiment n'est pas modifié) ; appliqué par la machine de rendu.
+ */
+export interface FicheModeleBatiment { v: 1; empreinte: string; modele: ModeleBatiment; notes?: string[]; portee?: 'projet' | 'batiment' }
 
-export function ficheModeleBatiment(m: ModeleBatiment, niveauxMax: number | null | undefined, refsConnues?: readonly string[]): FicheModeleBatiment {
+export function ficheModeleBatiment(m: ModeleBatiment, niveauxMax: number | null | undefined, refsConnues?: readonly string[], portee?: 'projet' | 'batiment' | null): FicheModeleBatiment {
   const c = modeleContraint(m, niveauxMax, refsConnues);
-  return { v: 1, empreinte: empreinteModele(m), modele: c.modele, ...(c.notes.length ? { notes: c.notes } : {}) };
+  return { v: 1, empreinte: empreinteModele(m), modele: c.modele, ...(portee ? { portee } : {}), ...(c.notes.length ? { notes: c.notes } : {}) };
 }

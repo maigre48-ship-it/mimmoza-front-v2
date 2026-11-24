@@ -184,12 +184,27 @@ export function groupesListe(m: ModeleBatiment, statuts: StatutsRendu = STATUTS_
     .filter((g) => g.lignes.length > 0);
 }
 
-/** Pied de carte : « 14 parties dans la 3D et les images · 1 dans la 3D seulement ». */
-export function phrasePortee(groupes: readonly GroupeListe[]): string {
+/**
+ * VIS-34 — étiquettes VRAIES : tant que ce dessin n'est pas le projet en vigueur de la conversation (pas encore envoyé à la
+ * 3D, ou remplacé), rien n'est « dans la 3D et les images » : on dit « prévu ». `place` : placeDuDessin (projetEnVigueur.ts).
+ */
+export const LIBELLE_PORTEE_PREVU = { images: 'Prévu : 3D et images', '3d': 'Prévu : 3D seulement', aucune: 'Noté, pas dessiné' } as const;
+export type PlaceCarte = 'projet' | 'batiment' | 'pas_en_vigueur';
+export function libellePortee(portee: keyof typeof LIBELLE_PORTEE, place: PlaceCarte = 'projet'): string {
+  return place === 'pas_en_vigueur' ? LIBELLE_PORTEE_PREVU[portee] : LIBELLE_PORTEE[portee];
+}
+
+/** Pied de carte : « 14 parties dans la 3D et les images · 1 dans la 3D seulement » (« prévues pour… » hors projet en vigueur). */
+export function phrasePortee(groupes: readonly GroupeListe[], place: PlaceCarte = 'projet'): string {
   const toutes = groupes.flatMap((g) => g.lignes);
   const img = toutes.filter((l) => l.portee === 'images').length; const seul = toutes.filter((l) => l.portee === '3d').length;
   const aucune = toutes.filter((l) => l.portee === 'aucune').length;
-  return [`${img} partie${img > 1 ? 's' : ''} dans la 3D et les images`, seul ? `${seul} dans la 3D seulement` : null, aucune ? `${aucune} noté${aucune > 1 ? 's' : ''}, pas dessiné${aucune > 1 ? 's' : ''}` : null].filter(Boolean).join(' · ');
+  const prevu = place === 'pas_en_vigueur';
+  return [
+    prevu ? `${img} partie${img > 1 ? 's' : ''} prévue${img > 1 ? 's' : ''} pour la 3D et les images` : `${img} partie${img > 1 ? 's' : ''} dans la 3D et les images`,
+    seul ? (prevu ? `${seul} pour la 3D seulement` : `${seul} dans la 3D seulement`) : null,
+    aucune ? `${aucune} noté${aucune > 1 ? 's' : ''}, pas dessiné${aucune > 1 ? 's' : ''}` : null,
+  ].filter(Boolean).join(' · ');
 }
 
 // ---- État de la carte dans la conversation ----------------------------------------------------------------

@@ -21,6 +21,8 @@ import { implantationDepuisVolume, pointDansParcelle, terrainDepuisParcelle } fr
 import { volumeBatimentsStudio, type VolumeBatimentsStudio } from './batimentsStudio.ts';
 import { ficheStudioDepuisVolume, type GeometrieParcelle, type ProgrammeVolume, type VolumePropose } from './volumeParcelle.ts';
 import { lireRegles, type RegleLue } from './controlesVolume.ts';
+// VIS-34 : projet en vigueur (dessin validé) enregistré avec la 3D préparée — résumé court lu dans `resume`.
+import { lignesProjet, lireResumeProjet, type ResumeProjetEnVigueur } from '../../../lib/studio/projetEnVigueur.ts';
 
 export const OUTIL_PREPARATION = 'studio_preparer_3d';
 export const OUTIL_RENDU = 'studio_lancer_rendu';
@@ -51,6 +53,11 @@ export interface ReferencePreparation {
   logementsVises: number | null;
   controles: ControleAnnonce[];
   alertes: string[];
+  /**
+   * VIS-34 : projet EN VIGUEUR quand un dessin a été validé (resume.projet_en_vigueur) ; null : le volume du moteur est
+   * le projet. Présent → tous les écrans décrivent LE DESSIN (nom, volumes, niveaux, surfaces), pas le volume d'étude.
+   */
+  projet: ResumeProjetEnVigueur | null;
 }
 
 const VERDICTS = ['dans_la_limite', 'au_dela', 'a_verifier', 'non_controle'] as const;
@@ -88,6 +95,7 @@ function referenceDepuisResume(id: string, conceptionId: unknown, idu: string, c
     batiments: fini(v.batiments) ? v.batiments : null, gabarit: txt(v.gabarit, 20), sdpM2: fini(v.sdp_estimee_m2) ? v.sdp_estimee_m2 : null,
     logementsPlaces: fini(v.logements_places) ? v.logements_places : null, logementsVises: fini(v.logements_vises) ? v.logements_vises : null,
     controles, alertes: (Array.isArray(v.alertes) ? v.alertes : []).map((x) => txt(x, 300)).filter((x): x is string => !!x).slice(0, 4),
+    projet: lireResumeProjet(v),
   };
 }
 
@@ -169,6 +177,8 @@ export function ouverturePreparation(p: PreparationStockee): IssueOuverture {
 
 /** Lignes chiffrées de la carte (valeurs du moteur, présentées comme indicatives). */
 export function lignesCarte(r: ReferencePreparation): string[] {
+  // VIS-34 : un dessin validé est LE projet → la carte décrit le dessin, pas « 3 bâtiments · 12 logements placés ».
+  if (r.projet) return lignesProjet(r.projet);
   const nf = (v: number) => v.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
   return [
     r.batiments !== null && r.gabarit ? `${r.batiments} bâtiment${r.batiments > 1 ? 's' : ''} en ${r.gabarit}` : null,

@@ -12,6 +12,8 @@ import {
   apercuValideDesMessages, blocParcoursSysteme, calculerParcours, lireInstantaneParcours, sourcesDeLInstantane, programmeDesCriteres, terrainDesCriteres, travailParcours,
   typeParcoursDesMessages, typeParcoursDuTexte, type Parcours, type SourcesParcours, type TravailParcours,
 } from '../../../../src/lib/studio/parcours.ts';
+// VIS-34 : projet en vigueur (dessin validé) enregistré avec la 3D préparée.
+import { lireResumeProjet, resumeConceptionProjet, resumeVolumeProjet, type ResumeProjetEnVigueur } from '../../../../src/lib/studio/projetEnVigueur.ts';
 
 // VIS-21 : mission de conception qui fait foi (une conception terminée n'est pas masquée par un devis postérieur).
 export { missionConceptionDeReference } from '../../../../src/lib/studio/parcours.ts';
@@ -51,11 +53,22 @@ export function temoinDeLaBase(ligne: unknown): { fait: boolean; resume: string 
 
 const estObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const nf = (v: number) => v.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
+/** VIS-34 : statuts d'une conception terminée (le résumé de l'étape 2 peut alors être celui du dessin en vigueur). */
+const CONCEPTION_TERMINEE = new Set(['terminee', 'budget_atteint']);
 
-/** Résumé de la 3D préparée (studio_preparations.resume), lu champ par champ, jamais deviné. */
-export function resumePreparation(p: PreparationLue | null): { terrain: string | null; volume: string | null } {
+/**
+ * Résumé de la 3D préparée (studio_preparations.resume), lu champ par champ, jamais deviné.
+ * VIS-34 : `projet` = le projet EN VIGUEUR quand un dessin a été validé (resume.projet_en_vigueur) — le volume décrit
+ * alors LE DESSIN (nom, volumes, niveaux, surfaces), plus jamais « 3 bâtiments · 12 logements placés » d'un volume remplacé.
+ */
+export function resumePreparation(p: PreparationLue | null): { terrain: string | null; volume: string | null; /** Présent seulement avec un dessin en vigueur. */ projet?: ResumeProjetEnVigueur } {
   if (!p) return { terrain: null, volume: null };
   const r = estObj(p.resume) ? p.resume : {};
+  const projet = lireResumeProjet(r);
+  if (projet) {
+    const a = typeof r.assiette === 'string' && r.assiette.trim() ? r.assiette.trim() : null;
+    return { terrain: a ?? p.idu, volume: resumeVolumeProjet(projet), projet };
+  }
   const num = (k: string) => (typeof r[k] === 'number' && Number.isFinite(r[k]) ? r[k] as number : null);
   const bat = num('batiments');
   const gabarit = typeof r.gabarit === 'string' ? r.gabarit : null;
@@ -109,7 +122,11 @@ export function sourcesServeur(e: EntreeParcoursServeur): SourcesParcours {
     ...s,
     type,
     terrain: prep.terrain ?? terrainDesCriteres(e.mission?.criteres),
-    conception: e.mission && e.mission.type === 'conception' ? { statut: e.mission.statut, resume: programmeDesCriteres(e.mission.criteres) ?? prep.volume, missionId: e.mission.id ?? null } : null,
+    // VIS-34 : dessin en vigueur → l'étape 2 décrit LE DESSIN (et dit, s'il y en a une, la contradiction avec le programme).
+    conception: e.mission && e.mission.type === 'conception' ? {
+      statut: e.mission.statut, missionId: e.mission.id ?? null,
+      resume: prep.projet && CONCEPTION_TERMINEE.has(e.mission.statut) ? resumeConceptionProjet(prep.projet, programmeDesCriteres(e.mission.criteres)) : programmeDesCriteres(e.mission.criteres) ?? prep.volume,
+    } : null,
     volume: e.preparation ? { pret: true, resume: prep.volume ?? '3D préparée par Mimmo.' } : { pret: false, resume: null },
     habillage: { resume: s.habillage.resume ?? habillageFil, attenduParMimmo: false },
     travaux: e.travaux.map(travailParcours).filter((t): t is TravailParcours => t !== null),

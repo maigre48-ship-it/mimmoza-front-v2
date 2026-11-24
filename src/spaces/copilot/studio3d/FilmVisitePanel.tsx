@@ -20,7 +20,7 @@ import type { JarvisDraft } from './jarvisDraft';
 import { parcelleRetenue, retenirParcelle } from './parcelleConfirmee';
 import type { ConfirmedTerrain } from './terrainCadastre';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
-import { avecProchaineRevision, modeleDeLaConversation, preparerChargeVoirEn3D } from './chargeVoirEn3D';
+import { avecProchaineRevision, preparerChargeVoirEn3D, projetDeLaConversationRelu } from './chargeVoirEn3D';
 // VIS-26 lot D : le bâtiment DESSINÉ en vigueur part avec l'aperçu et les images (fiche.modele_batiment, lu par la machine de rendu).
 import { travailAvecModele } from './modeleTravail';
 import {
@@ -220,7 +220,10 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
       const travail = construireTravail(type, draft, conversationId, charge, options);
       if (!travail.ok) { setMessage(travail.erreur); return; }
       // VIS-26 lot D : même dessin que « Voir en 3D » (dernier « Reproduire en 3D »), ramené à la hauteur de la 3D préparée.
-      const avecDessin = travailAvecModele(travail.valeur, modeleDeLaConversation(conversationId));
+      // VIS-34 : dessin ET portée lus dans la 3D préparée de la conversation (base) — plus seulement la mémoire du chat :
+      // conversation rechargée, autre onglet → le rendu porte toujours le projet en vigueur (`fiche.modele_batiment.portee`).
+      const dessin = await projetDeLaConversationRelu(conversationId);
+      const avecDessin = travailAvecModele(travail.valeur, dessin?.modele ?? null, dessin?.portee ?? null);
       const r = await creerTravail(avecDessin.travail);
       if (!r.disponible) { setDisponible(false); setFeuille(null); return; }
       setTravaux(liste => [r.valeur, ...liste.filter(x => x.id !== r.valeur.id)]);
