@@ -20,7 +20,9 @@ import type { JarvisDraft } from './jarvisDraft';
 import { parcelleRetenue, retenirParcelle } from './parcelleConfirmee';
 import type { ConfirmedTerrain } from './terrainCadastre';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
-import { avecProchaineRevision, preparerChargeVoirEn3D } from './chargeVoirEn3D';
+import { avecProchaineRevision, modeleDeLaConversation, preparerChargeVoirEn3D } from './chargeVoirEn3D';
+// VIS-26 lot D : le bâtiment DESSINÉ en vigueur part avec l'aperçu et les images (fiche.modele_batiment, lu par la machine de rendu).
+import { travailAvecModele } from './modeleTravail';
 import {
   AMBIANCES_IMAGE, annulerTravail, construireTravail, creerTravail, dateCourte, dureeEstimeeApercu, dureeEstimeeImage, estActif, LIBELLES_AMBIANCE, LIBELLES_TYPE,
   LIBELLES_QUALITE_IMAGE, LIBELLES_VUE, libelleStatut, lienVisite, listerTravaux, MENTION_MACHINE_RENDU, optionsParDefaut, phraseElementsOmis,
@@ -190,10 +192,13 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
       const apercuFV = definitionFV === 'apercu' ? { qualite: 'apercu' as const } : {};
       const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? { ...film, ...apercuFV } : feuille === 'image' ? optionsImage : { ...visite, ...apercuFV });
       if (!travail.ok) { setMessage(travail.erreur); return; }
-      const r = await creerTravail(travail.valeur);
+      // VIS-26 lot D : même dessin que « Voir en 3D » (dernier « Reproduire en 3D »), ramené à la hauteur de la 3D préparée.
+      const avecDessin = travailAvecModele(travail.valeur, modeleDeLaConversation(conversationId));
+      const r = await creerTravail(avecDessin.travail);
       if (!r.disponible) { setDisponible(false); setFeuille(null); return; }
       setTravaux(liste => [r.valeur, ...liste.filter(x => x.id !== r.valeur.id)]);
       setFeuille(null);
+      if (avecDessin.note) setMessage(avecDessin.note);
     } catch (erreur) {
       setMessage(erreur instanceof Error ? erreur.message : 'Le lancement n’a pas abouti.');
     } finally {

@@ -3,7 +3,7 @@
 // portée honnête, état de la carte (envoyée / remplacée), message du bouton « Reproduire en 3D ».
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { etatCarte, facadePrincipale, groupesListe, lireCarteModele, phrasePortee, planVuDeDessus, STATUTS_RENDU } from './modeleBatimentChat.ts';
+import { etatCarte, troisDPreparee, facadePrincipale, groupesListe, lireCarteModele, phrasePortee, planVuDeDessus, STATUTS_RENDU } from './modeleBatimentChat.ts';
 import { empreinteModele, validerModele, type ModeleBatiment } from '../../../lib/studio/modeleBatiment.ts';
 import { EXEMPLE_COLLECTIF_U, EXEMPLE_MAISON_BASQUE, EXEMPLE_MAISON_TOURELLE, EXEMPLE_VILLA_L } from '../../../lib/studio/modeleBatimentExemples.ts';
 import { messageReproduireModele, sansBlocReference } from '../../../lib/studio/modeleBatimentMessage.ts';
@@ -106,4 +106,21 @@ test('modèle en vigueur (Voir en 3D) : celui du dernier « Reproduire en 3D » 
   assert.equal(modeleCourant([...cartes, { id: 'u', role: 'user', text: messageReproduireModele(m, e) }])?.nom, m.nom);
   const habillage = { id: 'u2', role: 'user', text: 'Habillage\n\n```mimmoza-brief\n{"v":1,"brief":{}}\n```' };
   assert.equal(modeleCourant([...cartes, { id: 'u', role: 'user', text: messageReproduireModele(m, e) }, habillage]), null);
+});
+
+test('VIS-26 D — lien « Voir dans le Studio » : seulement quand la 3D de CE dessin est préparée (même empreinte, réussie)', () => {
+  const m = valide(EXEMPLE_MAISON_BASQUE);
+  const e = empreinteModele(m);
+  const prep = (empreinte: string, status = 'ok', etat = 'done') => ({ id: `p-${empreinte}-${status}-${etat}`, role: 'assistant', text: '3D préparée.',
+    toolCalls: [{ name: 'studio_preparer_3d', status: etat, output: { status, data: { batiment_decrit: { modele: { empreinte, ecarts: [] } } } } }] });
+  const base = [
+    { id: 'a1', role: 'assistant', text: 'Votre bâtiment', toolCalls: [{ name: 'studio_dessiner_batiment', status: 'done', output: sortie(m) }] },
+    { id: 'u1', role: 'user', text: messageReproduireModele(m, e) },
+  ];
+  assert.equal(troisDPreparee(base, 'a1', e), false, 'envoyée, pas encore préparée');
+  assert.equal(troisDPreparee([...base, prep(e, 'ok', 'running')], 'a1', e), false, 'en cours');
+  assert.equal(troisDPreparee([...base, prep(e, 'error')], 'a1', e), false, 'échec');
+  assert.equal(troisDPreparee([...base, prep('mb1-00000000')], 'a1', e), false, 'autre dessin');
+  assert.equal(troisDPreparee([...base, prep(e)], 'a1', e), true);
+  assert.equal(troisDPreparee([prep(e), ...base], 'a1', e), false, 'une préparation AU-DESSUS de la carte ne compte pas');
 });

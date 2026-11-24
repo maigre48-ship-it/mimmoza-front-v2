@@ -213,6 +213,24 @@ export function etatCarte(messages: readonly MessageLu[], messageId: string, emp
   return envoyee ? 'envoyee' : 'a_envoyer';
 }
 
+/**
+ * VIS-26 lot D : la 3D de CE dessin a-t-elle été préparée ? Vrai si, plus bas que la carte, une préparation réussie
+ * (`studio_preparer_3d`) porte le dessin de même empreinte (`batiment_decrit.modele.empreinte`). Sert au lien discret
+ * « Voir dans le Studio » de la carte (jamais un second bouton principal).
+ */
+export function troisDPreparee(messages: readonly MessageLu[], messageId: string, empreinte: string): boolean {
+  const i = messages.findIndex((m) => m.id === messageId);
+  if (i < 0) return false;
+  for (let k = i + 1; k < messages.length; k++) {
+    for (const tc of messages[k]!.toolCalls ?? []) {
+      if (tc.name !== 'studio_preparer_3d' || tc.status === 'running' || !estObj(tc.output) || tc.output.status !== 'ok' || !estObj(tc.output.data)) continue;
+      const bd = tc.output.data.batiment_decrit;
+      if (estObj(bd) && estObj(bd.modele) && bd.modele.empreinte === empreinte) return true;
+    }
+  }
+  return false;
+}
+
 const A_UN_BRIEF = /```mimmoza-brief[ \t]*\r?\n/;
 
 /**

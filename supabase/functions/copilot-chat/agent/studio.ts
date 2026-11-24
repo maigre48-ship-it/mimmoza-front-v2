@@ -80,7 +80,7 @@ import { modifierAile, modifierCorps } from '../../../../src/spaces/copilot/stud
 // VIS-25 lot B : bâtiment DESSINÉ (modèle composé) — retrouvé par son empreinte, contraint par la 3D préparée, joint à la fiche du rendu.
 import { empreinteModele, type ModeleBatiment } from '../../../../src/lib/studio/modeleBatiment.ts';
 import { referenceModeleDuMessage, type ReferenceModele } from '../../../../src/lib/studio/modeleBatimentMessage.ts';
-import { depotModeleSupabase, ecartsModeleVolume, modeleContraint, modeleParEmpreinte, reservesModele, type DepotModele } from './dessin-batiment.ts';
+import { depotModeleSupabase, dimensionsDessin, ecartsModeleVolume, modeleContraint, modeleParEmpreinte, reservesModele, type DepotModele } from './dessin-batiment.ts';
 import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
 // LOT X3 : projet d'extension de la conversation (maison conservée). LOT X4 site : rendu ouvert (drapeau), projet transmis
@@ -250,6 +250,11 @@ export interface ChoixForme {
   saisie?: SaisieDimensions | null; forme?: Forme | 'auto' | null;
   /** VIS-22 : niveaux demandés par la description du bâtiment (jamais au-dessus de ceux du moteur ; ignorés avec `saisie`). */
   niveaux?: number | null;
+  /**
+   * VIS-26 lot D : plan du volume principal d'un bâtiment DESSINÉ (rectangle englobant, m). L'emprise d'UN bâtiment
+   * rectangulaire le suit, plafonnée par le bâtiment placé par le moteur (ignoré avec `saisie`, des ailes ou plusieurs bâtiments).
+   */
+  dessin?: { largeurM: number; profondeurM: number } | null;
 }
 
 export type IssuePreparation =
@@ -475,12 +480,27 @@ export function appliquerChoixForme(pf: PreparationFiche, choix: ChoixForme):
     });
     if (JSON.stringify(s) !== avant) saisie = s;
   }
+  // VIS-26 lot D : bâtiment DESSINÉ — l'emprise suit le plan de son volume principal (grand côté, épaisseur), PLAFONNÉE par
+  // le bâtiment que le moteur a placé (même centre, même orientation : elle reste dans la parcelle et sous l'emprise permise).
+  // Un seul bâtiment rectangulaire seulement ; sinon la forme du moteur est gardée (écart dit par ecartsModeleVolume).
+  const dessin = !choix.saisie && choix.dessin && Number.isFinite(choix.dessin.largeurM) && Number.isFinite(choix.dessin.profondeurM) ? choix.dessin : null;
+  if (dessin) {
+    let s: SaisieDimensions = saisie ?? base;
+    const c0 = s.corps.length === 1 && !s.corps[0].ailes ? s.corps[0] : null;
+    if (c0) {
+      const bas = (x: number) => Math.floor(x * 2 + 1e-9) / 2;
+      const avant = JSON.stringify(s);
+      s = modifierCorps(s, 0, 'longueurM', Math.min(Math.max(dessin.largeurM, dessin.profondeurM), bas(c0.longueurM)));
+      s = modifierCorps(s, 0, 'largeurM', Math.min(Math.min(dessin.largeurM, dessin.profondeurM), bas(c0.largeurM)));
+      if (JSON.stringify(s) !== avant) { saisie = s; if (origine === 'moteur') origine = 'demande'; }
+    }
+  }
   if (!saisie) return { ok: true, volume: pf.volume, resume: { retenue: libelle(base.forme), origine, comparaison }, cle: null, noteNiveaux };
   const ev = evaluerSaisie(pf, saisie);
   const bloquante = ev.alertes.find((a) => /déborde|chevauchent/.test(a));
   if (bloquante) return { ok: false, raison: `La forme choisie ne tient pas dans la parcelle : ${bloquante}` };
   // VIS-22 : la clé d'empreinte porte aussi les niveaux demandés (forme du moteur sans bloc : maisons, résidence).
-  const cle = ev.modifie ? (blocForme(saisie) ?? (demandes !== null ? { niveaux_demandes: demandes } : null)) : null;
+  const cle = ev.modifie ? (blocForme(saisie) ?? (demandes !== null || dessin ? { niveaux_demandes: demandes, ...(dessin ? { dessin } : {}) } : null)) : null;
   return { ok: true, volume: ev.volume, resume: { retenue: libelle(saisie.forme), origine, comparaison }, cle, noteNiveaux };
 }
 
@@ -1791,10 +1811,22 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     } else if (!batiment) modeleDecrit = (await modeleDuFil(env.depot, env.userId, env.conversationId))?.modele ?? null;
   }
   let noteForme: string | null = null;
-  let p = await preparerVolume(c, carte?.ok ? { saisie: carte.valeur } : { forme: formeVoulue ?? formeDecrite, niveaux: demande?.niveaux ?? null });
+  // VIS-26 lot D : la 3D préparée SUIT le dessin — plan du volume principal et hauteur, plafonnés par le moteur.
+  const dessin = modeleDecrit ? dimensionsDessin(modeleDecrit) : null;
+  const niveauxDemandes = dessin?.niveaux ?? demande?.niveaux ?? null;
+  const planDessin = dessin ? { dessin: { largeurM: dessin.largeurM, profondeurM: dessin.profondeurM } } : {};
+  let p = await preparerVolume(c, carte?.ok ? { saisie: carte.valeur } : { forme: formeVoulue ?? formeDecrite, niveaux: niveauxDemandes, ...planDessin });
+  if (!p.ok && dessin && !carte?.ok) {
+    // Le plan du dessin ne tient pas : la forme du moteur est gardée (hauteur toujours demandée), et c'est DIT.
+    const repli = await preparerVolume(c, { forme: formeVoulue ?? formeDecrite, niveaux: niveauxDemandes });
+    if (repli.ok) {
+      noteForme = `Plan du dessin non repris dans la 3D préparée : ${p.raison.replace(/[.\s]+$/u, '')}. Le moteur a gardé l’emprise qui tient.`;
+      p = repli;
+    }
+  }
   if (!p.ok && formeDecrite) {
     // La forme décrite ne tient pas sur ce terrain : le moteur garde la sienne, et c'est DIT (jamais un échec muet).
-    const repli = await preparerVolume(c, { forme: null, niveaux: demande?.niveaux ?? null });
+    const repli = await preparerVolume(c, { forme: null, niveaux: niveauxDemandes, ...planDessin });
     if (repli.ok) {
       noteForme = `Forme demandée (${LIBELLES_BATIMENT.forme[formeDecrite].toLowerCase()}) non retenue sur ce terrain : ${p.raison.replace(/[.\s]+$/u, '')}. Le moteur a gardé la forme qui tient.`;
       p = repli;

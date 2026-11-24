@@ -12,7 +12,8 @@
 import { useMemo, useState } from 'react';
 import { useCopilotStore } from '../store/copilotStore';
 import { messageReproduireModele } from '@/lib/studio/modeleBatimentMessage';
-import { etatCarte, facadePrincipale, groupesListe, LIBELLE_PORTEE, phrasePortee, planVuDeDessus, type CarteModele } from './modeleBatimentChat';
+import { etatCarte, troisDPreparee, facadePrincipale, groupesListe, LIBELLE_PORTEE, phrasePortee, planVuDeDessus, type CarteModele } from './modeleBatimentChat';
+import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from './parcours.store';
 import './CarteModeleBatiment.css';
 
 interface Props {
@@ -69,6 +70,9 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
   const messages = useCopilotStore((s) => s.messages);
   const etat = useMemo(() => etatCarte(messages, messageId, carte.empreinte), [messages, messageId, carte.empreinte]);
   const [cliquee, setCliquee] = useState(false);
+  // VIS-26 lot D : 3D de CE dessin préparée → lien discret « Voir dans le Studio » (même parcours que l'étape « Bâtiment »).
+  const preparee = useMemo(() => troisDPreparee(messages, messageId, carte.empreinte), [messages, messageId, carte.empreinte]);
+  const [noteStudio, setNoteStudio] = useState<string | null>(null);
   const groupes = useMemo(() => groupesListe(carte.modele), [carte.modele]);
   const m = carte.modele;
   const envoyee = etat === 'envoyee' || cliquee;
@@ -77,6 +81,12 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
     if (!onSend || envoyee || remplacee) return;
     setCliquee(true);
     onSend(messageReproduireModele(m, carte.empreinte));
+  };
+  const voirDansStudio = () => {
+    setNoteStudio(null);
+    const demande: DemandeParcoursStudio = { etape: 'batiment', sous: 'batiment', repondre: setNoteStudio };
+    window.dispatchEvent(new CustomEvent(EVENEMENT_PARCOURS_STUDIO, { detail: demande }));
+    if (!demande.prise) setNoteStudio('Le Studio s’ouvre depuis la page MimmozIA.');
   };
   const origine = carte.retouche ? 'Retouché' : m.origine === 'photo' ? 'D’après votre photo' : 'D’après votre description';
 
@@ -132,7 +142,14 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
           {envoyee ? 'Envoyé à la 3D' : remplacee ? 'Version remplacée' : 'Reproduire en 3D'}
         </button>
       </footer>
-      {envoyee && <p className="mz-mod__envoye" role="status">Mimmo prépare la 3D dans la conversation.</p>}
+      {envoyee && !preparee && <p className="mz-mod__envoye" role="status">Mimmo prépare la 3D dans la conversation.</p>}
+      {envoyee && preparee && !remplacee && (
+        <p className="mz-mod__envoye" role="status">
+          3D préparée d’après ce dessin.{' '}
+          <button type="button" className="mz-mod__lien" onClick={voirDansStudio}>Voir dans le Studio</button>
+        </p>
+      )}
+      {noteStudio && <p className="mz-mod__remplacee" role="status">{noteStudio}</p>}
       {remplacee && <p className="mz-mod__remplacee">Une version plus récente de ce bâtiment se trouve plus bas.</p>}
     </section>
   );

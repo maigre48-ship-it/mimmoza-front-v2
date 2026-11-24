@@ -30,6 +30,7 @@ import {
 } from '../../../../src/lib/studio/modeleBatimentMessage.ts';
 import { CATALOGUE_EXTERIEUR } from '../../../../src/spaces/copilot/studio3d/catalogueExterieur.ts';
 import { intentionDessinBatiment } from './description-batiment.ts';
+import { modeleContraint as modeleContraintCommun } from '../../../../src/lib/studio/modeleBatimentFiche.ts';
 
 export { OUTIL_DESSINER_BATIMENT, OUTIL_RETOUCHER_BATIMENT, OUTILS_MODELE, referenceModeleDuMessage };
 
@@ -74,6 +75,8 @@ export const OUTIL_DESSINER_BATIMENT_DEF: OutilDef = {
     'Donne des dimensions plausibles (une maison : 9 à 14 m de large, 2,7 m par étage). PHOTO : référence de STYLE, pas un relevé — jamais « copie exacte », ' +
     'ne déduis ni adresse ni personnes. Le site valide et corrige (et le dit) puis affiche la carte « Votre bâtiment » avec UN bouton « Reproduire en 3D ». ' +
     'L’outil ne prépare aucune 3D et ne coûte rien. Pour MODIFIER un bâtiment déjà dessiné dans la conversation, utilise studio_retoucher_batiment (jamais celui-ci). ' +
+    // VIS-26 lot D : demandes réelles qui appellent cet outil (rappel au modèle).
+    'Demandes typiques : « dessine-moi une longère en pierre », « fais-moi un chalet en 3D », « je veux une maison comme ça » (+ photo), « reproduis ce bâtiment » (+ photo). ' +
     GUIDE_FORMAT + ` EXEMPLE (maison basque, garage accolé) : ${JSON.stringify(EXEMPLE_MAISON_BASQUE)}`,
   input_schema: {
     type: 'object',
@@ -280,7 +283,8 @@ export function intentionDessinModele(texte: string | null | undefined, photoJoi
   return RE_DESSIN_LIBRE.test(t) || RE_EN_3D.test(t);
 }
 
-const RE_RETOUCHE_VERBE = /\b(?:ajout\w*|rajout\w*|retir\w*|enlev\w*|supprim\w*|decal\w*|deplac\w*|pouss\w*|recul\w*|avanc\w*|agrandi\w*|retreci\w*|elargi\w*|allong\w*|raccourci\w*|rehauss\w*|baiss\w*|remplac\w*|chang\w*|mets|mettez|met|passe[rz]?|transform\w*|tourn\w*|pivot\w*|plutot|monte[rz]?|descend\w*)\b/;
+// VIS-26 lot D : « le garage plus large », « plus haut d’un niveau », « la tourelle plus haute » (plus|moins + dimension).
+const RE_RETOUCHE_VERBE = /\b(?:ajout\w*|rajout\w*|retir\w*|enlev\w*|supprim\w*|decal\w*|deplac\w*|pouss\w*|recul\w*|avanc\w*|agrandi\w*|retreci\w*|elargi\w*|allong\w*|raccourci\w*|rehauss\w*|baiss\w*|remplac\w*|chang\w*|mets|mettez|met|passe[rz]?|transform\w*|tourn\w*|pivot\w*|plutot|monte[rz]?|descend\w*|(?:plus|moins)\s+(?:haut|bas|larg|long|profond|grand|petit|etroit|epais)\w*)\b/;
 const RE_RETOUCHE_NIVEAUX = /\b(?:un|une|deux|trois|\d+)\s+(?:etages?|niveaux?)\s+de\s+(?:plus|moins)\b|\bde\s+(?:plus|moins)\b.*\b(?:etages?|niveaux?)\b/;
 const RE_RETOUCHE_MATIERE = /\b(?:toit|toiture|facade|murs?|volets?|menuiseries?|soubassement)\s+(?:en|a|au|de couleur)\b|\ben\s+(?:ardoise|tuiles?|zinc|briques?|pierre|bois|enduit|beton)\b/;
 const RE_RETOUCHE_OBJET = /\b(?:lucarnes?|fenetres?|portes?|baies?|balcons?|garage|veranda|pergola|cheminee|tourelle|volume|aile|etage|niveau|toit|toiture|facade|terrasse|auvent|porche|escalier|colonnes?|corniche|bandeau|colombages?|volets?|loggias?|garde-corps|ouvertures?|annexe|piscine|abri)\b/;
@@ -338,6 +342,17 @@ export function consigneModeleCarte(ref: ReferenceModele | null, trouve: boolean
 const fr = (x: number): string => String(Math.round(x * 10) / 10).replace('.', ',');
 const lib = (n: number): string => (n <= 1 ? 'rez-de-chaussée seul' : `R+${n - 1}`);
 
+/**
+ * VIS-26 lot D — ce que la 3D préparée reprend du dessin : plan du volume principal (rectangle englobant, x = façade sur rue,
+ * y = profondeur) et hauteur (niveaux du plus haut volume posé au sol, ou de l'attique). Le moteur plafonne (studio.ts).
+ */
+export function dimensionsDessin(m: ModeleBatiment): { largeurM: number; profondeurM: number; niveaux: number } {
+  const p = volumePrincipal(m);
+  const e = englobantLocal(p.plan);
+  const niveaux = Math.max(...m.volumes.filter((x) => x.altitudeBase === 0 || x.role === 'attique').map((x) => x.niveaux), p.niveaux);
+  return { largeurM: e.maxX - e.minX, profondeurM: e.maxY - e.minY, niveaux };
+}
+
 /** Volume préparé (sous-ensemble lu). */
 export interface VolumePrepareLu { niveaux?: number | null; emprise?: { largeurM?: number; profondeurM?: number } | null; batiments?: unknown[] | null }
 
@@ -356,50 +371,34 @@ export function ecartsModeleVolume(m: ModeleBatiment, v: VolumePrepareLu | null)
     out.push(`Hauteur : le dessin monte à ${lib(niveauxDessin)} ; sur ce terrain, la 3D préparée est limitée à ${lib(v.niveaux)} (règles et gabarit) — le bâtiment construit pour les images est ramené à cette hauteur.`);
   }
   const em = v.emprise;
+  // VIS-26 lot D : la 3D préparée SUIT le plan du volume principal (rectangle englobant, plafonné par le moteur) ; un
+  // écart restant est dit : plafond du terrain (plus grand) ou côté minimal / forme imposée (plus petit).
+  const plan = p.plan.type === 'rectangle' ? '' : ' (rectangle englobant)';
   if (em && typeof em.largeurM === 'number' && typeof em.profondeurM === 'number') {
     const [a, b] = [Math.max(largeur, profondeur), Math.min(largeur, profondeur)];
     const [c, d] = [Math.max(em.largeurM, em.profondeurM), Math.min(em.largeurM, em.profondeurM)];
     if (a > c + 0.5 || b > d + 0.5) {
-      out.push(`Emprise : le volume principal dessiné fait ${fr(largeur)} × ${fr(profondeur)} m ; l’emprise permise retenue par le moteur sur ce terrain est de ${fr(em.largeurM)} × ${fr(em.profondeurM)} m — à vérifier dans le Studio (le dessin y est posé tel quel).`);
-    } else if (a < c - 3 || b < d - 3) {
-      out.push(`Emprise : le volume principal dessiné (${fr(largeur)} × ${fr(profondeur)} m) est plus petit que l’emprise possible (${fr(em.largeurM)} × ${fr(em.profondeurM)} m) : c’est le dessin qui est gardé.`);
+      out.push(`Emprise : le volume principal dessiné fait ${fr(largeur)} × ${fr(profondeur)} m${plan} ; la 3D préparée est ramenée à ${fr(em.largeurM)} × ${fr(em.profondeurM)} m, le maximum retenu par le moteur sur ce terrain — dans le Studio et les images, le dessin est posé à ses dimensions : à vérifier.`);
+    } else if (a < c - 0.5 || b < d - 0.5) {
+      out.push(`Emprise : le volume principal dessiné fait ${fr(largeur)} × ${fr(profondeur)} m${plan} ; la 3D préparée fait ${fr(em.largeurM)} × ${fr(em.profondeurM)} m (côté minimal du moteur ou forme retenue) — dans le Studio et les images, c’est le dessin qui est gardé.`);
     }
   }
   if (Array.isArray(v.batiments) && v.batiments.length > 1) {
     out.push(`Le moteur a réparti le programme en ${v.batiments.length} bâtiments : le dessin ne remplace pas ces bâtiments ; seul son habillage leur est appliqué (le dessin complet est construit pour un bâtiment seul).`);
   }
   if (m.volumes.length > 1 || m.elements.length > 0) {
-    out.push('La 3D préparée du chat est un volume d’étude simple : les autres volumes, les toits, les ouvertures et les éléments du dessin sont construits dans le Studio et dans les images.');
+    out.push(`La 3D préparée du chat reprend le plan et la hauteur du volume principal${plan} ; elle reste un volume d’étude simple : ${m.volumes.length > 1 ? 'les autres volumes, ' : ''}les toits, les ouvertures et les éléments du dessin sont construits dans le Studio et dans les images.`);
   }
   return out;
 }
 
 /**
  * Le dessin CONTRAINT par la 3D préparée : jamais plus haut que ce que le moteur retient sur ce terrain (règles, gabarit).
- * Chaque volume est ramené sous le plafond (niveaux) ; un volume posé entièrement au-dessus est retiré. Les écarts sont DITS.
- * Échec de la revalidation → dessin d'origine et raison (jamais un dessin cassé).
+ * VIS-26 lot D : la règle vit dans src/lib/studio/modeleBatimentFiche.ts, partagée avec l'Espace 3D du site (aperçu et
+ * images lancés depuis FilmVisitePanel) — même résultat qu'avant, mêmes notes.
  */
 export function modeleContraint(m: ModeleBatiment, niveauxMax: number | null | undefined): { modele: ModeleBatiment; notes: string[] } {
-  if (typeof niveauxMax !== 'number' || !Number.isFinite(niveauxMax) || niveauxMax < 1) return { modele: m, notes: [] };
-  const retouches: Record<string, unknown>[] = [];
-  const notes: string[] = [];
-  for (const v of m.volumes) {
-    const etagesSous = Math.round(v.altitudeBase / v.hauteurEtage);
-    const permis = Math.floor(niveauxMax) - etagesSous;
-    if (permis < 1) {
-      if (m.volumes.length - retouches.filter((r) => r.action === 'retirer').length > 1) {
-        retouches.push({ action: 'retirer', id: v.id });
-        notes.push(`« ${v.nom ?? v.id} » retiré : il dépasse la hauteur retenue sur ce terrain (${lib(niveauxMax)})`);
-      }
-    } else if (v.niveaux > permis) {
-      retouches.push({ action: 'modifier', id: v.id, champs: { niveaux: permis } });
-      notes.push(`« ${v.nom ?? v.id} » ramené de ${v.niveaux} à ${permis} niveau${permis > 1 ? 'x' : ''}`);
-    }
-  }
-  if (!retouches.length) return { modele: m, notes: [] };
-  const r = appliquerRetouches(m, retouches, { refsConnues: REFS_CATALOGUE });
-  if (!r.ok) return { modele: m, notes: [`Hauteur du dessin non ramenée automatiquement (${'erreur' in r ? r.erreur : ''}) : à vérifier dans le Studio`] };
-  return { modele: r.modele, notes };
+  return modeleContraintCommun(m, niveauxMax, REFS_CATALOGUE);
 }
 
 /** Avertissements du devis du rendu pour un modèle (repris tels quels par Mimmo). */
