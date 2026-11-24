@@ -19,6 +19,8 @@ import { estPageMimmozIA, messageSansNavigation, navigationPermise } from '../ac
 const CIBLES_DANS_LA_PAGE: ReadonlySet<CibleParcours> = new Set<CibleParcours>([
   'chat', 'terrain', 'programme', 'mission', 'dimensions', 'studio-batiment', 'habillage', 'studio-interieur', 'reglages-rendu',
   'feuille-image', 'feuille-film', 'feuille-visite', 'apercu', 'final', 'resultats',
+  // VIS-24 : catalogue extérieur, ouvert dans un nouvel onglet (même site, jamais une autre page du chat).
+  'catalogue-exterieur',
 ]);
 
 function etats(): SourcesParcours[] {

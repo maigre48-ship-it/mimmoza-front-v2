@@ -42,11 +42,18 @@ import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProj
 // VIS-17 — parcours guidé : ouverture commandée par une étape, réglages film / visite gardés, validation de l'aperçu.
 import { lireMemoireParcours, majMemoireParcours } from './parcours.store';
 import type { ReglagesFilm, ReglagesVisite } from '@/lib/studio/parcours';
+// VIS-28 (24/11) : écran d'une étape du parcours — feuille du type ouverte d'office, « Déjà réalisés » filtré par type,
+// « Relancer » sur un rendu en échec.
+import { estApercu, HistoriqueRendus } from './HistoriqueRendus';
+import type { FeuilleEtape } from './renduParcours';
 
 /** VIS-17 — commande d'une étape du parcours : ouvrir une feuille (et sa définition) ou montrer les rendus réalisés. */
 export interface CommandeRendu { feuille: TypeTravail | null; qualite?: QualiteImage; jeton: number }
-/** VIS-18b — rendu d'aperçu (image, film ou visite) : `options.qualite` (l'image le porte aussi dans son résultat). */
-const estApercu = (t: TravailStudio): boolean => (t.options as { qualite?: unknown } | null)?.qualite === 'apercu';
+/**
+ * VIS-28 — écran d'une étape du parcours : type du parcours (pas de nouveau choix Film / Visite / Image), étape affichée
+ * et feuille à ouvrir d'office (null : rendus à revoir ou étape bloquée).
+ */
+export interface ParcoursRendu { type: TypeTravail; cle: string; feuille: FeuilleEtape | null }
 const reglagesFilm = (f: OptionsFilm): ReglagesFilm => ({ duree_s: f.duree_s, format: f.format, musique: f.musique, interieurs: f.interieurs, ambiance: f.ambiance });
 const reglagesVisite = (v: OptionsVisite): ReglagesVisite => ({ interieurs: v.interieurs, resolution: v.resolution, ambiance: v.ambiance });
 
@@ -70,8 +77,10 @@ function ambianceDuBrief(conversationId: string): AmbianceImage | null {
 }
 
 const AMBIANCES: Ambiance[] = ['jour', 'fin_de_journee', 'nuit'];
+/** VIS-28 — titre de l'écran quand le parcours a fixé le type. */
+const TITRES_PARCOURS: Record<TypeTravail, string> = { film: 'Votre film', visite360: 'Votre visite 360°', image: 'Vos images photoréalistes' };
 
-export function FilmVisitePanel({ draft, conversationId, assurerValidation, commande, terrainParDefaut, onValiderApercu, apercuValide }: {
+export function FilmVisitePanel({ draft, conversationId, assurerValidation, commande, terrainParDefaut, onValiderApercu, apercuValide, parcoursRendu }: {
   draft: JarvisDraft;
   conversationId: string;
   /** Valide la fiche si elle ne l'est pas encore (comme « Voir en 3D »). */
@@ -83,6 +92,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   /** VIS-17 : « Valider cet aperçu » (étape 7) — envoie la validation dans la conversation. */
   onValiderApercu?: (travailId: string) => void;
   apercuValide?: string | null;
+  /** VIS-28 : parcours choisi (Images, Film, Visite 360°) et étape affichée — null : écran libre (trois choix). */
+  parcoursRendu?: ParcoursRendu | null;
 }) {
   const [disponible, setDisponible] = useState<boolean | null>(null);
   const [travaux, setTravaux] = useState<TravailStudio[]>([]);
@@ -115,6 +126,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   }, [grand, visionneuse]);
   const [terrainManquant, setTerrainManquant] = useState(false);
   const [lancement, setLancement] = useState(false);
+  /** VIS-28 : rendu en échec en cours de relance (identifiant). */
+  const [relance, setRelance] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [annonce, setAnnonce] = useState<TravailStudio | null>(null);
   const [lecteur, setLecteur] = useState<{ id: string; url: string; poster: string | null; apercu?: boolean } | null>(null);
@@ -171,12 +184,32 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
     racine.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jetonCommande]);
+  // VIS-28 : l'écran d'une étape de rendu s'ouvre DIRECTEMENT sur la feuille du type du parcours — à l'arrivée (étape
+  // courante par défaut), au clic d'une pastille de l'en-tête ou d'une étape du chat. Une fois par étape affichée
+  // (fermer la feuille la laisse fermée jusqu'au prochain changement d'étape).
+  const cleParcours = parcoursRendu ? `${parcoursRendu.cle}|${parcoursRendu.feuille?.feuille ?? '-'}|${parcoursRendu.feuille?.qualite ?? '-'}` : null;
+  useEffect(() => {
+    const f = parcoursRendu?.feuille;
+    // Étape de rendu sans feuille (rendus à revoir, étape bloquée) : la feuille d'une autre étape ne reste pas ouverte.
+    if (!f) { if (parcoursRendu?.cle) setFeuille(null); return; }
+    ouvrirFeuille(f.feuille);
+    if (f.qualite) {
+      if (f.feuille === 'image') setImage(o => ({ ...o, qualite: f.qualite! }));
+      else setDefinitionFV(f.qualite);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleParcours]);
 
-  const lancer = async () => {
-    if (!feuille || lancement) return;
+  /**
+   * Lancement d'un rendu (clic « Lancer » de la feuille, ou VIS-28 « Relancer » d'un rendu en échec avec ses options).
+   * Aucun jeton débité : l'insertion dans studio_jobs n'appelle aucune facturation (rendus non facturés aujourd'hui).
+   */
+  const lancerTravail = async (type: TypeTravail, options: unknown, relanceDe?: string) => {
+    if (lancement) return;
     const terrain = parcelleRetenue(conversationId);
-    if (!terrain) { setTerrainManquant(true); return; }
+    if (!terrain) { if (relanceDe) ouvrirFeuille(type); else setTerrainManquant(true); return; }
     setLancement(true);
+    if (relanceDe) setRelance(relanceDe);
     setMessage('');
     try {
       await assurerValidation?.().catch(() => undefined);
@@ -184,27 +217,36 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
       const { construit } = await preparerChargeVoirEn3D(draft, conversationId, terrain);
       if (!construit.ok) { setMessage(`Le projet n’a pas pu être préparé : ${construit.erreur}.`); return; }
       const charge = avecProchaineRevision(construit.projet, conversationId);
-      // VIS-14 (I2) : image — `ambiance` retirée si elle n'a pas été choisie (brief projet, sinon journée, côté worker).
-      const optionsImage: OptionsImage = ambianceChoisie ? image : (({ ambiance: _a, ...reste }) => reste)(image);
-      if (feuille === 'film') majMemoireParcours(conversationId, { film: reglagesFilm(film) });
-      if (feuille === 'visite360') majMemoireParcours(conversationId, { visite: reglagesVisite(visite) });
-      // VIS-18b : `qualite: "apercu"` seulement pour un aperçu (finale : options identiques à avant).
-      const apercuFV = definitionFV === 'apercu' ? { qualite: 'apercu' as const } : {};
-      const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? { ...film, ...apercuFV } : feuille === 'image' ? optionsImage : { ...visite, ...apercuFV });
+      const travail = construireTravail(type, draft, conversationId, charge, options);
       if (!travail.ok) { setMessage(travail.erreur); return; }
       // VIS-26 lot D : même dessin que « Voir en 3D » (dernier « Reproduire en 3D »), ramené à la hauteur de la 3D préparée.
       const avecDessin = travailAvecModele(travail.valeur, modeleDeLaConversation(conversationId));
       const r = await creerTravail(avecDessin.travail);
       if (!r.disponible) { setDisponible(false); setFeuille(null); return; }
       setTravaux(liste => [r.valeur, ...liste.filter(x => x.id !== r.valeur.id)]);
-      setFeuille(null);
+      if (!relanceDe) setFeuille(null);
       if (avecDessin.note) setMessage(avecDessin.note);
     } catch (erreur) {
       setMessage(erreur instanceof Error ? erreur.message : 'Le lancement n’a pas abouti.');
     } finally {
       setLancement(false);
+      setRelance(null);
     }
   };
+
+  const lancer = async () => {
+    if (!feuille || lancement) return;
+    // VIS-14 (I2) : image — `ambiance` retirée si elle n'a pas été choisie (brief projet, sinon journée, côté worker).
+    const optionsImage: OptionsImage = ambianceChoisie ? image : (({ ambiance: _a, ...reste }) => reste)(image);
+    if (feuille === 'film') majMemoireParcours(conversationId, { film: reglagesFilm(film) });
+    if (feuille === 'visite360') majMemoireParcours(conversationId, { visite: reglagesVisite(visite) });
+    // VIS-18b : `qualite: "apercu"` seulement pour un aperçu (finale : options identiques à avant).
+    const apercuFV = definitionFV === 'apercu' ? { qualite: 'apercu' as const } : {};
+    await lancerTravail(feuille, feuille === 'film' ? { ...film, ...apercuFV } : feuille === 'image' ? optionsImage : { ...visite, ...apercuFV });
+  };
+
+  /** VIS-28 — « Relancer » : même rendu, mêmes options que le rendu en échec (un clic, pas de nouvelle feuille). */
+  const relancer = (t: TravailStudio) => { void lancerTravail(t.type, t.options, t.id); };
 
   const annuler = async (id: string) => {
     try {
@@ -286,19 +328,25 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   };
 
   const actifs = travaux.filter(t => estActif(t.statut));
-  const historique = travaux.filter(t => !estActif(t.statut)).slice(0, 4);
+  const historique = travaux.filter(t => !estActif(t.statut));
+  const typeParcours = parcoursRendu?.type ?? null;
   const indispo = disponible === false;
 
   return (
-    <section className="mzia-rendu" aria-label="Film, visite 360° ou image" ref={racine}>
+    <section className="mzia-rendu" aria-label={typeParcours ? TITRES_PARCOURS[typeParcours] : 'Film, visite 360° ou image'} ref={racine}>
+      {/* VIS-28 : avec un parcours, le type est DÉJÀ choisi (sélecteur de la carte du chat) — l'écran porte son nom, sans
+          les trois cartes Film / Visite 360° / Image. */}
       <div className="mzia-rendu__entete">
-        <strong>Film, visite 360° ou image</strong>
-        <span>Calculés en qualité photo, prêts à partager.</span>
+        <strong>{typeParcours ? TITRES_PARCOURS[typeParcours] : 'Film, visite 360° ou image'}</strong>
+        <span>{typeParcours ? 'Type choisi dans « Votre parcours » (conversation). Calculé en qualité photo, prêt à partager.' : 'Calculés en qualité photo, prêts à partager.'}</span>
       </div>
 
       {indispo && <p className="mzia-rendu__bientot" role="status">Films, visites 360° et images : bientôt disponible.</p>}
 
-      <div className="mzia-rendu__choix">
+      {typeParcours && !feuille && parcoursRendu?.feuille && !indispo && <button type="button" className="mzia-rendu__rouvrir"
+        onClick={() => ouvrirFeuille(typeParcours)}>Ouvrir les réglages — {LIBELLES_TYPE[typeParcours]}</button>}
+
+      {!typeParcours && <div className="mzia-rendu__choix">
         <button type="button" className={feuille === 'film' ? 'is-actif' : ''} disabled={indispo || disponible === null}
           aria-pressed={feuille === 'film'} onClick={() => ouvrirFeuille('film')}>
           <Clapperboard size={22} strokeWidth={1.6} /><b>Film</b><small>Vidéo de présentation</small>
@@ -311,7 +359,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
           aria-pressed={feuille === 'image'} onClick={() => ouvrirFeuille('image')}>
           <Camera size={22} strokeWidth={1.6} /><b>Image photoréaliste</b><small>Vue depuis la rue, JPEG et PNG</small>
         </button>
-      </div>
+      </div>}
 
       {annonce && <div className="mzia-rendu__annonce" role="status">
         <Check size={16} /> <span>{phraseSuivi(annonce)}</span>
@@ -452,33 +500,10 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
         <div><button type="button" onClick={() => setVisionneuse(null)}>Fermer</button></div>
       </div>}
 
-      {historique.length > 0 && <div className="mzia-rendu__historique">
-        <h3>Déjà réalisés</h3>
-        <ul>
-          {historique.map(t => {
-            const omis = phraseElementsOmis(t.elements_omis);
-            const resultatVisite = t.type === 'visite360' ? t.resultat as ResultatVisite | null : null;
-            return <li key={t.id}>
-              <div className="mzia-rendu__ligne">
-                <span><b>{LIBELLES_TYPE[t.type]}</b> · {resumeOptions(t.type, t.options)}<br /><small>{dateCourte(t.cree_le)} — {libelleStatut(t.statut)}</small></span>
-                {t.statut === 'termine' && t.type === 'film' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirFilm(t)}><Play size={13} /> {estApercu(t) ? 'Voir l’aperçu' : 'Voir le film'}</button>}
-                {/* VIS-18b : aperçu de film / de visite — validation (étape 7), comme l'aperçu d'image. */}
-                {t.statut === 'termine' && t.type !== 'image' && estApercu(t) && onValiderApercu && apercuValide !== t.id
-                  && <button type="button" onClick={() => onValiderApercu(t.id)}>Valider cet aperçu</button>}
-                {t.statut === 'termine' && t.type === 'image' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirImage(t)}><IconeImage size={13} /> {(t.resultat as ResultatImage).qualite === 'apercu' ? 'Voir l’aperçu' : 'Voir l’image'}</button>}
-                {t.statut === 'termine' && t.type === 'image' && (t.resultat as ResultatImage | null)?.qualite === 'apercu' && onValiderApercu && apercuValide !== t.id
-                  && <button type="button" onClick={() => onValiderApercu(t.id)}>Valider l’aperçu</button>}
-                {t.statut === 'termine' && resultatVisite && <span className="mzia-rendu__actions">
-                  <a className="mzia-rendu__bouton is-primaire" href={`/visite/${encodeURIComponent(resultatVisite.visite_id)}`} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Ouvrir la visite</a>
-                  <button type="button" onClick={() => void copierLien(resultatVisite.visite_id)}>{copie === resultatVisite.visite_id ? <><Check size={13} /> Copié</> : <><Copy size={13} /> Copier le lien</>}</button>
-                </span>}
-              </div>
-              {t.statut === 'echec' && <small className="mzia-rendu__erreur">{phraseSuivi(t)}</small>}
-              {t.statut === 'termine' && omis && <small className="mzia-rendu__omis">{omis}</small>}
-            </li>;
-          })}
-        </ul>
-      </div>}
+      {/* VIS-28 : rendus du type du parcours seulement (les autres derrière « Autres rendus (n) ») ; « Relancer » en échec. */}
+      <HistoriqueRendus travaux={historique} type={typeParcours} onVoirFilm={t => void voirFilm(t)} onVoirImage={t => void voirImage(t)}
+        onCopierLien={id => void copierLien(id)} copie={copie} onValiderApercu={onValiderApercu} apercuValide={apercuValide}
+        onRelancer={indispo ? undefined : relancer} relance={relance} />
     </section>
   );
 }

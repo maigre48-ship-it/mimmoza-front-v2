@@ -35,6 +35,13 @@ export const COULEURS_ETAPE: Readonly<Record<CleEtape, string>> = {
   vues: '#0f766e', scenario: '#0f766e', pieces: '#0f766e', apercu: '#b45309', final: '#b91c1c',
 };
 
+/** 24/11 — libellé COURT de chaque étape, sous sa pastille dans l'en-tête de l'Espace 3D (≤ 9 caractères : les 8 pastilles
+ * tiennent sur UNE ligne dans un Espace 3D de 460 px ; titre complet en infobulle et dans le résumé de l'étape affichée). */
+export const LIBELLES_COURTS_ETAPE: Readonly<Record<CleEtape, string>> = {
+  terrain: 'Terrain', conception: 'Prog.', volume: 'Volume', style: 'Style', interieurs: 'Intér.',
+  vues: 'Vues', scenario: 'Scénario', pieces: 'Pièces', apercu: 'Aperçu', final: 'Final',
+};
+
 export const LIBELLES_STATUT_ETAPE: Readonly<Record<StatutEtape, string>> = {
   fait: 'Fait', en_cours: 'En cours', a_faire: 'À faire', facultative: 'Facultative', bloquee: 'Bloquée',
 };

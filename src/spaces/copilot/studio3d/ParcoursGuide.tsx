@@ -15,7 +15,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, ChevronRight, Circle, Loader2, Lock, Minus } from 'lucide-react';
 import {
-  avancement, COULEURS_ETAPE, LIBELLES_STATUT_ETAPE, LIBELLES_TYPE_PARCOURS, prochaineEtape, TYPES_PARCOURS,
+  avancement, COULEURS_ETAPE, LIBELLES_COURTS_ETAPE, LIBELLES_STATUT_ETAPE, LIBELLES_TYPE_PARCOURS, prochaineEtape, TYPES_PARCOURS,
   type ActionParcours, type EtapeParcours, type Parcours, type StatutEtape, type TypeParcours,
 } from '../../../lib/studio/parcours.ts';
 import './ParcoursGuide.css';
@@ -23,7 +23,8 @@ import './ParcoursGuide.css';
 export type ActionnerParcours = (etape: EtapeParcours, action: ActionParcours) => void;
 
 function IconeStatut({ statut, numero }: { statut: StatutEtape; numero: number }) {
-  const icone = statut === 'fait' ? <Check size={13} strokeWidth={3} />
+  // 24/11 : coche BLANCHE (stroke explicite : le dossier de l'Espace 3D force `color: inherit` sur tous ses descendants).
+  const icone = statut === 'fait' ? <Check size={13} strokeWidth={3.2} color="#ffffff" className="mz-parcours__coche" />
     : statut === 'en_cours' ? <Loader2 size={13} className="mz-parcours__tourne" />
     : statut === 'bloquee' ? <Lock size={12} />
     : statut === 'facultative' ? <Minus size={13} />
@@ -71,6 +72,8 @@ export function ParcoursPanneau({ parcours, active, onChoisir, notice, detail }:
         className={`mz-parcours__onglet is-${x.statut}${x.cle === e.cle ? ' is-actif' : ''}`} title={`${String(x.numero)}. ${x.titre} — ${LIBELLES_STATUT_ETAPE[x.statut]}`}
         aria-label={`Afficher l’étape ${String(x.numero)} — ${x.titre}`} onClick={() => onChoisir?.(x.cle)}>
         <IconeStatut statut={x.statut} numero={x.numero} />
+        {/* 24/11 : numéro + libellé court visibles sous chaque pastille (on sait quelle étape est laquelle). */}
+        <span className="mz-parcours__onglet-libelle" aria-hidden="true"><b>{String(x.numero)}</b> {LIBELLES_COURTS_ETAPE[x.cle]}</span>
       </button>)}
     </nav>
     <div className={`mz-parcours__etape is-${e.statut} is-courante`}>

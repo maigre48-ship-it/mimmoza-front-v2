@@ -16,22 +16,24 @@
 .mz-parcours__ligne { display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px; }
 .mz-parcours button:focus-visible { outline: 2px solid var(--etape); outline-offset: 1px; }
 .mz-parcours__texte { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-.mz-parcours__titre { font-weight: 700; color: var(--etape); }
+/* 24/11 — CONTRASTE ≥ 4.5:1 : texte coloré = couleur de l'étape assombrie (82 % + noir) — 5.9:1 à 8.7:1 sur blanc et sur
+   le fond teinté de l'étape courante (la couleur pure tombait à 4.46:1 pour le vert du terrain et l'ambre de l'aperçu). */
+.mz-parcours__titre { font-weight: 700; color: color-mix(in srgb, var(--etape) 82%, #000000); }
 .mz-parcours__titre em { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-style: normal; font-weight: 600; font-size: 10.5px; background: #f1f5f9; color: #475569; vertical-align: 1px; }
 .mz-parcours__etape.is-fait .mz-parcours__titre em { background: #dcfce7; color: #166534; }
 .mz-parcours__etape.is-a_faire .mz-parcours__titre em, .mz-parcours__etape.is-en_cours .mz-parcours__titre em { background: var(--etape); color: #ffffff; }
 .mz-parcours__resume { color: #334155; font-size: 12px; overflow-wrap: anywhere; }
 .mz-parcours__raison { color: #9a3412; font-size: 12px; }
-.mz-parcours__etape.is-bloquee .mz-parcours__titre { color: color-mix(in srgb, var(--etape) 55%, #94a3b8); }
-.mz-parcours__etape.is-bloquee .mz-parcours__resume { color: #94a3b8; }
-.mz-parcours__pastille { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--etape); background: #ffffff; color: var(--etape); font-weight: 700; font-size: 11px; }
+.mz-parcours__etape.is-bloquee .mz-parcours__titre { color: color-mix(in srgb, var(--etape) 60%, #475569); }
+.mz-parcours__etape.is-bloquee .mz-parcours__resume { color: #64748b; }
+.mz-parcours__pastille { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--etape); background: #ffffff; color: color-mix(in srgb, var(--etape) 82%, #000000); font-weight: 700; font-size: 11px; }
 .mz-parcours__pastille.is-fait, .mz-parcours__pastille.is-en_cours { background: var(--etape); color: #ffffff; }
-.mz-parcours__pastille.is-bloquee { border-color: #cbd5e1; background: #f1f5f9; color: #94a3b8; }
+.mz-parcours__pastille.is-bloquee { border-color: #cbd5e1; background: #f1f5f9; color: #64748b; }
 .mz-parcours__pastille.is-facultative { border-style: dashed; }
 .mz-parcours__tourne { animation: mz-parcours-tourne 1.1s linear infinite; }
 @keyframes mz-parcours-tourne { to { transform: rotate(360deg); } }
 .mz-parcours__boutons { flex: none; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 46%; }
-.mz-parcours__action, .mz-parcours__detail { min-height: 30px; border: 1px solid var(--etape); border-radius: 999px; background: #ffffff; color: var(--etape); padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mz-parcours__action, .mz-parcours__detail { min-height: 30px; border: 1px solid var(--etape); border-radius: 999px; background: #ffffff; color: color-mix(in srgb, var(--etape) 82%, #000000); padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .mz-parcours__action:hover { background: color-mix(in srgb, var(--etape) 10%, #ffffff); }
 .mz-parcours__action.is-primaire { background: var(--etape); color: #ffffff; display: inline-flex; align-items: center; gap: 4px; }
 .mz-parcours__action.is-primaire:hover { background: color-mix(in srgb, var(--etape) 85%, #000000); }
@@ -42,10 +44,15 @@
 /* En-tête de l'Espace 3D : pastilles des étapes (navigation) + résumé de l'étape affichée, à sa couleur. */
 .mz-parcours--recap { border-color: var(--etape); border-width: 1px 1px 1px 5px; }
 .mz-parcours--recap .mz-parcours__etape { border-left: 0; border-bottom: 0; }
-.mz-parcours__onglets { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-.mz-parcours__onglet { padding: 2px; border: 2px solid transparent; border-radius: 999px; background: transparent; cursor: pointer; line-height: 0; }
-.mz-parcours__onglet.is-actif { border-color: var(--etape); background: #ffffff; }
-.mz-parcours__onglet:hover { background: color-mix(in srgb, var(--etape) 12%, #ffffff); }
+/* 24/11 : chaque pastille porte son numéro et un libellé court DESSOUS ; l'étape affichée est encadrée à sa couleur. */
+.mz-parcours__onglets { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1px; padding: 6px 4px 4px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.mz-parcours .mz-parcours__onglet { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 4px 1px 3px; border: 2px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; line-height: 1.1; font: inherit; }
+.mz-parcours .mz-parcours__onglet.is-actif { border-color: var(--etape); background: #ffffff; }
+.mz-parcours .mz-parcours__onglet:hover { background: color-mix(in srgb, var(--etape) 12%, #ffffff); }
+.mz-parcours__onglet-libelle { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; letter-spacing: -.01em; font-weight: 500; color: #475569; }
+.mz-parcours__onglet-libelle b { font-weight: 700; }
+.mz-parcours__onglet.is-actif .mz-parcours__onglet-libelle { font-weight: 700; color: color-mix(in srgb, var(--etape) 82%, #000000); }
+.mz-parcours__onglet.is-bloquee .mz-parcours__onglet-libelle { color: #64748b; }
 /* Écran de l'étape : seul le contenu de l'étape affichée est visible. */
 .mz-ecran-etape[hidden] { display: none !important; }
 .mz-ecran-etape__vide { margin: 8px 2px; color: #64748b; font-size: 13px; }
@@ -67,18 +74,42 @@
 .mzia-fen3d__vide .mz-parcours li::before { content: none; display: none; }
 .mzia-fen3d__vide .mz-parcours li span { display: inline; color: inherit; font-size: inherit; }
 .mzia-fen3d__vide .mz-parcours .mz-parcours__texte { display: flex; }
-.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille { display: inline-grid; font-size: 10px; color: var(--etape); }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille { display: inline-grid; font-size: 10px; color: color-mix(in srgb, var(--etape) 82%, #000000); }
 .mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-fait,
 .mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-en_cours { color: #ffffff; }
-.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-bloquee { color: #94a3b8; }
-.mzia-fen3d__vide .mz-parcours .mz-parcours__titre { color: var(--etape); }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__pastille.is-bloquee { color: #64748b; }
+.mzia-fen3d__vide .mz-parcours .mz-parcours__titre { color: color-mix(in srgb, var(--etape) 82%, #000000); }
 .mzia-fen3d__vide .mz-parcours .mz-parcours__titre em { color: #475569; font-size: 10.5px; }
 .mzia-fen3d__vide .mz-parcours .is-fait .mz-parcours__titre em { color: #166534; }
 .mzia-fen3d__vide .mz-parcours .is-a_faire .mz-parcours__titre em,
 .mzia-fen3d__vide .mz-parcours .is-en_cours .mz-parcours__titre em { color: #ffffff; }
 .mzia-fen3d__vide .mz-parcours .mz-parcours__resume { color: #334155; font-size: 12px; }
 .mzia-fen3d__vide .mz-parcours .mz-parcours__raison { color: #9a3412; font-size: 12px; }
-.mzia-fen3d__vide .mz-parcours .is-bloquee .mz-parcours__resume { color: #94a3b8; }
+.mzia-fen3d__vide .mz-parcours .is-bloquee .mz-parcours__resume { color: #64748b; }
 .mzia-fen3d__vide .mz-parcours .mz-fond-image__tuile span { display: block; }
 /* Retour de la dernière action du parcours (en cours, erreur) : toujours visible. */
 .mz-parcours__notice, .mzia-fen3d__vide .mz-parcours .mz-parcours__notice { display: block; margin: 8px 10px; padding: 8px 10px; border-radius: 8px; background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; font-size: 13px; line-height: 1.4; }
+
+/* 24/11 — COULEURS VERROUILLÉES dans l'Espace 3D : le dossier (.jarvis-dossier) impose `* { color: inherit !important }`
+   (JarvisDraftPanel.css) ; sans ces règles, la coche des étapes faites prenait la couleur du texte du dossier (sombre
+   sur pastille sombre) et les titres, badges et libellés perdaient leur couleur. Sélecteurs à 2 classes + !important. */
+.mz-parcours.mz-parcours { color: #0f172a !important; }
+.mz-parcours .mz-parcours__pastille { color: color-mix(in srgb, var(--etape) 82%, #000000) !important; }
+.mz-parcours .mz-parcours__pastille.is-fait, .mz-parcours .mz-parcours__pastille.is-en_cours,
+.mz-parcours .mz-parcours__pastille.is-fait *, .mz-parcours .mz-parcours__pastille.is-en_cours * { color: #ffffff !important; }
+.mz-parcours .mz-parcours__pastille.is-fait svg, .mz-parcours .mz-parcours__pastille.is-en_cours svg { stroke: #ffffff !important; }
+.mz-parcours .mz-parcours__pastille.is-bloquee, .mz-parcours .mz-parcours__pastille.is-bloquee * { color: #64748b !important; }
+.mz-parcours .mz-parcours__titre { color: color-mix(in srgb, var(--etape) 82%, #000000) !important; }
+.mz-parcours .is-bloquee .mz-parcours__titre { color: color-mix(in srgb, var(--etape) 60%, #475569) !important; }
+.mz-parcours .mz-parcours__titre em { color: #475569 !important; }
+.mz-parcours .is-fait > .mz-parcours__ligne .mz-parcours__titre em, .mz-parcours .mz-parcours__etape.is-fait .mz-parcours__titre em { color: #166534 !important; }
+.mz-parcours .mz-parcours__etape.is-a_faire .mz-parcours__titre em, .mz-parcours .mz-parcours__etape.is-en_cours .mz-parcours__titre em { color: #ffffff !important; }
+.mz-parcours .mz-parcours__resume { color: #334155 !important; }
+.mz-parcours .is-bloquee .mz-parcours__resume { color: #64748b !important; }
+.mz-parcours .mz-parcours__raison { color: #9a3412 !important; }
+.mz-parcours .mz-parcours__onglet-libelle { color: #475569 !important; }
+.mz-parcours .mz-parcours__onglet.is-actif .mz-parcours__onglet-libelle { color: color-mix(in srgb, var(--etape) 82%, #000000) !important; }
+.mz-parcours .mz-parcours__onglet.is-bloquee .mz-parcours__onglet-libelle { color: #64748b !important; }
+.mz-parcours .mz-parcours__action:not(.is-primaire) { color: color-mix(in srgb, var(--etape) 82%, #000000) !important; }
+.mz-parcours .mz-parcours__action.is-primaire, .mz-parcours .mz-parcours__action.is-primaire * { color: #ffffff !important; }
+.mz-parcours .mz-parcours__notice { color: #9a3412 !important; }

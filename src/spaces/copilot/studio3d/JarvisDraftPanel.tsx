@@ -33,7 +33,9 @@ import { ParcoursPanneau, type ActionnerParcours } from './ParcoursGuide';
 // VIS-18b : petits réglages dans les étapes (cible, gamme sans étude ; fond de l'image).
 import { reglageDeLEtape } from './ReglagesParcours';
 import type { CibleParcours, Parcours, TypeParcours } from '@/lib/studio/parcours';
-import type { CommandeRendu } from './FilmVisitePanel';
+import type { CommandeRendu, ParcoursRendu } from './FilmVisitePanel';
+// VIS-28 (24/11) : l'écran des étapes 6 / 7 / 8 s'ouvre sur la feuille du type du parcours (jamais un nouveau choix).
+import { feuilleDeLEtape, TRAVAIL_DU_PARCOURS } from './renduParcours';
 import { ouverturePreparation } from './preparationStudio';
 import { BriefProjetRenduSection } from '@/spaces/promoteur/pages/BriefProjetRenduSection';
 import { etudeDeLaConversation } from '@/spaces/promoteur/shared/briefProjet.store';
@@ -245,8 +247,15 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
       <button type="button" className="jarvis-dossier__link" onClick={() => setReglagesOuverts(false)}>Fermer les réglages</button>
     </div>}
   </div> : null;
+  // VIS-28 — parcours choisi : l'écran des rendus porte SON type et s'ouvre d'office sur la feuille de l'étape affichée
+  // (étape courante à l'arrivée, pastille de l'en-tête ou étape cliquée dans le chat) — même chemin pour les trois.
+  const etapeRendu = parcours && etapeActive && RENDUS.includes(etapeActive) ? parcours.etapes.find((e) => e.cle === etapeActive) ?? null : null;
+  const parcoursRendu: ParcoursRendu | null = parcours ? {
+    type: TRAVAIL_DU_PARCOURS[parcours.type], cle: etapeRendu?.cle ?? '', feuille: feuilleDeLEtape(parcours.type, etapeRendu),
+  } : null;
   const panneauRendu = (assurer?: () => Promise<void>) => rendu && conversationId ? <FilmVisitePanel draft={rendu.draft} conversationId={conversationId}
-    assurerValidation={assurer} commande={commandeRendu} terrainParDefaut={rendu.terrain} onValiderApercu={onValiderApercu} apercuValide={apercuValide} /> : null;
+    assurerValidation={assurer} commande={commandeRendu} terrainParDefaut={rendu.terrain} onValiderApercu={onValiderApercu} apercuValide={apercuValide}
+    parcoursRendu={parcoursRendu} /> : null;
 
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
     {parcoursUi}
