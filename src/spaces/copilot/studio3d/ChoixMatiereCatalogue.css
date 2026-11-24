@@ -1,0 +1,26 @@
+/* VIS-31 — « Toutes les matières » dans la carte d'habillage (ChoixMatiereCatalogue.tsx). */
+.mz-matcat { margin: 6px 0 12px; padding: 10px; border: 1px solid #ddd6fe; border-radius: 12px; background: #faf9ff; }
+.mz-matcat__tete { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mz-matcat__tete strong { font-size: 13px; color: #1e1b4b; }
+.mz-matcat__compte { color: #64748b; font-size: 11.5px; }
+.mz-matcat__fermer { margin-left: auto; padding: 3px 10px; border: 1px solid #cbd5e1; border-radius: 999px; background: #ffffff; color: #334155; font-size: 12px; cursor: pointer; }
+.mz-matcat__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mz-matcat__recherche { display: block; margin: 8px 0 4px; }
+.mz-matcat__recherche input { width: 100%; box-sizing: border-box; padding: 7px 11px; border: 1.5px solid #cbd5e1; border-radius: 10px; background: #ffffff; color: #0f172a; font: inherit; }
+.mz-matcat__recherche input:focus-visible { outline: 2px solid #6d5dfc; outline-offset: 1px; border-color: #6d5dfc; }
+.mz-matcat__aide, .mz-matcat__vide { margin: 2px 0 8px; color: #475569; font-size: 11.5px; }
+.mz-matcat__grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; max-height: 420px; overflow-y: auto; margin: 0; padding: 2px; list-style: none; }
+.mz-matcat__carte { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #ffffff; font-size: 12px; }
+.mz-matcat__carte.is-choisie { border-color: #6d5dfc; box-shadow: 0 0 0 3px #ede9fe; }
+.mz-matcat__vignette { display: block; height: 70px; border-radius: 7px; overflow: hidden; border: 1px solid #e2e8f0; }
+.mz-matcat__vignette img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mz-matcat__nom { font-weight: 600; color: #0f172a; }
+.mz-matcat__badge { align-self: flex-start; padding: 1px 8px; border: 1px solid transparent; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.mz-matcat__badge--oui { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+.mz-matcat__badge--reserve { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+.mz-matcat__rendu { color: #334155; }
+.mz-matcat__carte[data-traduction='aucune'] .mz-matcat__rendu { color: #92400e; }
+.mz-matcat__note { color: #64748b; font-size: 11px; }
+.mz-matcat__choisir { margin-top: auto; padding: 5px 8px; border: 1.5px solid #6d5dfc; border-radius: 8px; background: #6d5dfc; color: #ffffff; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mz-matcat__choisir:disabled { border-color: #cbd5e1; background: #f1f5f9; color: #64748b; cursor: not-allowed; }
+.mz-matcat__choisir:focus-visible { outline: 2px solid #1e1b4b; outline-offset: 2px; }

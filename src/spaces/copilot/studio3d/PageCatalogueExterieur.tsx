@@ -10,8 +10,15 @@
 // (public/catalogue-exterieur/) ; sinon une pastille de teinte étiquetée « Aperçu indicatif ».
 // Les filtres vivent dans l'adresse (?famille=…&rendu=…&chat=1&studio=1&q=…) : un lien peut
 // ouvrir la page déjà filtrée (adresseCatalogueExterieur).
+//
+// VIS-31 (24/11) — « Je n'ai pas pu chercher les textures » : le champ de recherche était lié DIRECTEMENT à l'adresse
+// (value = ?q=…). Or React Router 7 met à jour l'adresse dans une transition React (BrowserRouter → startTransition) :
+// après chaque frappe, React remettait le champ à son ancienne valeur en attendant la transition, et les lettres tapées
+// pendant le rendu des 256 cartes se perdaient (« brique » tapé → « bque », 0 résultat ; preuve : _to_delete/vis31).
+// Le texte tapé vit maintenant dans un état local (mise à jour immédiate) ; l'adresse suit après une courte pause, et le
+// filtrage du gros catalogue est différé (useDeferredValue) pour que la frappe reste fluide.
 // =============================================================================
-import { useEffect, useMemo } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   CATALOGUE_EXTERIEUR, DATE_REGISTRE_PHOTOREALISME, FAMILLES_EXTERIEUR, LIBELLES_CHAT, LIBELLES_RENDU, LIBELLE_STUDIO,
@@ -79,9 +86,17 @@ function Carte({ e }: { e: EntreeCatalogueExterieur }) {
   );
 }
 
+/** Délai avant d'écrire la recherche dans l'adresse (le filtrage, lui, suit la frappe). */
+export const DELAI_ADRESSE_MS = 300;
+
 export default function PageCatalogueExterieur() {
   const [params, setParams] = useSearchParams();
-  const filtre = useMemo(() => filtreDepuisAdresse(params.toString()), [params]);
+  const filtreAdresse = useMemo(() => filtreDepuisAdresse(params.toString()), [params]);
+  // VIS-31 : le champ ne dépend JAMAIS de l'adresse après l'ouverture de la page (voir l'en-tête).
+  const [saisie, setSaisie] = useState(() => filtreAdresse.texte ?? '');
+  const ecrite = useRef(saisie);
+  const texteCherche = useDeferredValue(saisie);
+  const filtre = useMemo<FiltreCatalogue>(() => ({ ...filtreAdresse, texte: texteCherche }), [filtreAdresse, texteCherche]);
   const total = useMemo(() => compterCatalogue(), []);
   const visibles = useMemo(() => filtrerCatalogue(filtre), [filtre]);
   /** Décompte par famille, tous filtres appliqués SAUF la famille (pour les pastilles de famille). */
@@ -97,13 +112,22 @@ export default function PageCatalogueExterieur() {
     return () => { document.title = avant; };
   }, []);
 
+  // Toujours repartir de l'adresse RÉELLE (et non d'une copie de `params` qui peut dater d'avant la dernière transition).
   const changer = (cle: string, valeur: string | null) => {
-    const p = new URLSearchParams(params);
+    const p = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : params.toString());
     if (valeur) p.set(cle, valeur); else p.delete(cle);
     setParams(p, { replace: true });
   };
+  // La recherche part dans l'adresse (lien partageable) après une courte pause de frappe.
+  useEffect(() => {
+    if (saisie === ecrite.current) return undefined;
+    const t = window.setTimeout(() => { ecrite.current = saisie; changer('q', saisie.trim() ? saisie : null); }, DELAI_ADRESSE_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saisie]);
+  const toutEffacer = () => { ecrite.current = ''; setSaisie(''); setParams(new URLSearchParams(), { replace: true }); };
   const basculer = (cle: keyof Pick<FiltreCatalogue, 'chat' | 'studio'>) => changer(cle, filtre[cle] ? null : '1');
-  const filtreActif = Boolean(filtre.famille || filtre.rendu || filtre.chat || filtre.studio || (filtre.texte ?? '').trim());
+  const filtreActif = Boolean(filtre.famille || filtre.rendu || filtre.chat || filtre.studio || saisie.trim());
   const sections = FAMILLES_EXTERIEUR.map((f) => ({ f, entrees: visibles.filter((e) => e.famille === f.id) })).filter((s) => s.entrees.length > 0);
 
   return (
@@ -115,6 +139,10 @@ export default function PageCatalogueExterieur() {
           Toutes les matières et tous les éléments 3D prévus pour l’extérieur d’un projet : façades, toitures, fenêtres, balcons, clôtures,
           végétation, mobilier, voitures. Pour chacun, la page dit sans détour s’il est au choix dans le chat, visible dans le Studio,
           et s’il apparaît vraiment dans les images rendues.
+        </p>
+        <p className="mz-catext__usage">
+          Pour habiller votre projet avec une de ces matières : dans le chat, étape 4 « Style &amp; façades » → « Choisir » (ou
+          « Modifier »), puis « Toutes les matières » sous la façade, le soubassement, les menuiseries, les garde-corps ou la toiture.
         </p>
         <ul className="mz-catext__chiffres" aria-label="Le catalogue en chiffres">
           <li><strong>{total.total}</strong><span>entrées, dont {total.matieres} matières et {total.elements} éléments</span></li>
@@ -145,7 +173,8 @@ export default function PageCatalogueExterieur() {
       <section className="mz-catext__filtres" aria-label="Filtrer le catalogue">
         <label className="mz-catext__recherche">
           <span className="mz-catext__sr">Rechercher</span>
-          <input type="search" placeholder="Rechercher : brique, tuile, garde-corps, arbre…" value={filtre.texte ?? ''} onChange={(ev) => changer('q', ev.target.value)} />
+          <input type="search" placeholder="Rechercher : brique, enduit, tuile, bois, verre, haie…" value={saisie} onChange={(ev) => setSaisie(ev.target.value)}
+            autoComplete="off" spellCheck={false} enterKeyHint="search" />
         </label>
         <div className="mz-catext__puces" role="group" aria-label="Famille">
           <button type="button" className={!filtre.famille ? 'is-actif' : ''} aria-pressed={!filtre.famille} onClick={() => changer('famille', null)}>Tout <em>{toutes}</em></button>
@@ -161,7 +190,7 @@ export default function PageCatalogueExterieur() {
           ))}
           <button type="button" className={`mz-catext__puce--studio${filtre.studio ? ' is-actif' : ''}`} aria-pressed={Boolean(filtre.studio)} onClick={() => basculer('studio')}>{LIBELLE_STUDIO.libelle}</button>
           <button type="button" className={`mz-catext__puce--propose${filtre.chat ? ' is-actif' : ''}`} aria-pressed={Boolean(filtre.chat)} onClick={() => basculer('chat')}>{LIBELLES_CHAT.propose.libelle}</button>
-          {filtreActif && <button type="button" className="mz-catext__effacer" onClick={() => setParams(new URLSearchParams(), { replace: true })}>Effacer les filtres</button>}
+          {filtreActif && <button type="button" className="mz-catext__effacer" onClick={toutEffacer}>Effacer les filtres</button>}
         </div>
         <p className="mz-catext__compte" aria-live="polite">
           {visibles.length === CATALOGUE_EXTERIEUR.length ? `${visibles.length} entrées` : `${visibles.length} entrée${visibles.length > 1 ? 's' : ''} sur ${CATALOGUE_EXTERIEUR.length}`}
@@ -169,7 +198,7 @@ export default function PageCatalogueExterieur() {
       </section>
 
       {sections.length === 0 && (
-        <p className="mz-catext__vide">Rien ne correspond à ces filtres. <button type="button" onClick={() => setParams(new URLSearchParams(), { replace: true })}>Tout afficher</button></p>
+        <p className="mz-catext__vide">Rien ne correspond à ces filtres. <button type="button" onClick={toutEffacer}>Tout afficher</button></p>
       )}
 
       {sections.map(({ f, entrees }) => {

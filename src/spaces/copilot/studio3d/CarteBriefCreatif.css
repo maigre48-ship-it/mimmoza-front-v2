@@ -102,3 +102,11 @@
 .mz-ligne-habillage button:disabled { opacity: .5; cursor: not-allowed; }
 /* VIS-16 : phrase d'attente (ce qui sera chiffré, pré-remplissage) sous les boutons. */
 .mz-ligne-habillage p.mz-ligne-habillage__attente { flex: 1 1 100%; color: #4c1d95; font-size: 12.5px; }
+
+/* VIS-31 — Ligne sous un champ de la carte : matière du catalogue en place + bouton d'ouverture. */
+.mz-brief__catalogue { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: -2px 0 10px; font-size: 12px; }
+.mz-brief__catalogue-ouvrir { padding: 4px 10px; border: 1.5px dashed #a78bfa; border-radius: 999px; background: #ffffff; color: #5b21b6; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mz-brief__catalogue-ouvrir:focus-visible { outline: 2px solid #6d5dfc; outline-offset: 2px; }
+.mz-brief__catalogue-choix { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid #c4b5fd; border-radius: 999px; background: #f5f3ff; color: #1e1b4b; }
+.mz-brief__catalogue-choix.is-reserve { border-color: #fde68a; background: #fffbeb; }
+.mz-brief__catalogue-choix button { padding: 1px 8px; border: 0; border-radius: 999px; background: transparent; color: #5b21b6; font-size: 11.5px; cursor: pointer; text-decoration: underline; }

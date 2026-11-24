@@ -92,7 +92,10 @@ export interface OptionBrief<V> {
 // clé du moteur d'architecture → av-*, LEGACY_TO_ARCHVIZ l. 557-579). Le rendu Unreal
 // ajoute textures et lumière : ces aplats sont une approximation de teinte, pas un rendu.
 export const MATIERE_FACADE: Record<Facade, { materiau: string; couleur: string }> = {
-  enduit_clair: { materiau: 'enduit-beige → av-enduit-creme', couleur: '#e2d9c6' },
+  // VIS-31 (24/11) : « enduit clair » = blanc cassé LUMINEUX, légèrement chaud (référence d'Albé : collectif contemporain
+  // blanc). Avant : #e2d9c6 (crème) ici, #d9c9ab (beige, lot P10) dans le Studio — deux teintes, aucune voulue. Le Studio
+  // doit reprendre #ebe4d6 pour av-enduit-beige (archvizLibrary.ts) et enduit-beige (pbrLibrary.ts) : journal VIS-31.
+  enduit_clair: { materiau: 'enduit-beige → av-enduit-beige', couleur: '#ebe4d6' },
   enduit_blanc: { materiau: 'enduit-blanc → av-enduit-blanc', couleur: '#e9e7e1' },
   brique: { materiau: 'brique-rouge → av-brique-rouge', couleur: '#8e4b38' },
   pierre: { materiau: 'pierre-claire-contemp → av-pierre-calcaire', couleur: '#cbc2ae' },
@@ -136,7 +139,7 @@ export const STYLES: readonly OptionBrief<Style>[] = [
     descriptif: 'Verticalité marquée, bandeaux superposés, couronnement en gradins (1920-1939). Prévu dans le Studio, pas encore rendu.' },
 ];
 export const FACADES: readonly OptionBrief<Facade>[] = [
-  { valeur: 'enduit_clair', libelle: 'Enduit clair', detail: 'Enduit beige, chaleureux et sobre.', disponible: true },
+  { valeur: 'enduit_clair', libelle: 'Enduit clair', detail: 'Blanc cassé lumineux, légèrement chaud.', disponible: true },
   { valeur: 'enduit_blanc', libelle: 'Enduit blanc', detail: 'Blanc lumineux, très contemporain.', disponible: true },
   { valeur: 'brique', libelle: 'Brique', detail: 'Brique rouge appareillée.', disponible: true },
   { valeur: 'pierre', libelle: 'Pierre claire', detail: 'Pierre calcaire en plaques.', disponible: true },
@@ -423,6 +426,93 @@ export interface EtatBrief {
   choix: ChoixBrief;
   /** Champs choisis par l'utilisateur (les autres restent « proposés par Mimmo »). */
   touches: ChampCarte[];
+  /** VIS-31 : matières choisies dans le catalogue extérieur (« Toutes les matières »), par partie du bâtiment. */
+  matieres?: MatieresCatalogueChoisies;
+}
+
+// ── VIS-31 : matières du catalogue extérieur choisies depuis la carte ──────────────
+// La carte propose, sous la façade, le soubassement, les menuiseries, les garde-corps et la toiture, TOUTES les matières
+// du catalogue extérieur rendues (pleinement ou avec réserve) — pas seulement les valeurs fermées ci-dessus.
+// Ce qui atteint le rendu AUJOURD'HUI : le serveur (copilot-chat/agent/studio.ts, validerBrief) et la machine de rendu
+// (worker/src/fiche.ts, lireDetails) n'acceptent que les listes fermées. Une matière du catalogue est donc traduite :
+//   - EXACTEMENT quand le catalogue la relie à un choix fermé (choixBrief : « Brique claire » → façade brique + teinte
+//     claire, « Aluminium bronze » → menuiseries bronze…) ;
+//   - sinon, par la valeur fermée la PLUS PROCHE (« Pierre de taille » → pierre claire), dite « approchée » ;
+//   - sans équivalent (« Panneaux métalliques »), le rendu garde la valeur fermée en place — dit tel quel.
+// La référence exacte (refStudio) n'est PAS encore envoyée dans le bloc : le serveur refuse tout champ inconnu
+// (« Champ de brief inconnu »). Elle partira quand le serveur ET la machine de rendu la liront (journal VIS-31) :
+// passer alors TRANSMETTRE_REFERENCES_CATALOGUE à true.
+export type PartieMatiere = 'facade' | 'soubassement' | 'menuiseries' | 'garde_corps' | 'toiture';
+export const PARTIES_MATIERE: readonly PartieMatiere[] = ['facade', 'soubassement', 'menuiseries', 'garde_corps', 'toiture'];
+/** Partie du bâtiment que règle un champ de la carte. */
+export const PARTIE_DU_CHAMP: Readonly<Partial<Record<ChampCarte, PartieMatiere>>> = {
+  facade: 'facade', teinte: 'facade', soubassement: 'soubassement', menuiseries: 'menuiseries', garde_corps: 'garde_corps', toiture: 'toiture',
+};
+export const LIBELLES_PARTIE: Readonly<Record<PartieMatiere, string>> = {
+  facade: 'façade', soubassement: 'soubassement', menuiseries: 'menuiseries', garde_corps: 'garde-corps', toiture: 'toiture',
+};
+export interface MatiereCatalogueChoisie {
+  /** Identifiant du Studio (av-…, pm-…, rg-…, qm-…). */
+  ref: string;
+  nom: string;
+  /** Statut de rendu du catalogue : 'reserve' est toujours dit « avec réserve ». */
+  rendu: 'oui' | 'reserve';
+  noteRendu: string;
+  /** Vrai : la matière exacte est rendue (choix fermé équivalent). */
+  exacte: boolean;
+  /** Ce que le rendu montre à sa place quand elle n'est pas exacte (« Pierre claire ») ; null = pas d'équivalent. */
+  rendueComme: string | null;
+}
+export type MatieresCatalogueChoisies = Partial<Record<PartieMatiere, MatiereCatalogueChoisie>>;
+/** VIS-31 : faux tant que le serveur refuse le champ `matieres` du brief (voir plus haut). */
+export const TRANSMETTRE_REFERENCES_CATALOGUE = false;
+
+/** Retire la matière du catalogue d'une partie (l'utilisateur a repris une valeur de la carte). */
+export function retirerMatiereCatalogue(etat: EtatBrief, partie: PartieMatiere): EtatBrief {
+  if (!etat.matieres?.[partie]) return etat;
+  const reste = { ...etat.matieres };
+  delete reste[partie];
+  const { matieres: _ancien, ...sans } = etat;
+  return Object.keys(reste).length ? { ...sans, matieres: reste } : sans;
+}
+
+/**
+ * Choisit une matière du catalogue pour une partie : applique d'abord ses valeurs fermées (`champs`, façade avant
+ * teinte), comme des clics de la carte ; si l'une n'est pas possible ici (toit à deux pans d'un bâtiment à ailes,
+ * soubassement sous des vitrines, garde-corps sans balcon), RIEN ne change et la raison est rendue.
+ */
+export function choisirMatiereCatalogue(
+  etat: EtatBrief, partie: PartieMatiere, matiere: MatiereCatalogueChoisie, champs: Partial<ChoixBrief>, d: Pick<DemandeBrief, 'ambiances' | 'limites'>,
+): { etat: EtatBrief; refus: string | null } {
+  const ordre: ChampCarte[] = ['facade', 'teinte', 'soubassement', 'menuiseries', 'garde_corps', 'toiture'];
+  let e = etat;
+  for (const champ of ordre) {
+    const v = champs[champ];
+    if (v === undefined) continue;
+    const refus = raisonIndisponible(champ, v, e.choix, d);
+    if (refus) return { etat, refus };
+    e = choisir(e, champ, v, d);
+  }
+  // Une matière de garde-corps sans balcon ne servirait à rien : refusée (même sans équivalent fermé).
+  if (partie === 'garde_corps' && champs.garde_corps === undefined) {
+    const refus = raisonIndisponible('garde_corps', e.choix.garde_corps, e.choix, d);
+    if (refus) return { etat, refus };
+  }
+  return { etat: { ...e, matieres: { ...(e.matieres ?? {}), [partie]: matiere } }, refus: null };
+}
+
+/** Phrase lisible des matières du catalogue (message du brief, pied de la carte) ; null s'il n'y en a pas. */
+export function phraseMatieresCatalogue(etat: Pick<EtatBrief, 'matieres'>): string | null {
+  const m = etat.matieres;
+  if (!m) return null;
+  const morceaux = PARTIES_MATIERE.filter((p) => m[p]).map((p) => {
+    const x = m[p]!;
+    const reserve = x.rendu === 'reserve' ? ', avec réserve' : '';
+    if (x.exacte) return `${LIBELLES_PARTIE[p]} « ${x.nom} » (rendue telle quelle${reserve})`;
+    if (x.rendueComme) return `${LIBELLES_PARTIE[p]} « ${x.nom} » (rendue pour l’instant comme « ${x.rendueComme} »${reserve})`;
+    return `${LIBELLES_PARTIE[p]} « ${x.nom} » (pas encore d’équivalent dans le rendu${reserve})`;
+  });
+  return morceaux.length ? `Matières du catalogue : ${morceaux.join(' ; ')}.` : null;
 }
 
 /** État initial : brief connu (sans les valeurs que le Studio n'applique pas) ou valeurs proposées. */
@@ -471,7 +561,10 @@ export function choisir(etat: EtatBrief, champ: ChampCarte, valeur: string | boo
   if (!TEINTES_PAR_FACADE[choix.facade].includes(choix.teinte)) remettre('teinte');
   if (champ === 'toiture' && toitEnPente(choix.toiture) && choix.attique) { choix.attique = false; if (!touches.includes('attique')) touches = [...touches, 'attique']; }
   if (champ === 'rdc' && choix.rdc === 'commerces' && choix.soubassement !== 'aucun') remettre('soubassement');
-  return { choix, touches };
+  // VIS-31 : un clic sur une valeur de la carte remplace la matière du catalogue de la même partie.
+  const partie = PARTIE_DU_CHAMP[champ];
+  const base: EtatBrief = etat.matieres ? { choix, touches, matieres: etat.matieres } : { choix, touches };
+  return partie ? retirerMatiereCatalogue(base, partie) : base;
 }
 
 const LIB_COURT: { [K in ChampCarte]: (c: ChoixBrief) => string | null } = {
@@ -512,6 +605,10 @@ export function briefAEnvoyer(etat: EtatBrief, mimmoChoisit = false): Obj {
   const b: Obj = {};
   for (const c of CHAMPS_CARTE) if (champs.includes(c)) b[c] = etat.choix[c];
   if (mimmoChoisit || CHAMPS_CARTE.some((c) => !champs.includes(c))) b.a_toi_de_choisir = true;
+  // VIS-31 : références exactes du catalogue — seulement quand le serveur les accepte (voir TRANSMETTRE_REFERENCES_CATALOGUE).
+  if (TRANSMETTRE_REFERENCES_CATALOGUE && etat.matieres && Object.keys(etat.matieres).length) {
+    b.matieres = Object.fromEntries(PARTIES_MATIERE.filter((p) => etat.matieres?.[p]).map((p) => [p, etat.matieres![p]!.ref]));
+  }
   return b;
 }
 
@@ -558,7 +655,9 @@ export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'li
     : mimmo
       ? `Brief créatif pour ${LIB_TYPE[d.type]} (rendu) : je laisse Mimmo choisir${etat.touches.length ? ' le reste' : ''} — ${recap}.`
       : `Brief créatif validé pour ${LIB_TYPE[d.type]} (rendu) : ${recap}.`;
-  return `${tete}\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
+  // VIS-31 : matières choisies dans le catalogue, dites avec ce que le rendu en montre vraiment.
+  const matieres = phraseMatieresCatalogue(etat);
+  return `${tete}${matieres ? ` ${matieres}` : ''}\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
 }
 
 const RE_BLOC = new RegExp('```' + BRIEF_BLOC_LANGUE + '[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n?```');

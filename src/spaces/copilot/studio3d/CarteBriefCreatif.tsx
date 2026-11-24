@@ -15,13 +15,18 @@
 // (LigneHabillage) quand le panneau existe. 4ᵉ écran « Détails » FACULTATIF (toiture,
 // teinte, garde-corps, menuiseries, soubassement ; « bientôt » : volets, entrée) : on
 // peut valider dès le 3ᵉ écran. `sansStyles` : les styles sont déjà en cartes au-dessus.
+//
+// VIS-31 (24/11) : sous la façade, le soubassement, les menuiseries, les garde-corps et la toiture, « Toutes les
+// matières » ouvre la grille du catalogue extérieur (ChoixMatiereCatalogue, chargée à la demande) : toutes les
+// matières rendues, pleinement ou avec réserve, et ce que le rendu en montre vraiment (matieresCatalogue.ts).
 // =============================================================================
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Palette, Sparkles } from 'lucide-react';
 import { useCopilotStore } from '../store/copilotStore';
 import {
-  BIENTOT, ECRANS, QUESTIONS, STYLES, TEINTES_PAR_FACADE, briefEnvoyeApres, choisir, demandeDepassee, choixAppliques, etatInitial, libelleTeinte, messageBrief, optionsDe,
-  raisonIndisponible, recapitulatif, type ChampCarte, type DemandeBrief, type EtatBrief,
+  BIENTOT, ECRANS, QUESTIONS, STYLES, TEINTES_PAR_FACADE, briefEnvoyeApres, choisir, choisirMatiereCatalogue, demandeDepassee, choixAppliques, etatInitial,
+  libelleTeinte, messageBrief, optionsDe, phraseMatieresCatalogue, raisonIndisponible, recapitulatif, retirerMatiereCatalogue,
+  type ChampCarte, type DemandeBrief, type EtatBrief, type PartieMatiere,
 } from './briefCreatif';
 import { VignetteTravee } from './VignetteTravee';
 // VIS-04 — le brief projet de l'étude (Style & tendances, programme, vues) part avec l'habillage, qui y est mémorisé.
@@ -29,6 +34,12 @@ import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProj
 import './CarteBriefCreatif.css';
 
 const ApercuBrief3D = lazy(() => import('./ApercuBrief3D'));
+// VIS-31 : grille « Toutes les matières » (catalogue extérieur), téléchargée au premier clic.
+const ChoixMatiereCatalogue = lazy(() => import('./ChoixMatiereCatalogue'));
+/** Champs de la carte sous lesquels « Toutes les matières » est proposé (la teinte suit la façade). */
+const PARTIE_SOUS_CHAMP: Partial<Record<ChampCarte, PartieMatiere>> = {
+  facade: 'facade', soubassement: 'soubassement', menuiseries: 'menuiseries', garde_corps: 'garde_corps', toiture: 'toiture',
+};
 
 const webglPossible = (() => {
   let r: boolean | null = null;
@@ -68,6 +79,10 @@ export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFerm
   const [ouverte, setOuverte] = useState(() => !!toujoursOuverte || demande.origine === 'fiche' || (demande.origine === 'demande' && !envoyeDansLeFil && !demandeDepassee(messages, messageId)));
   const [envoye, setEnvoye] = useState<string | null>(null);
   const [sans3d, setSans3d] = useState(false);
+  // VIS-31 : partie dont la grille « Toutes les matières » est ouverte (une à la fois) ; refus éventuel du dernier choix.
+  const [catalogueOuvert, setCatalogueOuvert] = useState<PartieMatiere | null>(null);
+  const [refusCatalogue, setRefusCatalogue] = useState<string | null>(null);
+  const phraseMatieres = phraseMatieresCatalogue(etat);
 
   const recap = recapitulatif(etat.choix, demande);
   const fini = envoye ?? envoyeDansLeFil;
@@ -139,7 +154,41 @@ export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFerm
 
         <div className="mz-brief__choix">
           <h4 className="mz-brief__ecran">{e.titre}{e.facultatif && <span className="mz-brief__propose"> · facultatif, valeurs proposées par Mimmo</span>}</h4>
-          {e.champs.map((champ) => <Champ key={champ} champ={champ} etat={etat} demande={demande} onChoix={(v) => setEtat((s) => choisir(s, champ, v, demande))} />)}
+          {e.champs.map((champ) => {
+            const partie = PARTIE_SOUS_CHAMP[champ];
+            const enPlace = partie ? etat.matieres?.[partie] : undefined;
+            return (
+              <div key={champ}>
+                <Champ champ={champ} etat={etat} demande={demande} onChoix={(v) => setEtat((s) => choisir(s, champ, v, demande))} />
+                {partie && (
+                  <div className="mz-brief__catalogue">
+                    {enPlace && (
+                      <span className={`mz-brief__catalogue-choix${enPlace.rendu === 'reserve' ? ' is-reserve' : ''}`}>
+                        Catalogue : <strong>{enPlace.nom}</strong>{enPlace.rendu === 'reserve' ? ' · avec réserve' : ''}
+                        {!enPlace.exacte && (enPlace.rendueComme ? ` · rendue comme « ${enPlace.rendueComme} »` : ' · pas encore d’équivalent dans le rendu')}
+                        <button type="button" onClick={() => setEtat((s) => retirerMatiereCatalogue(s, partie))}>Retirer</button>
+                      </span>
+                    )}
+                    <button type="button" className="mz-brief__catalogue-ouvrir" aria-expanded={catalogueOuvert === partie}
+                      onClick={() => { setRefusCatalogue(null); setCatalogueOuvert(catalogueOuvert === partie ? null : partie); }}>
+                      {catalogueOuvert === partie ? 'Masquer les matières' : 'Toutes les matières'}
+                    </button>
+                  </div>
+                )}
+                {partie && catalogueOuvert === partie && (
+                  <Suspense fallback={<p className="mz-brief__note mz-brief__note--douce">Chargement du catalogue…</p>}>
+                    {refusCatalogue && <p className="mz-brief__note" role="alert">{refusCatalogue}</p>}
+                    <ChoixMatiereCatalogue partie={partie} etat={etat} demande={demande} onFermer={() => setCatalogueOuvert(null)}
+                      onChoisir={(m, champs) => {
+                        const r = choisirMatiereCatalogue(etat, partie, m, champs, demande);
+                        setRefusCatalogue(r.refus);
+                        if (!r.refus) { setEtat(r.etat); setCatalogueOuvert(null); }
+                      }} />
+                  </Suspense>
+                )}
+              </div>
+            );
+          })}
           {e.id === 'details' && BIENTOT.map((b) => (
             <fieldset key={b.titre} className="mz-brief__champ mz-brief__champ--bientot" disabled>
               <legend>{b.titre} <span className="mz-brief__propose">· bientôt</span></legend>
@@ -156,7 +205,7 @@ export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFerm
       </div>
 
       <footer className="mz-brief__pied">
-        <p className="mz-brief__recap" aria-live="polite"><strong>Votre brief :</strong> {recap}</p>
+        <p className="mz-brief__recap" aria-live="polite"><strong>Votre brief :</strong> {recap}{phraseMatieres && <><br />{phraseMatieres}</>}</p>
         <div className="mz-brief__actions">
           <button type="button" className="mz-brief__btn mz-brief__btn--leger" onClick={() => envoyer(true)} disabled={!onSend || enCours}
             title={etat.touches.length ? 'Mimmo garde vos choix et propose le reste' : 'Mimmo choisit tout'}>

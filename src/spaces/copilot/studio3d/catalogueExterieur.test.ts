@@ -91,9 +91,10 @@ test('parité avec le brief du chat : ce qui est annoncé « bientôt » l’est
 });
 
 test('teintes : le catalogue reprend la teinte du Studio ; écart connu avec l’aperçu du brief pour « Enduit clair »', () => {
-  // Le brief (briefCreatif.ts, MATIERE_FACADE) montre encore l'enduit crème #e2d9c6 pour « Enduit clair », alors que le
-  // Studio rend l'enduit beige #d9c9ab depuis le lot P10 (archvizLibrary.ts, LEGACY_TO_ARCHVIZ). Écart signalé au journal
-  // VIS-24 ; ce test échouera le jour où le brief sera corrigé : retirer alors `enduit_clair` de cette liste.
+  // VIS-31 : le brief (briefCreatif.ts, MATIERE_FACADE) montre « Enduit clair » en blanc cassé lumineux #ebe4d6 (choix
+  // d'Albé) ; le Studio rend encore l'enduit beige #d9c9ab (lot P10, archvizLibrary.ts av-enduit-beige). Écart VOULU en
+  // attendant le Studio (journal VIS-31) ; ce test échouera quand le Studio aura repris #ebe4d6 et le catalogue régénéré :
+  // retirer alors `enduit_clair` de cette liste.
   const ECARTS_CONNUS: Readonly<Record<string, string>> = { enduit_clair: '#d9c9ab' };
   for (const [facade, m] of Object.entries(MATIERE_FACADE)) {
     const [e] = entreesDuChoix('facade', facade);

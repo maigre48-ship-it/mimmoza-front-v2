@@ -100,3 +100,5 @@
   .mz-catext__vignette { height: 104px; }
 }
 @media (prefers-reduced-motion: reduce) { .mz-catext__carte { transition: none; } }
+/* VIS-31 — comment utiliser une matière (renvoi vers l'étape 4 du chat) */
+.mz-catext__usage { max-width: 78ch; margin: -8px 0 18px; padding: 10px 14px; border-left: 3px solid #6d5dfc; border-radius: 0 10px 10px 0; background: #f5f3ff; color: #3730a3; font-size: 13.5px; }

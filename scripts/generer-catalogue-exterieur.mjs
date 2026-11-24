@@ -632,16 +632,24 @@ export interface FiltreCatalogue {
 /** Minuscules sans accents, pour la recherche. */
 export const normaliserTexte = (t: string): string => t.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[’']/g, ' ').toLowerCase().trim();
 
+/**
+ * VIS-31 — mots de la recherche : sans accents ni casse, coupés sur tout ce qui n'est ni lettre ni chiffre
+ * (« garde-corps », « d’eau »). Un mot cherché doit COMMENCER un mot de l'entrée (« arbre » ne trouve plus « marbre »),
+ * au singulier (« tuiles » trouve « tuile »).
+ */
+export const motsRecherche = (t: string): string[] => normaliserTexte(t).split(/[^a-z0-9]+/).filter(Boolean);
+const singulier = (m: string): string => (m.length > 3 && /[sx]$/.test(m) ? m.slice(0, -1) : m);
+
 export function filtrerCatalogue(filtre: FiltreCatalogue, entrees: readonly EntreeCatalogueExterieur[] = CATALOGUE_EXTERIEUR): EntreeCatalogueExterieur[] {
-  const mots = normaliserTexte(filtre.texte ?? '').split(/\\s+/).filter(Boolean);
+  const mots = motsRecherche(filtre.texte ?? '').map(singulier);
   return entrees.filter((e) => {
     if (filtre.famille && e.famille !== filtre.famille) return false;
     if (filtre.rendu && e.rendu !== filtre.rendu) return false;
     if (filtre.chat && e.chat !== filtre.chat) return false;
     if (filtre.studio != null && e.studio !== filtre.studio) return false;
     if (!mots.length) return true;
-    const foin = normaliserTexte([e.nom, e.description, e.application, ...e.choixBrief.map((c) => c.libelle)].join(' '));
-    return mots.every((m) => foin.includes(m));
+    const foin = motsRecherche([e.nom, e.description, e.application, ...e.choixBrief.map((c) => c.libelle)].join(' '));
+    return mots.every((m) => foin.some((f) => f.startsWith(m)));
   });
 }
 
