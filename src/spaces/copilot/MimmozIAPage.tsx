@@ -75,7 +75,7 @@ import { parcelleRetenue, retenirParcelle } from './studio3d/parcelleConfirmee';
 import { parcelId } from './studio3d/parcelFromGps';
 import { demandePrevisualisation } from './studio3d/intentionPrevisualisation';
 import type { IssueOuvertureStudio } from './studio3d/JarvisDraftPanel';
-import { avecProchaineRevision, preparerChargeVoirEn3D } from './studio3d/chargeVoirEn3D';
+import { avecProchaineRevision, modeleDeLaConversation, preparerChargeVoirEn3D } from './studio3d/chargeVoirEn3D';
 import { empreinteProjet } from '@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2';
 import { urlStudio } from '@/lib/studioConfig';
 // Premier contact guidé : encart + checklist chargés en différé ; le suivi des
@@ -415,6 +415,12 @@ export default function MimmozIAPage() {
     return c && s.demande && conversationId && s.conversationId === conversationId && c.conversationId === conversationId ? { fenetre: c.fenetre, origine: c.origine } : null;
   }, []);
   const voirEn3D = useCallback(async (fiche: JarvisDraft, conversationId: string, terrainArg?: ConfirmedTerrain & { adresse?: string | null }, options?: { mission?: boolean; estCourante?: () => boolean; remplacerMaquette?: boolean; complements?: Readonly<Record<string, unknown>> }): Promise<IssueOuvertureStudio> => {
+    // VIS-25 : bâtiment dessiné dans le chat (dernier « Reproduire en 3D ») → envoyé au Studio en complément du projet,
+    // quel que soit le bouton qui ouvre le Studio. Jamais pour les parcours extension / dossier (ils portent leurs compléments).
+    {
+      const modeleBatiment = options?.complements?.projetExtension ? null : modeleDeLaConversation(conversationId);
+      if (modeleBatiment) options = { ...(options ?? {}), complements: { ...(options?.complements ?? {}), modeleBatiment } };
+    }
     const verifierContexteMission = () => { if (options?.mission && (useCopilotStore.getState().currentConversationId !== conversationId || !options.estCourante?.())) throw new Error('La préparation de mission ou la conversation a changé. Aucun projet ne sera ouvert.'); };
     verifierContexteMission();
     // Mission : la parcelle confirmée vaut pour la mission seulement ; la parcelle retenue de la conversation n'est pas modifiée.

@@ -45,6 +45,10 @@ import { lireVueExtension, OUTIL_EXTENSION_MAISON } from '../studio3d/extensionM
 import { CarteDescriptionBatiment } from '../studio3d/CarteDescriptionBatiment';
 import { lireCarteBatiment } from '../studio3d/descriptionBatimentChat';
 import { sansBlocDescription } from '@/lib/studio/descriptionBatiment';
+// VIS-25 lot B : carte « Votre bâtiment » du modèle composé (dessiner n'importe quoi, retouches en parlant).
+import { CarteModeleBatiment } from '../studio3d/CarteModeleBatiment';
+import { lireCarteModele } from '../studio3d/modeleBatimentChat';
+import { sansBlocReference } from '@/lib/studio/modeleBatimentMessage';
 // Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
 import { LigneHabillage } from '../studio3d/LigneHabillage';
 // LOT P2 (11/11/2026) — image dans sa rue : carte « Fond de l'image » sous le devis d'une image.
@@ -174,7 +178,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     // LOT BRIEF-CRÉATIF : le bloc ```mimmoza-brief``` (relu par le serveur) est masqué ; une pastille le signale.
     const blocBrief = lireBlocBrief(message.text);
     // VIS-22 : le bloc ```mimmoza-batiment``` du bouton « Reproduire en 3D » est masqué lui aussi ; une pastille le signale.
-    const blocBatiment = sansBlocDescription(blocBrief.visible);
+    // VIS-25 lot B : la référence du bâtiment dessiné (```mimmoza-modele-ref```) est masquée aussi (même pastille).
+    const blocBatiment = sansBlocDescription(sansBlocReference(blocBrief.visible).visible);
     const blocParcours = lireBlocParcours(blocBatiment.visible);
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
@@ -202,6 +207,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             if (suivisRemplaces.has(tc.id)) return <p style={{ margin: '4px 0', color: T.textMuted, fontSize: 12 }}>Suivi de ce rendu : voir la carte à jour plus bas dans la conversation.</p>;
             // VIS-22 : description du bâtiment comprise par Mimmo → carte modifiable (à la place de la carte d'outil).
             { const batiment = lireCarteBatiment(tc); if (batiment) return <CarteDescriptionBatiment key={tc.id} carte={batiment} messageId={message.id} onSend={onSend} />; }
+            // VIS-25 lot B : bâtiment dessiné (modèle composé) ou retouché → carte « Votre bâtiment » (à la place de la carte d'outil).
+            { const modele = lireCarteModele(tc); if (modele) return <CarteModeleBatiment key={tc.id} carte={modele} messageId={message.id} onSend={onSend} />; }
             { const photo = lireDemandePhotoMaison(tc); if (photo) return <DemandePhotoMaison requise={photo} contour={photo.contour} onSend={onSend} afficherTexte />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
@@ -262,6 +269,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     || suivisRendu.has(tc.id)
     || !!lireDemandePhotoMaison(tc)
     || !!lireCarteBatiment(tc)
+    || !!lireCarteModele(tc)
     || !!lireDemandeBrief(tc)
     || (OUTILS_PHOTO_PROJET.has(tc.name) && tc.status !== 'running' && !!lireDemandeAccordPhoto(tc.output))
     || (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running')

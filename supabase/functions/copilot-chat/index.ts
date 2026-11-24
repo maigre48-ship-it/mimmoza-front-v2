@@ -74,6 +74,13 @@ import {
   consigneBatimentCarte, consigneDessinBatiment, descriptionDuMessage, dessinPlutotQuExtension, executerOutilDecrireBatiment, intentionDessinBatiment,
   OUTIL_DECRIRE_BATIMENT, OUTIL_DECRIRE_BATIMENT_DEF, suiteDuDessin,
 } from './agent/description-batiment.ts';
+// VIS-25 lot B : « dessiner n'importe quoi » (modèle COMPOSÉ, texte ou photo) puis le retoucher en parlant.
+import {
+  consigneDessinModele, consigneModeleCarte, consigneRetoucheModele, dernierModele, depotModeleSupabase, DESSIN_MODELE_ACTIF,
+  executerOutilDessinerBatiment, executerOutilRetoucherBatiment, intentionDessinModele, intentionRetoucheModele, nouveauDessinDemande,
+  OUTIL_DESSINER_BATIMENT, OUTIL_DESSINER_BATIMENT_DEF, OUTIL_RETOUCHER_BATIMENT, OUTIL_RETOUCHER_BATIMENT_DEF, referenceModeleDuMessage,
+  type MemoireTour,
+} from './agent/dessin-batiment.ts';
 // VIS-16 : « Préparer la plaquette » — état réel des missions, pack plaquette.
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
 import { etatMissionsUtile } from './agent/etat-missions.ts';
@@ -102,6 +109,14 @@ import {
  * LOT G3 — photo JPEG / PNG jointe au message de CE tour, par contexte de requête (jamais persistée, jamais montrée au
  * modèle par ce biais : le modèle voit la pièce jointe comme d'habitude). Lue seulement par le parcours d'extension.
  */
+/** VIS-25 lot B : dernier modèle dessiné / retouché PENDANT la requête (pas encore écrit dans copilot_tool_calls). */
+const MODELES_DU_TOUR = new WeakMap<object, MemoireTour>();
+function memoireModele(ctx: unknown): MemoireTour {
+  const cle = (ctx && typeof ctx === 'object' ? ctx : {}) as object;
+  let m = MODELES_DU_TOUR.get(cle);
+  if (!m) { m = { dernier: null }; MODELES_DU_TOUR.set(cle, m); }
+  return m;
+}
 const PHOTOS_DU_TOUR = new WeakMap<object, { nom: string | null; mediaType: string; data?: string; storagePath?: string; userId: string }>();
 // Lot choix-cliquables : questions à choix fermés → bloc ```mimmoza-choix (puces cliquables du front).
 import { CONSIGNE_CHOIX } from './agent/choix.ts';
@@ -4597,6 +4612,9 @@ const TOOLS: ToolDef[] = [
   OUTIL_MAISON_NEUVE_DEF,
   // VIS-22 : description du bâtiment (texte ou photo) -> carte « Votre bâtiment » (proposé seulement quand le tour en parle).
   OUTIL_DECRIRE_BATIMENT_DEF,
+  // VIS-25 lot B : modèle COMPOSÉ (dessiner n'importe quoi) et retouches par différences (proposés seulement quand le tour en parle).
+  OUTIL_DESSINER_BATIMENT_DEF,
+  OUTIL_RETOUCHER_BATIMENT_DEF,
 ];
 
 /**
@@ -4734,6 +4752,17 @@ async function executeTool(
     case OUTIL_DECRIRE_BATIMENT:
       // VIS-22 : le modèle PROPOSE, le serveur VALIDE (listes fermées, bornes) ; la photo jointe est un fait du tour.
       return executerOutilDecrireBatiment(input, { photoAuTour: PHOTOS_DU_TOUR.has(ctx as unknown as object) }) as ToolResult;
+    case OUTIL_DESSINER_BATIMENT:
+      // VIS-25 lot B : le modèle ÉCRIT le bâtiment, le serveur le VALIDE (corrige et le dit) ; la photo jointe est un fait du tour.
+      return executerOutilDessinerBatiment(input, { photoAuTour: PHOTOS_DU_TOUR.has(ctx as unknown as object), memoire: memoireModele(ctx) }) as ToolResult;
+    case OUTIL_RETOUCHER_BATIMENT: {
+      // VIS-25 lot B : différences sur le DERNIER modèle de la conversation (identité = JWT vérifié ; lecture bornée).
+      const brutCtx = ctx as unknown as Record<string, unknown>;
+      return (await executerOutilRetoucherBatiment(input, {
+        userId: auth?.userId ?? null, conversationId: typeof brutCtx.conversation_id === 'string' ? brutCtx.conversation_id : null,
+        photoAuTour: PHOTOS_DU_TOUR.has(ctx as unknown as object), depot: depotModeleSupabase(getAdmin()), memoire: memoireModele(ctx),
+      })) as ToolResult;
+    }
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
   }
@@ -4811,6 +4840,8 @@ function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
     formeCarte: (brut.forme_carte ?? null) as EnvStudio['formeCarte'],
     // VIS-22 : description du bâtiment de la carte « Votre bâtiment », relue dans le message REÇU (jamais par le modèle).
     batimentCarte: (brut.batiment_carte ?? null) as EnvStudio['batimentCarte'],
+    // VIS-25 lot B : référence (empreinte) du bâtiment DESSINÉ, relue dans le message REÇU (jamais par le modèle).
+    modeleCarte: (brut.modele_carte ?? null) as EnvStudio['modeleCarte'],
     // VIS-18b : fond choisi dans le parcours (instantané de l'écran du tour, relu défensivement ; jamais persisté).
     fondParcours: (brut.fond_parcours ?? null) as EnvStudio['fondParcours'],
   };
@@ -11002,7 +11033,9 @@ async function runOrchestrator(params: {
   // VIS-22 : bâtiment à reproduire (carte « Votre bâtiment ») — sa consigne REMPLACE celle du bloc d'habillage qui l'accompagne
   // (« habillage enregistré, ne prépare rien » contredirait « prépare la 3D »).
   const batimentCarte = (ctx as unknown as Record<string, unknown>).batiment_carte as EnvStudio['batimentCarte'];
-  const consigneCarte = batimentCarte ? consigneBatimentCarte(batimentCarte)
+  const modeleCarte = (ctx as unknown as Record<string, unknown>).modele_carte as EnvStudio['modeleCarte'];
+  const consigneCarte = modeleCarte ? consigneModeleCarte(modeleCarte, null)
+    : batimentCarte ? consigneBatimentCarte(batimentCarte)
     : [consigneBriefCarte(briefCarte ?? null), consigneFormeCarte(formeCarte ?? null)].filter(Boolean).join('\n\n');
   const systemBase = params.priorToolResults
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
@@ -11011,7 +11044,8 @@ async function runOrchestrator(params: {
   const consigneChat = estPageMimmozIA(ctx.route) ? CONSIGNE_RESTER_DANS_LE_CHAT : '';
   let system = [systemBase, consigneCarte, consigneChat].filter(Boolean).join('\n\n');
   const availableTools = toolsForMode(mode)
-    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE || tool.name === OUTIL_DECRIRE_BATIMENT))
+    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE || tool.name === OUTIL_DECRIRE_BATIMENT
+      || tool.name === OUTIL_DESSINER_BATIMENT || tool.name === OUTIL_RETOUCHER_BATIMENT))
     .filter((tool) => !outilHorsChat(tool.name, ctx.route));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
@@ -11038,10 +11072,20 @@ async function runOrchestrator(params: {
   // VIS-22 : un bâtiment ENTIER décrit (« une maison basque R+1…, garage accolé à gauche ») n'est pas une demande d'extension :
   // le garage ou la véranda y sont des éléments du bâtiment décrit. Sans mot d'agrandissement et hors parcours d'extension,
   // la description passe devant (sinon l'exemple même de la fonction partait dans le parcours d'extension).
-  const dessinPrime = agentDisponible(ctx.vertical) && !parcoursEnCours && !parcoursDansConversation
-    && dessinPlutotQuExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object));
+  // VIS-25 lot B : un bâtiment a été DESSINÉ dans la conversation et ce message le retouche (« ajoute une lucarne », « un étage
+  // de plus », « toit en ardoise ») → tour sur studio_retoucher_batiment, avec les identifiants du dernier modèle. Lecture
+  // bornée (JWT + conversation) faite seulement quand le message ressemble à une retouche ou suit une carte du dessin.
+  const conversationIdTour = typeof (ctx as unknown as Record<string, unknown>).conversation_id === 'string' ? (ctx as unknown as Record<string, string>).conversation_id : null;
+  const modeleConversation = DESSIN_MODELE_ACTIF && agentDisponible(ctx.vertical) && !modeleCarte && !batimentCarte && !parcoursEnCours
+    && !suiteDuParcoursMaison(texteAssistantPrecedent) && (intentionRetoucheModele(userText) || suiteDuDessin(texteAssistantPrecedent))
+    ? await dernierModele(depotModeleSupabase(getAdmin()), auth?.userId ?? null, conversationIdTour, memoireModele(ctx)) : null;
+  const retoucheModeleAuTour = modeleConversation !== null && !nouveauDessinDemande(userText) && intentionRetoucheModele(userText);
+  // Suite d'une carte du dessin sans retouche reconnue (« plutôt plus moderne ») : l'outil reste PROPOSÉ, sans consigne imposée.
+  const retoucheProposee = modeleConversation !== null && !retoucheModeleAuTour && suiteDuDessin(texteAssistantPrecedent) && userText.trim().length > 0;
+  const dessinPrime = (agentDisponible(ctx.vertical) && !parcoursEnCours && !parcoursDansConversation
+    && dessinPlutotQuExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object))) || retoucheModeleAuTour;
   const extensionAuTour = !plansAuTour && agentDisponible(ctx.vertical)
-    && ((!dessinPrime && detecterIntentionExtension(userText).extension) || (parcoursEnCours && reponseAuParcours(userText)) || retoucheAuTour
+    && ((!dessinPrime && detecterIntentionExtension(userText).extension) || (parcoursEnCours && reponseAuParcours(userText)) || (retoucheAuTour && !retoucheModeleAuTour)
       // LOT G3 : photo de la maison jointe avec une demande d'agrandissement (« extension de 4 × 5 m à gauche »).
       || (!dessinPrime && intentionPhotoExtension(userText, PHOTOS_DU_TOUR.has(ctx as unknown as object)))
       // LOT G6 : plan de la maison joint, ou valeurs vérifiées dans la carte « Plan lu » : le parcours reprend.
@@ -11061,10 +11105,20 @@ async function runOrchestrator(params: {
   const photoAuTour = PHOTOS_DU_TOUR.has(ctx as unknown as object);
   const batimentAuTour = agentDisponible(ctx.vertical) && !batimentCarte && !plansAuTour && !extensionAuTour && !parcoursEnCours && !maisonAuTour && !parcoursMaisonEnCours
     && (intentionDessinBatiment(userText, photoAuTour) || (suiteDuDessin(texteAssistantPrecedent) && userText.trim().length > 0));
-  if (batimentAuTour && intentionDessinBatiment(userText, photoAuTour)) system = `${system}\n\n${consigneDessinBatiment(photoAuTour)}`;
+  // VIS-25 lot B : dessin libre (« dessine-moi un phare ») aussi ; le modèle COMPOSÉ remplace l'outil VIS-22 dans les consignes.
+  // L'outil VIS-22 reste servi pour la suite d'une ANCIENNE carte (aucun modèle composé dans la conversation).
+  const dessinModeleAuTour = DESSIN_MODELE_ACTIF && agentDisponible(ctx.vertical) && !retoucheModeleAuTour && !batimentCarte && !modeleCarte && !plansAuTour
+    && !extensionAuTour && !parcoursEnCours && !maisonAuTour && !parcoursMaisonEnCours && intentionDessinModele(userText, photoAuTour);
+  const ancienneCarteAuTour = batimentAuTour && !dessinModeleAuTour && !retoucheModeleAuTour && !retoucheProposee && modeleConversation === null
+    && (!DESSIN_MODELE_ACTIF || !intentionDessinBatiment(userText, photoAuTour));
+  if (dessinModeleAuTour) system = `${system}\n\n${consigneDessinModele(photoAuTour)}`;
+  else if (retoucheModeleAuTour && modeleConversation) system = `${system}\n\n${consigneRetoucheModele(modeleConversation)}`;
+  else if (batimentAuTour && intentionDessinBatiment(userText, photoAuTour)) system = `${system}\n\n${consigneDessinBatiment(photoAuTour)}`;
   const selectedNames = new Set([
     ...selection.toolNames,
-    ...(batimentAuTour ? [OUTIL_DECRIRE_BATIMENT] : []),
+    ...(ancienneCarteAuTour || (!DESSIN_MODELE_ACTIF && batimentAuTour) ? [OUTIL_DECRIRE_BATIMENT] : []),
+    ...(dessinModeleAuTour ? [OUTIL_DESSINER_BATIMENT] : []),
+    ...(retoucheModeleAuTour || retoucheProposee ? [OUTIL_RETOUCHER_BATIMENT, OUTIL_DESSINER_BATIMENT] : []),
     ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
     // LOT G7 : une retouche d'extension peut relancer l'image de la variante (même photo, même placement).
     ...(studioAuTour || retoucheAuTour || plansAuTour ? NOMS_OUTILS_STUDIO : []),
@@ -11978,6 +12032,8 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).forme_carte = formeDuMessage(payload.message);
     // VIS-22 : même principe pour le bâtiment décrit (bloc ```mimmoza-batiment``` du bouton « Reproduire en 3D »).
     (effectiveContext as unknown as Record<string,unknown>).batiment_carte = descriptionDuMessage(payload.message);
+    // VIS-25 lot B : même principe pour la référence du bâtiment DESSINÉ (bloc ```mimmoza-modele-ref``` du même bouton).
+    (effectiveContext as unknown as Record<string,unknown>).modele_carte = referenceModeleDuMessage(payload.message);
     // VIS-18b : fond de l'image choisi dans le parcours (même principe : posé après l'instantané, jamais persisté).
     (effectiveContext as unknown as Record<string,unknown>).fond_parcours = fondDuParcours(instantaneParcours);
     // LOT X3 : le parcours d'extension lit les réponses dans le message REÇU (même principe : jamais persisté).

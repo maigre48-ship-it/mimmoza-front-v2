@@ -77,6 +77,10 @@ import {
   nonReproduits, phraseDescription, versBrief, versForme, type DescriptionBatiment, type ValidationDescription,
 } from '../../../../src/lib/studio/descriptionBatiment.ts';
 import { modifierAile, modifierCorps } from '../../../../src/spaces/copilot/studio3d/ficheDimensions.ts';
+// VIS-25 lot B : bâtiment DESSINÉ (modèle composé) — retrouvé par son empreinte, contraint par la 3D préparée, joint à la fiche du rendu.
+import { empreinteModele, type ModeleBatiment } from '../../../../src/lib/studio/modeleBatiment.ts';
+import { referenceModeleDuMessage, type ReferenceModele } from '../../../../src/lib/studio/modeleBatimentMessage.ts';
+import { depotModeleSupabase, ecartsModeleVolume, modeleContraint, modeleParEmpreinte, reservesModele, type DepotModele } from './dessin-batiment.ts';
 import { validerProjet } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';
 import { MENTION_REGLES_ESTIMEES, regleValide, volumeParBatiments } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
 // LOT X3 : projet d'extension de la conversation (maison conservée). LOT X4 site : rendu ouvert (drapeau), projet transmis
@@ -1003,6 +1007,38 @@ export async function descriptionDuFil(depot: DepotStudio, userId: string, conve
   return null;
 }
 
+/** VIS-25 lot B : vue « dépôt du modèle » d'un dépôt Studio (ancien dépôt sans lecture → aucun modèle). */
+export function depotModeleDe(d: DepotStudio): DepotModele {
+  return { sortiesModele: (u, c) => (d.sortiesModele ? d.sortiesModele(u, c) : Promise.resolve([])) };
+}
+
+/**
+ * VIS-25 lot B : bâtiment DESSINÉ en vigueur dans la conversation — même règle que descriptionDuFil : le DERNIER message
+ * d'habillage, s'il porte la référence d'un modèle (bouton « Reproduire en 3D » de la carte du modèle composé), et ce
+ * modèle retrouvé par son empreinte dans les résultats d'outils de la conversation. null sinon (jamais deviné).
+ */
+export async function modeleDuFil(depot: DepotStudio, userId: string, conversationId: string): Promise<{ modele: ModeleBatiment; empreinte: string } | null> {
+  if (!depot.briefsMessages) return null;
+  let lignes: { texte: string; cree_le: string }[] = [];
+  try { lignes = await depot.briefsMessages(userId, conversationId); } catch { return null; }
+  for (const l of lignes) {
+    const v = briefDuMessage(l.texte);
+    if (!(v?.ok && v.valeur.brief)) continue;
+    const ref = referenceModeleDuMessage(l.texte);
+    if (!ref?.ok) return null;
+    const m = await modeleParEmpreinte(depotModeleDe(depot), userId, conversationId, ref.empreinte);
+    return m ? { modele: m, empreinte: ref.empreinte } : null;
+  }
+  return null;
+}
+
+/** VIS-25 lot B : réserves du devis quand un bâtiment dessiné est rendu (ou ne peut pas l'être tel quel). */
+export function reservesModeleDevis(m: ModeleBatiment, plusieurs: boolean): string[] {
+  return plusieurs
+    ? ['Bâtiment dessiné dans le chat : non construit tel quel — ce projet compte plusieurs bâtiments ; seul son habillage est appliqué à chacun.']
+    : reservesModele(m);
+}
+
 /** VIS-22 : réserves du devis pour un bâtiment décrit (texte ou photo) : ce qui est repris, ce qui ne l'est pas encore. */
 export function reservesDescription(d: DescriptionBatiment, plusieurs = false): string[] {
   const r: string[] = [];
@@ -1265,6 +1301,8 @@ export interface ChargeJeton {
   ps?: true;
   /** VIS-04 — empreinte du brief projet du devis (retrouvé dans le fil à la confirmation) ; absent sans brief projet. */
   bp?: string;
+  /** VIS-25 lot B — empreinte du bâtiment DESSINÉ du devis (retrouvé dans la conversation à la confirmation). */
+  mb?: string;
 }
 
 const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -1337,6 +1375,12 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
      * ajoutés à la commande d'UN bâtiment ; pour plusieurs bâtiments, seule la toiture. Absente → fiche inchangée.
      */
     description?: DescriptionBatiment | null;
+    /**
+     * VIS-25 lot B : bâtiment DESSINÉ (modèle composé) en vigueur. Joint à la fiche (`modele_batiment`) seulement avec sa
+     * description (même habillage) et pour UN bâtiment : la machine de rendu le construit alors À PARTIR DU MODÈLE, ramené
+     * à la hauteur retenue par le moteur sur ce terrain (modeleContraint). Plusieurs bâtiments : non joint (dit au devis).
+     */
+    modele?: ModeleBatiment | null;
   } = {}): Validation<Obj> {
   const decrit = descriptionPourBrief(options.description, brief);
   // Composition ou plusieurs bâtiments : ni style ni éléments (le Studio les poserait sur le premier bâtiment seulement).
@@ -1400,6 +1444,11 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
     ...(brief && multi ? { habillage_batiments: (() => { const h = habillageBatiments(brief); return { ...h, clauses: clausesHabillageAvecDescription(h.clauses, decrit) }; })() } : {}),
     // VIS-22 : la description voyage aussi telle quelle (la machine de rendu journalise ce qui n'est pas encore reproduit).
     ...(decrit ? { description_batiment: decrit } : {}),
+    // VIS-25 lot B : le bâtiment DESSINÉ (un bâtiment seul, chemin commande) : la machine de rendu le construit à partir du modèle.
+    ...(decrit && options.modele && !multi && !composition ? (() => {
+      const c = modeleContraint(options.modele, v.niveaux);
+      return { modele_batiment: { v: 1, empreinte: empreinteModele(options.modele), modele: c.modele, ...(c.notes.length ? { notes: c.notes } : {}) } };
+    })() : {}),
     // Lot brief-unifié : bâtiment seul ou composition nommée — clauses et balcons sont déjà dans la commande ;
     // seuls les DÉTAILS (garde-corps, menuiseries, soubassement) voyagent à part, posés par le worker (scene.mts).
     ...(brief && !multi && detailsHabillage(brief) ? { habillage_batiments: { clauses: [], balcons: null, details: detailsHabillage(brief) } } : {}),
@@ -1482,6 +1531,11 @@ export interface DepotStudio {
   sortiesMaison?(userId: string, conversationId: string): Promise<Record<string, unknown>[]>;
   /** LOT G10b — dernier parcours de la conversation (extension ou maison neuve) ; null si aucun. */
   dernierParcours?(userId: string, conversationId: string): Promise<'extension_maison' | 'maison_neuve' | null>;
+  /**
+   * VIS-25 lot B — sorties des outils « dessiner » / « retoucher le bâtiment » de la conversation (copilot_tool_calls),
+   * plus récentes d'abord ; le modèle y est revalidé à la lecture. Facultatif (dépôt de test) ; erreur → [].
+   */
+  sortiesModele?(userId: string, conversationId: string): Promise<unknown[]>;
 }
 
 export interface EnvStudio {
@@ -1521,6 +1575,11 @@ export interface EnvStudio {
    * au moteur quand ni la fiche (`formeCarte`) ni la demande (`input.forme`) ne les fixent.
    */
   batimentCarte?: ValidationDescription | null;
+  /**
+   * VIS-25 lot B : référence (empreinte) du bâtiment DESSINÉ portée par le message du bouton « Reproduire en 3D »
+   * (bloc ```mimmoza-modele-ref```, relu par index.ts), jamais fournie par le modèle.
+   */
+  modeleCarte?: ReferenceModele | null;
 }
 
 /** Identifiant stable de la requête : le même objet de contexte est passé à chaque outil d'une requête. */
@@ -1720,6 +1779,17 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     : env.userId && env.conversationId ? (await descriptionDuFil(env.depot, env.userId, env.conversationId))?.description ?? null : null;
   const demande = description ? versForme(description) : null;
   const formeDecrite = demande?.forme && !formeVoulue ? demande.forme : null;
+  // VIS-25 lot B : bâtiment DESSINÉ (référence du message, sinon celui en vigueur dans la conversation) — jamais pour une
+  // extension ni avec une forme choisie dans la fiche. Il n'est pas « préparé » ici : ses écarts avec le volume du moteur sont DITS.
+  const refModele = env.modeleCarte ?? null;
+  let modeleDecrit: ModeleBatiment | null = null;
+  let noteModele: string | null = null;
+  if (description && !ext && !carte?.ok && env.userId && env.conversationId && !env.mission) {
+    if (refModele?.ok) {
+      modeleDecrit = await modeleParEmpreinte(depotModeleDe(env.depot), env.userId, env.conversationId, refModele.empreinte);
+      if (!modeleDecrit) noteModele = 'Le bâtiment dessiné n’a pas été retrouvé dans la conversation : seule sa description (forme, hauteur, habillage) est appliquée.';
+    } else if (!batiment) modeleDecrit = (await modeleDuFil(env.depot, env.userId, env.conversationId))?.modele ?? null;
+  }
   let noteForme: string | null = null;
   let p = await preparerVolume(c, carte?.ok ? { saisie: carte.valeur } : { forme: formeVoulue ?? formeDecrite, niveaux: demande?.niveaux ?? null });
   if (!p.ok && formeDecrite) {
@@ -1757,7 +1827,12 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       preparation_id: id, conception_id: c.id, idu: c.idu, commune: c.commune, empreinte: p.empreinte,
       calcul: 'déterministe — moteur du Dossier 3D (volumeParcelle + implantationProgramme), aucune IA',
       // VIS-22 : description du bâtiment appliquée (forme / niveaux demandés au moteur) et ce qui n'est pas encore reproduit.
-      ...(description && !env.mission ? { batiment_decrit: { description: phraseDescription(description), ecarts: notesDescription, pas_encore_reproduit: nonReproduits(description) } } : {}),
+      ...(description && !env.mission ? { batiment_decrit: {
+        description: phraseDescription(description), ecarts: [...notesDescription, ...(noteModele ? [noteModele] : [])],
+        // VIS-25 lot B : avec un bâtiment dessiné, ce que la description VIS-22 ne savait pas reproduire l'est par le modèle.
+        pas_encore_reproduit: modeleDecrit ? [] : nonReproduits(description),
+        ...(modeleDecrit ? { modele: { empreinte: empreinteModele(modeleDecrit), ecarts: ecartsModeleVolume(modeleDecrit, p.volume as unknown as Parameters<typeof ecartsModeleVolume>[1]) } } : {}),
+      } } : {}),
       // VIS-15 : écart de gabarit et assiette groupée, à dire tels quels.
       ...(p.resume.gabarit_retenu ? { gabarit_retenu: p.resume.gabarit_retenu } : {}),
       ...(p.resume.assiette ? { assiette: p.resume.assiette } : {}),
@@ -1976,8 +2051,14 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       // LOT X4 site : un projet d'extension a besoin de la limite sur rue pour TOUT rendu (moteur d'extension du worker,
       // qui la lit dans `charge.site.facadesVoie`), film et visite compris.
       const avecExtension = ext !== null;
+      // VIS-25 lot B — bâtiment dessiné du devis (empreinte signée) : relu dans la conversation ; introuvable → rien n'est lancé.
+      let modeleDevis: ModeleBatiment | null = null;
+      if (j.mb && !avecExtension) {
+        modeleDevis = await modeleParEmpreinte(depotModeleDe(env.depot), uid, j.c, j.mb);
+        if (!modeleDevis) return erreur('Le bâtiment dessiné de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer pour établir un nouveau devis, présente-le et attends l’accord.');
+      }
       const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension, briefProjet,
-        description: avecExtension ? null : (await descriptionDuFil(env.depot, uid, j.c))?.description ?? null });
+        description: avecExtension ? null : (await descriptionDuFil(env.depot, uid, j.c))?.description ?? null, modele: modeleDevis });
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }
@@ -2210,9 +2291,14 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   let aAiles = false;
   // VIS-22 : description du bâtiment en vigueur (dernier habillage envoyé par « Reproduire en 3D »), jamais pour une extension.
   let decritDevis: DescriptionBatiment | null = null;
+  // VIS-25 lot B : bâtiment dessiné en vigueur (avec sa description) ; son empreinte est signée dans le devis.
+  let modeleDevis: ModeleBatiment | null = null;
+  let mb: string | null = null;
   if (src.source.genre === 'preparation') {
     decritDevis = extension ? null : descriptionPourBrief((await descriptionDuFil(env.depot, uid, env.conversationId))?.description, brief);
-    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet, description: decritDevis });
+    modeleDevis = decritDevis ? (await modeleDuFil(env.depot, uid, env.conversationId))?.modele ?? null : null;
+    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet, description: decritDevis, modele: modeleDevis });
+    mb = f.ok && estObj(f.valeur.modele_batiment) && typeof f.valeur.modele_batiment.empreinte === 'string' ? f.valeur.modele_batiment.empreinte : null;
     if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
     plusieurs = ((f.valeur.charge as { compositionArchitecture?: unknown[] }).compositionArchitecture?.length ?? 0) >= 2;
     nbBatiments = (f.valeur.charge as { batiments?: unknown[] }).batiments?.length ?? 0;
@@ -2241,13 +2327,14 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   const bp = briefProjet && src.source.genre === 'preparation' ? empreinteChamps(briefProjet) : null;
   const memeDevis = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete && c.t === type
     && jsonCanonique(c.o) === jsonCanonique(opts.valeur) && jsonCanonique(c.s) === jsonCanonique(sourceJeton)
-    && (c.b ?? null) === (brief ? encoderBrief(brief) : null) && (c.bp ?? null) === bp;
+    && (c.b ?? null) === (brief ? encoderBrief(brief) : null) && (c.bp ?? null) === bp && (c.mb ?? null) === mb;
   const existant = await devisDeLaConversation(env, uid, memeDevis, true);
   const charge: ChargeJeton = existant?.charge ?? {
     v: 1, id: crypto.randomUUID(), u: uid, t: type, o: opts.valeur, s: sourceJeton,
     c: env.conversationId, iat: maintenant, exp: maintenant + DEVIS_VALIDITE_MS, rq: env.requete,
     ...(brief ? { b: encoderBrief(brief) } : {}),
     ...(bp ? { bp } : {}),
+    ...(mb ? { mb } : {}),
   };
   const devis = {
     rendu: `${LIBELLE_TYPE[type]} — ${resumeOptions(type, opts.valeur)}`,
@@ -2261,7 +2348,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     ...(type === 'image' ? { fond: LIBELLES_FOND[fondDe(opts.valeur)] } : {}),
-    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(decritDevis ? reservesDescription(decritDevis, plusieurs || nbBatiments > 0) : []), ...(fondImage?.avertissements ?? []),
+    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(decritDevis && !mb ? reservesDescription(decritDevis, plusieurs || nbBatiments > 0) : []),
+      ...(modeleDevis ? reservesModeleDevis(modeleDevis, !mb) : []), ...(fondImage?.avertissements ?? []),
       ...notesVues,
       ...phrasesPronosticVues(pronostic),
       ...(briefProjet && bp ? ['Brief du projet (Style & tendances, programme, habillage) : transmis au Studio, qui l’applique avec ses matières de catalogue et liste dans le résultat ce qu’il n’applique pas.'] : []),
@@ -2831,6 +2919,8 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
       }
       return n;
     },
+    // VIS-25 lot B : lecture serveur bornée à l'utilisateur ET à la conversation ; le modèle est revalidé à la lecture.
+    sortiesModele: depotModeleSupabase(admin).sortiesModele,
     async briefsMessages(userId, conversationId) {
       // Lecture serveur (service) bornée à l'utilisateur ET à la conversation ; le bloc est revalidé par briefDuMessage.
       const { data, error } = await admin.from('copilot_messages').select('content,created_at')

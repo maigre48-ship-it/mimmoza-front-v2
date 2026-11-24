@@ -28,6 +28,9 @@ import { champsBriefDeLaConversation } from '@/spaces/promoteur/shared/briefProj
 // VIS-22 : bâtiment décrit dans le chat (texte ou photo) — ses clauses habillent la commande envoyée au Studio.
 import { commandeAvecDescription, type DescriptionBatiment } from '@/lib/studio/descriptionBatiment';
 import { descriptionCourante } from './descriptionBatimentChat';
+// VIS-25 lot B : bâtiment DESSINÉ en vigueur (modèle composé) — complément `modeleBatiment` envoyé au Studio avec le projet.
+import { modeleCourant } from './modeleBatimentChat';
+import type { ModeleBatiment } from '@/lib/studio/modeleBatiment';
 import { useCopilotStore } from '../store/copilotStore';
 
 /** Terrain retenu pour la conversation, ou celui qui vient d'être confirmé. */
@@ -122,6 +125,19 @@ function descriptionDeLaConversation(conversationId: string): DescriptionBatimen
   try {
     const etat = useCopilotStore.getState();
     return etat.currentConversationId === conversationId ? descriptionCourante(etat.messages) : null;
+  } catch { return null; }
+}
+
+/**
+ * VIS-25 lot B : bâtiment DESSINÉ en vigueur dans la conversation affichée par le chat (dernier « Reproduire en 3D » de
+ * la carte du modèle composé, tant qu'aucun autre habillage n'a été choisi ensuite) ; null pour une autre conversation.
+ * À passer au Studio en COMPLÉMENT du projet : `voirEn3D(fiche, conversationId, undefined, { complements: { modeleBatiment } })`.
+ * La description VIS-22 du même message reste appliquée à la commande (repli si le Studio ne lit pas le complément).
+ */
+export function modeleDeLaConversation(conversationId: string): ModeleBatiment | null {
+  try {
+    const etat = useCopilotStore.getState();
+    return etat.currentConversationId === conversationId ? modeleCourant(etat.messages) : null;
   } catch { return null; }
 }
 
