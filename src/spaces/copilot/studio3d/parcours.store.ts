@@ -73,7 +73,7 @@ export function instantaneParcoursPour(conversationId: string | null | undefined
 export const CLE_COLONNES_STUDIO = 'mimmozia.ui.colonnes';
 /** VIS-23 — étape demandée au prochain chargement du Studio (même nom que `CLE_ETAPE_DEMANDEE` côté Studio). */
 export const CLE_ETAPE_DEMANDEE_STUDIO = 'mimmozia.ui.etape-demandee';
-export function preparerEtapeStudio(etape: 'batiment' | 'amenagement', sous: string): void {
+export function preparerEtapeStudio(etape: 'batiment' | 'amenagement' | 'dessins', sous: string): void {
   try {
     const brut = JSON.parse(window.localStorage.getItem(CLE_COLONNES_STUDIO) ?? 'null') as Record<string, unknown> | null;
     const base = brut && typeof brut === 'object' ? brut : {};
@@ -91,7 +91,8 @@ export function preparerEtapeStudio(etape: 'batiment' | 'amenagement', sous: str
 /** Événement : ouvrir le Studio intégré sur une étape (MimmozIAPage l'écoute). */
 export const EVENEMENT_PARCOURS_STUDIO = 'mimmoza:parcours-studio';
 export interface DemandeParcoursStudio {
-  etape: 'batiment' | 'amenagement';
+  /** VIS-27 : « dessins » = étape « Plans & dossier » (sous « plans-vues » : plans du bâtiment dessiné, PDF / DXF). */
+  etape: 'batiment' | 'amenagement' | 'dessins';
   sous: string;
   /** Réponse de la page (message à afficher), null si le Studio s'est ouvert sans remarque. */
   repondre: (message: string | null) => void;

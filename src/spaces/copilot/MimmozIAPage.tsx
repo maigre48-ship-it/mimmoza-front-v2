@@ -687,7 +687,7 @@ export default function MimmozIAPage() {
       if (!d) return;
       d.prise = true;
       preparerEtapeStudio(d.etape, d.sous);
-      const libelle = d.etape === 'amenagement' ? '« Aménagement », onglet « Intérieur »' : '« Bâtiment »';
+      const libelle = d.etape === 'amenagement' ? '« Aménagement », onglet « Intérieur »' : d.etape === 'dessins' ? '« Plans & dossier », onglet « Plans »' : '« Bâtiment »';
       const state = useCopilotStore.getState();
       const conversationId = state.currentConversationId;
       const avant = studio3dRef.current;

@@ -82,12 +82,15 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
     setCliquee(true);
     onSend(messageReproduireModele(m, carte.empreinte));
   };
-  const voirDansStudio = () => {
+  const ouvrirStudio = (etape: DemandeParcoursStudio['etape'], sous: string) => {
     setNoteStudio(null);
-    const demande: DemandeParcoursStudio = { etape: 'batiment', sous: 'batiment', repondre: setNoteStudio };
+    const demande: DemandeParcoursStudio = { etape, sous, repondre: setNoteStudio };
     window.dispatchEvent(new CustomEvent(EVENEMENT_PARCOURS_STUDIO, { detail: demande }));
     if (!demande.prise) setNoteStudio('Le Studio s’ouvre depuis la page MimmozIA.');
   };
+  const voirDansStudio = () => ouvrirStudio('batiment', 'batiment');
+  // VIS-27 : plans indicatifs du dessin (niveaux, façades, coupe ; PDF / DXF) — Studio, « Plans & dossier » › « Plans ».
+  const voirLesPlans = () => ouvrirStudio('dessins', 'plans-vues');
   const origine = carte.retouche ? 'Retouché' : m.origine === 'photo' ? 'D’après votre photo' : 'D’après votre description';
 
   return (
@@ -146,7 +149,8 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
       {envoyee && preparee && !remplacee && (
         <p className="mz-mod__envoye" role="status">
           3D préparée d’après ce dessin.{' '}
-          <button type="button" className="mz-mod__lien" onClick={voirDansStudio}>Voir dans le Studio</button>
+          <button type="button" className="mz-mod__lien" onClick={voirDansStudio}>Voir dans le Studio</button>{' · '}
+          <button type="button" className="mz-mod__lien" onClick={voirLesPlans}>Plans (PDF / DXF)</button>
         </p>
       )}
       {noteStudio && <p className="mz-mod__remplacee" role="status">{noteStudio}</p>}
