@@ -81,6 +81,10 @@ import {
   OUTIL_DESSINER_BATIMENT, OUTIL_DESSINER_BATIMENT_DEF, OUTIL_RETOUCHER_BATIMENT, OUTIL_RETOUCHER_BATIMENT_DEF, referenceModeleDuMessage,
   type MemoireTour,
 } from './agent/dessin-batiment.ts';
+// VIS-45 : un seul chat — le chat Mimmoza commande le Studio 3D (le site transmet ; comptes rendus relus en mémoire).
+import {
+  blocComptesRendusStudio, executerOutilStudioCommander, OUTIL_STUDIO_COMMANDER, OUTIL_STUDIO_COMMANDER_DEF, studioCommandePertinente,
+} from './agent/studio-commandes.ts';
 // VIS-16 : « Préparer la plaquette » — état réel des missions, pack plaquette.
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
 import { etatMissionsUtile } from './agent/etat-missions.ts';
@@ -4618,6 +4622,8 @@ const TOOLS: ToolDef[] = [
   // VIS-25 lot B : modèle COMPOSÉ (dessiner n'importe quoi) et retouches par différences (proposés seulement quand le tour en parle).
   OUTIL_DESSINER_BATIMENT_DEF,
   OUTIL_RETOUCHER_BATIMENT_DEF,
+  // VIS-45 : le chat pilote le Studio (proposé seulement quand le tour parle d'un geste du Studio).
+  OUTIL_STUDIO_COMMANDER_DEF,
 ];
 
 /**
@@ -4765,6 +4771,11 @@ async function executeTool(
         userId: auth?.userId ?? null, conversationId: typeof brutCtx.conversation_id === 'string' ? brutCtx.conversation_id : null,
         photoAuTour: PHOTOS_DU_TOUR.has(ctx as unknown as object), depot: depotModeleSupabase(getAdmin()), memoire: memoireModele(ctx),
       })) as ToolResult;
+    }
+    case OUTIL_STUDIO_COMMANDER: {
+      // VIS-45 : le modèle PROPOSE la commande, le serveur la VALIDE ; l'accord est lu dans le message REÇU.
+      const brut = ctx as unknown as Record<string, unknown>;
+      return executerOutilStudioCommander(input, { texteRecu: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '' }) as ToolResult;
     }
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
@@ -10611,7 +10622,12 @@ async function buildParcoursBlock(conversationId: string, userId: string, instan
       messageCourant,
       temoin: !temoins.error && temoins.data ? temoins.data : null,
     });
-    return bloc;
+    // VIS-45 : derniers comptes rendus du Studio (rangés par le site, sans jetons) — un seul fil, une seule mémoire.
+    const traces = await admin.from('copilot_action_runs').select('created_at, message, outcome, params')
+      .eq('conversation_id', conversationId).eq('user_id', userId).eq('params->>origine', 'studio')
+      .order('created_at', { ascending: false }).limit(8);
+    const blocStudio = !traces.error && Array.isArray(traces.data) ? blocComptesRendusStudio(traces.data) : '';
+    return [bloc, blocStudio].filter(Boolean).join('\n\n');
   } catch (e) {
     console.warn('[copilot] parcours indisponible :', e);
     return '';
@@ -11054,7 +11070,7 @@ async function runOrchestrator(params: {
   let system = [systemBase, consigneCarte, consigneChat].filter(Boolean).join('\n\n');
   const availableTools = toolsForMode(mode)
     .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE || tool.name === OUTIL_DECRIRE_BATIMENT
-      || tool.name === OUTIL_DESSINER_BATIMENT || tool.name === OUTIL_RETOUCHER_BATIMENT))
+      || tool.name === OUTIL_DESSINER_BATIMENT || tool.name === OUTIL_RETOUCHER_BATIMENT || tool.name === OUTIL_STUDIO_COMMANDER))
     .filter((tool) => !outilHorsChat(tool.name, ctx.route));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
@@ -11133,6 +11149,8 @@ async function runOrchestrator(params: {
     ...(studioAuTour || retoucheAuTour || plansAuTour ? NOMS_OUTILS_STUDIO : []),
     ...(extensionAuTour || parcoursEnCours ? [OUTIL_EXTENSION_MAISON] : []),
     ...(maisonAuTour || parcoursMaisonEnCours ? [OUTIL_MAISON_NEUVE] : []),
+    // VIS-45 : geste du Studio demandé (ou réponse « oui » à une question d'accord de Mimmo) → outil de commande du Studio.
+    ...(agentDisponible(ctx.vertical) && studioCommandePertinente([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? [OUTIL_STUDIO_COMMANDER] : []),
     // Lot INT-10 : l'architecte d'intérieur reste proposé tant que le tour (ou la question précédente) parle d'aménagement.
     ...(interieurPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? ['amenager_interieur'] : []),
   ]);

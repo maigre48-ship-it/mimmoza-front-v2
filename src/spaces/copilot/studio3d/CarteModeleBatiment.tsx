@@ -18,6 +18,10 @@ import { usePreparationCourante } from './preparationBase';
 import { phrasePortee as phraseRemplacement, placeDuDessin } from '@/lib/studio/projetEnVigueur';
 import { EVENEMENT_PARCOURS_STUDIO, type DemandeParcoursStudio } from './parcours.store';
 import './CarteModeleBatiment.css';
+// VIS-45 : « Plans » = la VRAIE commande du Studio (plans d'architecte VIS-44), compte rendu et fichiers dans la carte.
+import { envoyerCommandeStudio, useCommandesStudio } from './pontCommandesSite';
+import { ResultatCommandeStudio, suiviDeTrace } from './CarteCommandeStudio';
+import { projetIdChat } from './projetChat';
 
 interface Props {
   carte: CarteModele;
@@ -99,8 +103,24 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
     if (!demande.prise) setNoteStudio('Le Studio s’ouvre depuis la page MimmozIA.');
   };
   const voirDansStudio = () => ouvrirStudio('batiment', 'batiment');
-  // VIS-27 : plans indicatifs du dessin (niveaux, façades, coupe ; PDF / DXF) — Studio, « Plans & dossier » › « Plans ».
-  const voirLesPlans = () => ouvrirStudio('dessins', 'plans-vues');
+  // VIS-45 : plans d'architecte (PDF A3, DXF, IFC4, SVG, surfaces) générés par le Studio sur commande — le clic vaut accord
+  // (une commande par clic ; bouton inactif tant qu'elle tourne). Studio fermé : commande en attente + ouverture du Studio.
+  const [appelPlans, setAppelPlans] = useState<string | null>(null);
+  const runs = useCopilotStore((s) => s.actionRuns);
+  const suiviDirect = useCommandesStudio((s) => (appelPlans ? s.parAppel[appelPlans] : undefined));
+  const suiviPlans = suiviDirect ?? (appelPlans ? suiviDeTrace(runs as never, appelPlans) : null)
+    ?? [...runs].reverse().map((r) => (typeof r.params?.appelId === 'string' && r.params.appelId.startsWith(`carte-plans-${messageId}`) ? suiviDeTrace(runs as never, r.params.appelId) : null)).find(Boolean) ?? null;
+  const plansEnCours = suiviPlans?.etat === 'envoi' || suiviPlans?.etat === 'en-cours';
+  const voirLesPlans = () => {
+    if (!conversationId || plansEnCours) return;
+    setNoteStudio(null);
+    const appelId = `carte-plans-${messageId}-${Date.now().toString(36)}`;
+    setAppelPlans(appelId);
+    void envoyerCommandeStudio({
+      projetId: projetIdChat(conversationId), conversationId, messageId: messageId.startsWith('local-') ? null : messageId, appelId,
+      libelle: 'Plans d’architecte', commande: { id: 'plans-architecte', params: { format: 'A3' }, confirme: true },
+    }).then((r) => { if (r.etat === 'attente') ouvrirStudio('dessins', 'plans-vues'); });
+  };
   const origine = carte.retouche ? 'Retouché' : m.origine === 'photo' ? 'D’après votre photo' : 'D’après votre description';
 
   return (
@@ -167,9 +187,11 @@ export function CarteModeleBatiment({ carte, messageId, onSend }: Props) {
         <p className="mz-mod__envoye" role="status">
           3D préparée d’après ce dessin.{' '}
           <button type="button" className="mz-mod__lien" onClick={voirDansStudio}>Voir dans le Studio</button>{' · '}
-          <button type="button" className="mz-mod__lien" onClick={voirLesPlans}>Plans (PDF / DXF)</button>
+          <button type="button" className="mz-mod__lien" onClick={voirLesPlans} disabled={plansEnCours}
+            title="Plans d’architecte générés par le Studio : PDF, DXF AutoCAD, IFC4, SVG et tableau des surfaces">Générer les plans d’architecte</button>
         </p>
       )}
+      {suiviPlans && <ResultatCommandeStudio suivi={suiviPlans} onOuvrirStudio={() => ouvrirStudio('dessins', 'plans-vues')} />}
       {noteStudio && <p className="mz-mod__remplacee" role="status">{noteStudio}</p>}
       {remplacee && <p className="mz-mod__remplacee">Une version plus récente de ce bâtiment se trouve plus bas.</p>}
     </section>

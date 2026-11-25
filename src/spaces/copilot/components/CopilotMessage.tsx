@@ -47,6 +47,9 @@ import { lireCarteBatiment } from '../studio3d/descriptionBatimentChat';
 import { sansBlocDescription } from '@/lib/studio/descriptionBatiment';
 // VIS-25 lot B : carte « Votre bâtiment » du modèle composé (dessiner n'importe quoi, retouches en parlant).
 import { CarteModeleBatiment } from '../studio3d/CarteModeleBatiment';
+// VIS-45 : commande du chat exécutée par le Studio (compte rendu, plans) et activité du Studio rattachée au message.
+import { CarteCommandeStudio, LignesStudio } from '../studio3d/CarteCommandeStudio';
+import { lireCarteCommande } from '../studio3d/pontCommandesSite';
 import { lireCarteModele } from '../studio3d/modeleBatimentChat';
 import { sansBlocReference } from '@/lib/studio/modeleBatimentMessage';
 // Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
@@ -213,6 +216,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             { const batiment = lireCarteBatiment(tc); if (batiment) return <CarteDescriptionBatiment key={tc.id} carte={batiment} messageId={message.id} onSend={onSend} />; }
             // VIS-25 lot B : bâtiment dessiné (modèle composé) ou retouché → carte « Votre bâtiment » (à la place de la carte d'outil).
             { const modele = lireCarteModele(tc); if (modele) return <CarteModeleBatiment key={tc.id} carte={modele} messageId={message.id} onSend={onSend} />; }
+            // VIS-45 : le chat commande le Studio → carte de la commande (envoi unique, compte rendu, fichiers des plans).
+            { const cmd = lireCarteCommande(tc); if (cmd) return <CarteCommandeStudio key={tc.id} carte={cmd} messageId={message.id} />; }
             { const photo = lireDemandePhotoMaison(tc); if (photo) return <DemandePhotoMaison requise={photo} contour={photo.contour} onSend={onSend} afficherTexte />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
@@ -274,6 +279,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     || !!lireDemandePhotoMaison(tc)
     || !!lireCarteBatiment(tc)
     || !!lireCarteModele(tc)
+    || !!lireCarteCommande(tc)
     || !!lireDemandeBrief(tc)
     || (OUTILS_PHOTO_PROJET.has(tc.name) && tc.status !== 'running' && !!lireDemandeAccordPhoto(tc.output))
     || (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running')
@@ -326,6 +332,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
           {appelsAction.map((tc) => <CopilotRenderBoundary key={tc.id} label="Action proposée">{rendreAppel(tc)}</CopilotRenderBoundary>)}
         </div>
       )}
+      {/* VIS-45 : comptes rendus automatiques du Studio (« Bâtiment posé… », « Relief mesuré… »), sans jetons. */}
+      <LignesStudio messageId={message.id} />
       {choix.bloc && message.status === 'complete' && !carteBriefDemandee && <CopilotRenderBoundary label="Réponses proposées">
         <ChoixCliquables bloc={choix.bloc} messageId={message.id} actif={situation.actif}
           reponse={situation.reponse === null ? null : lireBlocBrief(situation.reponse).visible} onRemplirSaisie={onRemplirSaisie} />

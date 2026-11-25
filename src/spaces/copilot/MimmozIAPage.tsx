@@ -79,6 +79,8 @@ import { avecProchaineRevision, preparerChargeVoirEn3D, projetDeLaConversationRe
 import { complementsDessin } from '@/lib/studio/projetEnVigueur';
 import { empreinteProjet } from '@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2';
 import { urlStudio } from '@/lib/studioConfig';
+// VIS-45 : un seul chat (celui-ci) qui pilote le Studio — commandes, comptes rendus, fil de la conversation.
+import { usePontCommandesStudio } from './studio3d/usePontCommandesStudio';
 // Premier contact guidé : encart + checklist chargés en différé ; le suivi des
 // exports PDF et la réservation de place sont des modules légers.
 import { useSuiviExportPdf } from './onboarding/useSuiviExportPdf';
@@ -223,6 +225,7 @@ export default function MimmozIAPage() {
   const firstName = useDisplayFirstName();
   const { tagline, profile: profilAppris } = useMimmozIAProfile();
   const send = useMemo(() => pickSend(copilot), [copilot]);
+  usePontCommandesStudio(send ? (texte: string) => send(texte) : undefined);
 
   // --- Sidebar : repli (persistant) + drawer mobile ---
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
