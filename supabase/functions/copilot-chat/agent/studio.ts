@@ -55,6 +55,10 @@ import {
   FORME_BLOC_LANGUE, blocForme, type Forme, type PreparationFiche, type SaisieDimensions,
 } from './studio-front.ts';
 import type { ResultatOutil } from './types.ts';
+// VIS-46 — films commandés par le chat : scénario (contrat ScenarioFilm v1) porté par le devis et le travail.
+import { empreinteScenario, resumerScenario, type ScenarioFilm } from '../../../../src/lib/studio/scenarioFilm.ts';
+import { lireBlocScenario, optionsFilmDepuisScenario, type BlocScenario } from '../../../../src/lib/studio/filmsChat.ts';
+import type { DepotFilms } from './studio-films.ts';
 // LOT P2 (11/11/2026) — image dans sa rue : options de fond (règles partagées avec le site et la base), couverture
 // Panoramax (Licence Ouverte, instance IGN) et façades sur voie transmises à la machine de rendu.
 import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from '../../../../src/lib/studio/fondImage.ts';
@@ -1421,6 +1425,11 @@ export interface ChargeJeton {
   bp?: string;
   /** VIS-25 lot B — empreinte du bâtiment DESSINÉ du devis (retrouvé dans la conversation à la confirmation). */
   mb?: string;
+  /**
+   * VIS-46 — empreinte du SCÉNARIO de film du devis (« sf1-… ») : le scénario lui-même n'est pas dans le jeton (taille) ; il
+   * est relu à la confirmation (message reçu, sinon blocs ```mimmoza-scenario``` et propositions de la conversation).
+   */
+  sf?: string;
 }
 
 const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -1717,6 +1726,14 @@ export interface EnvStudio {
    * seul bâtiment »), relue par index.ts dans le message REÇU (porteeDuMessage), jamais fournie par le modèle.
    */
   porteeCarte?: PorteeDessin | null;
+  /**
+   * VIS-46 — bloc ```mimmoza-scenario``` du message REÇU (carte « Scénario du film », relu par index.ts avec lireBlocScenario),
+   * jamais fourni par le modèle. Action « lancer » = clic « Valider et lancer le film » : accord ET prix acceptés par ce clic
+   * (devis puis lancement dans le même tour, sans seconde question ; un seul travail par scénario + projet).
+   */
+  scenarioCarte?: { ok: true; valeur: BlocScenario } | { ok: false; erreurs: string[] } | null;
+  /** VIS-46 — lecture des scénarios de la conversation (facultatif : anciens dépôts, tests). */
+  depotFilms?: DepotFilms | null;
 }
 
 /** Identifiant stable de la requête : le même objet de contexte est passé à chaque outil d'une requête. */
@@ -2209,17 +2226,67 @@ async function photoProjetConversation(env: EnvStudio, uid: string): Promise<Pho
   try { return photoProjetDesSorties(await env.depot.sortiesExtension(uid, env.conversationId)); } catch { return null; }
 }
 
+// ── VIS-46 — scénario de film du devis ────────────────────────────────────
+
+/** Avertissement DIT quand la base n'accepte pas encore `options.scenario` (migration 20261125120000 non appliquée). */
+export const AVERTISSEMENT_SCENARIO_SANS_MIGRATION =
+  'La base n’accepte pas encore le scénario dans les options du film (migration 20261125120000 non appliquée) : le scénario part dans la fiche ' +
+  'du travail (`fiche.scenario_film`), que la machine de rendu À JOUR (VIS-47) lit ; une machine de rendu plus ancienne suivrait le découpage ' +
+  'automatique avec la durée, la lumière, le format et la musique les plus proches. Dis-le clairement.';
+
+/** Scénario d'un devis, par son empreinte : message reçu, puis blocs de la conversation, puis propositions de l'outil. */
+export async function scenarioParEmpreinte(env: EnvStudio, uid: string, conversationId: string, sf: string): Promise<ScenarioFilm | null> {
+  if (env.scenarioCarte?.ok && empreinteScenario(env.scenarioCarte.valeur.scenario) === sf) return env.scenarioCarte.valeur.scenario;
+  if (!env.depotFilms) return null;
+  for (const l of await env.depotFilms.scenariosMessages(uid, conversationId)) {
+    const b = lireBlocScenario(l.texte);
+    if (b?.ok && empreinteScenario(b.valeur.scenario) === sf) return b.valeur.scenario;
+  }
+  return null;
+}
+
+/** Dernier scénario envoyé par la carte dans la conversation (bloc d'un message utilisateur, valide) ; null sinon. */
+export async function dernierScenarioDuFil(env: EnvStudio, uid: string): Promise<ScenarioFilm | null> {
+  if (!env.depotFilms || !env.conversationId) return null;
+  for (const l of await env.depotFilms.scenariosMessages(uid, env.conversationId)) {
+    const b = lireBlocScenario(l.texte);
+    if (b?.ok) return b.valeur.scenario;
+  }
+  return null;
+}
+
+/** Identifiant de devis STABLE (forme UUID) pour un scénario : utilisateur, conversation, scénario, projet, habillage, options. */
+export async function idDevisScenario(uid: string, conversationId: string, sf: string, source: unknown, mb: string | null, brief: string | null, options: unknown, rang = 0): Promise<string> {
+  const h = await sha256Hex(jsonCanonique({ uid, conversationId, sf, source, mb, brief, options, ...(rang ? { rang } : {}) }));
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
 async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (!env.secret) return erreur('Rendus indisponibles : secret de devis non configuré côté serveur.', 'not_configured');
   if (!env.conversationId) return erreur('Ouvrez d’abord une conversation : le rendu est rattaché au chat.');
   const maintenant = (env.maintenant ?? Date.now)();
   const uid = env.userId!;
+  // VIS-46 — « Valider et lancer le film » (bloc du message REÇU) : le clic vaut accord sur le devis affiché par la carte
+  // (aucun débit : les rendus ne sont pas facturés) → devis puis lancement dans CE tour, sans seconde question.
+  if (env.scenarioCarte && !env.scenarioCarte.ok) return erreur(`Le scénario de la carte n’a pas été accepté (${env.scenarioCarte.erreurs.join(' ; ')}). RIEN N’A ÉTÉ LANCÉ. Propose de corriger le scénario dans la carte.`);
+  const clic = env.scenarioCarte?.ok && env.scenarioCarte.valeur.action === 'lancer' ? env.scenarioCarte.valeur : null;
+  const sfClic = clic ? empreinteScenario(clic.scenario) : null;
+  if (clic && input.__clic_film !== true) {
+    const devis = await lancerRendu({ type: 'film', __clic_film: true }, env);
+    const jetonDevis = (devis.data as Obj | undefined)?.jeton_devis;
+    // Question d'habillage, refus, plafond… : rien n'est lancé, la réponse le dit (le scénario reste dans la conversation).
+    if (devis.status !== 'confirmation_requise' || typeof jetonDevis !== 'string') return devis;
+    const lance = await lancerRendu({ confirmer: true, type: 'film', jeton_devis: jetonDevis, __clic_film: true }, env);
+    const d = devis.data as Obj;
+    return { ...lance, data: { ...(lance.data ?? {}), devis: d.devis, scenario_film: d.scenario_film } };
+  }
 
   // ── Temps 2 : confirmation ───────────────────────────────────
   if (input.confirmer === true) {
     const lu = await lireJeton(input.jeton_devis, env.secret);
     const fourni = lu && lu.u === uid ? lu : null;
-    const confirmable = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete
+    // VIS-46 : le devis du clic « Valider et lancer le film » se confirme dans le même tour (même scénario, même empreinte).
+    const confirmable = (c: ChargeJeton) => c.exp >= maintenant && (c.rq !== env.requete || (sfClic !== null && c.sf === sfClic))
       && (input.type === undefined || input.type === c.t);
     // Le jeton recopié par le modèle d'abord ; sinon (absent, expiré, du même tour, autre type),
     // le dernier devis présenté dans la conversation et encore confirmable.
@@ -2295,10 +2362,31 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     fiche.devis_id = j.id;
     // FINITIONS 18/11 — plans seuls : la machine de rendu saute l'image et ne produit que les plans.
     if (j.ps) fiche.plans_seuls = true;
+    let optionsTravail: Obj = avecLivraisonParDefaut(j.t, j.o, { plansSeuls: !!j.ps });
+    // VIS-46 — scénario du devis (empreinte signée) : relu, puis transmis dans `options.scenario` si la base l'accepte
+    // (migration 20261125120000) ; TOUJOURS aussi dans `fiche.scenario_film` (le scénario lui-même : repli lu par le worker
+    // VIS-47, worker/src/options.ts › lireScenarioDuTravail, et historique). Sans migration : options d'avant + AVERTISSEMENT.
+    let noteScenario = '';
+    if (j.sf) {
+      const sc = await scenarioParEmpreinte(env, uid, j.c, j.sf);
+      if (!sc) return erreur('Le scénario de film de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ. Propose de revalider le scénario dans la carte.');
+      const avec = { ...optionsTravail, scenario: sc };
+      const accepte = await env.depot.typeRenduAutorise('film', avec);
+      if (accepte !== false) optionsTravail = avec; else noteScenario = AVERTISSEMENT_SCENARIO_SANS_MIGRATION;
+      fiche.scenario_film = sc;
+    }
     let t: TravailLu;
     try {
       // VIS-10 : image en qualité finale ⇒ livraison commerciale demandée (drapeau VUES_VIS_INT2_ACTIVES ; aperçu, plans seuls : rien).
-      t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: j.t, fiche, options: avecLivraisonParDefaut(j.t, j.o, { plansSeuls: !!j.ps }) });
+      try {
+        t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: j.t, fiche, options: optionsTravail });
+      } catch (e) {
+        // VIS-46 : base qui n'a pas répondu au contrôle puis refuse la clé `scenario` → options d'avant, DIT.
+        if (!(optionsTravail.scenario && /Options du travail invalides/.test(e instanceof Error ? e.message : String(e)))) throw e;
+        const { scenario: _s, ...sans } = optionsTravail;
+        optionsTravail = sans; noteScenario = AVERTISSEMENT_SCENARIO_SANS_MIGRATION;
+        t = await env.depot.insererTravail(uid, { conversation_id: j.c, type: j.t, fiche, options: optionsTravail });
+      }
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       if (/déjà 2 films ou visites|studio_jobs_plafond/.test(m)) return erreur(`Vous avez déjà ${NOMBRE_MAX_TRAVAUX_ACTIFS} rendus en préparation : attendez qu’un se termine. RIEN N’A ÉTÉ LANCÉ.`);
@@ -2309,8 +2397,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     const machine = etatMachine(await env.depot.statsFile(), maintenant);
     return {
       status: 'ok', source: SOURCE_STUDIO,
-      data: { lance: true, ...vueTravail(t), machine: machine.phrase, suivi: 'studio_etat_rendu (sans argument : le plus récent de la conversation)' },
-      message: (j.ps ? 'Plans (SANS image) ENREGISTRÉS dans la file : n’annonce aucune image. ' : '') + 'Rendu ENREGISTRÉ dans la file (statut « en attente » tant que la machine de rendu ne l’a pas pris). ' +
+      data: { lance: true, ...vueTravail(t), machine: machine.phrase, suivi: 'studio_etat_rendu (sans argument : le plus récent de la conversation)',
+        ...(j.sf ? { scenario_transmis: !noteScenario, ...(noteScenario ? { avertissement_scenario: noteScenario } : {}) } : {}) },
+      message: (noteScenario ? `${noteScenario} ` : '') + (j.sf && !noteScenario ? 'Film lancé AVEC le scénario validé dans la carte (transmis tel quel à la machine de rendu, dans les options du film). ' : '') +
+        (j.ps ? 'Plans (SANS image) ENREGISTRÉS dans la file : n’annonce aucune image. ' : '') + 'Rendu ENREGISTRÉ dans la file (statut « en attente » tant que la machine de rendu ne l’a pas pris). ' +
         'Dis qu’il est enregistré ; n’annonce aucun démarrage ni délai qui ne soit pas renvoyé. Le suivi s’affiche aussi dans le Dossier 3D.' +
         ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' +
         MESSAGE_ETAT_EN_DIRECT,
@@ -2323,11 +2413,16 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // Brief créatif : bloc du message de l'utilisateur, relu par le serveur (prioritaire sur le modèle).
   const carte = env.briefCarte ?? null;
   if (carte && !carte.ok) return erreur(`Le brief de la carte n’a pas été accepté (${carte.erreur}). RIEN N’A ÉTÉ LANCÉ. Propose à l’utilisateur de refaire ses choix dans la carte d’habillage de l’Espace 3D.`);
-  const type = (input.type ?? (carte?.ok ? carte.valeur.type : undefined)) as TypeRendu;
+  let type = (input.type ?? (carte?.ok ? carte.valeur.type : undefined)) as TypeRendu;
+  // VIS-46 — scénario du film : celui du clic (message reçu), sinon le DERNIER scénario envoyé par la carte dans la
+  // conversation (le scénario « en vigueur ») pour un film demandé autrement ; ses options d'avant en découlent.
+  const scenarioDevis: ScenarioFilm | null = clic ? clic.scenario : type === 'film' ? await dernierScenarioDuFil(env, uid) : null;
+  const ecartsScenario: string[] = [];
+  if (scenarioDevis) { type = 'film'; const o = optionsFilmDepuisScenario(scenarioDevis); ecartsScenario.push(...o.ecarts); }
   // LOT P2 : le fond choisi dans la carte (lu dans le message reçu) l'emporte sur celui du modèle.
   let optionsDemandees: unknown = type === 'image' && carte?.ok && carte.valeur.fond
     ? { ...Object.fromEntries(Object.entries(estObj(input.options) ? input.options : {}).filter(([k]) => !(CLES_FOND as readonly string[]).includes(k))), ...carte.valeur.fond }
-    : input.options;
+    : scenarioDevis ? optionsFilmDepuisScenario(scenarioDevis).options : input.options;
   // VIS-18b : fond choisi dans le parcours (étape 6) — priorité : carte du devis > fond écrit dans la demande > parcours.
   // Un fond « étude » écrit par le modèle (souvent recopié d'un devis précédent) ne masque pas le choix du parcours.
   const fondDuParcoursRetenu = type === 'image' && !(carte?.ok && carte.valeur.fond) && (!fondExplicite(input.options) || fondDe(input.options as Obj) === 'etude') && env.fondParcours
@@ -2555,12 +2650,25 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // Alors on le renvoie tel quel (même jeton) : l'accord donné après l'avoir lu reste confirmable.
   // VIS-04 : une version enregistrée est rendue telle quelle (le brief projet ne s'y applique pas : dit plus bas).
   const bp = briefProjet && src.source.genre === 'preparation' ? empreinteChamps(briefProjet) : null;
+  const sf = scenarioDevis ? empreinteScenario(scenarioDevis) : null;
   const memeDevis = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete && c.t === type
     && jsonCanonique(c.o) === jsonCanonique(opts.valeur) && jsonCanonique(c.s) === jsonCanonique(sourceJeton)
-    && (c.b ?? null) === (brief ? encoderBrief(brief) : null) && (c.bp ?? null) === bp && (c.mb ?? null) === mb;
+    && (c.b ?? null) === (brief ? encoderBrief(brief) : null) && (c.bp ?? null) === bp && (c.mb ?? null) === mb && (c.sf ?? null) === sf;
   const existant = await devisDeLaConversation(env, uid, memeDevis, true);
+  // VIS-46 — identifiant STABLE pour un scénario : même scénario + même projet + même habillage = même devis, donc un seul
+  // travail (travailParDevis répond « déjà lancé » à un second clic, même après rechargement de la page).
+  // Un film de ce scénario en ÉCHEC ou ANNULÉ peut être relancé (nouvel identifiant, rang suivant) ; terminé ou en cours :
+  // même identifiant → « déjà lancé », rien n'est relancé.
+  let idDevis = crypto.randomUUID();
+  if (sf) {
+    for (let rang = 0; rang < 6; rang++) {
+      idDevis = await idDevisScenario(uid, env.conversationId, sf, sourceJeton, mb, brief ? encoderBrief(brief) : null, opts.valeur, rang);
+      const t = await env.depot.travailParDevis(uid, idDevis);
+      if (!t || (t.statut !== 'echec' && t.statut !== 'annule')) break;
+    }
+  }
   const charge: ChargeJeton = existant?.charge ?? {
-    v: 1, id: crypto.randomUUID(), u: uid, t: type, o: opts.valeur, s: sourceJeton,
+    v: 1, id: idDevis, u: uid, t: type, o: opts.valeur, s: sourceJeton, ...(sf ? { sf } : {}),
     c: env.conversationId, iat: maintenant, exp: maintenant + DEVIS_VALIDITE_MS, rq: env.requete,
     ...(brief ? { b: encoderBrief(brief) } : {}),
     ...(bp ? { bp } : {}),
@@ -2568,6 +2676,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   };
   const devis = {
     rendu: `${LIBELLE_TYPE[type]} — ${resumeOptions(type, opts.valeur)}`,
+    ...(scenarioDevis ? { scenario: resumerScenario(scenarioDevis) } : {}),
     source: libelleSource(src.source),
     ...(brief ? { habillage: libelleBrief(brief) } : {}),
     ...(briefProjet && bp ? { brief_projet: resumeBriefProjetDevis(briefProjet) } : {}),
@@ -2581,6 +2690,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(decritDevis && !mb ? reservesDescription(decritDevis, plusieurs || nbBatiments > 0) : []),
       ...(modeleDevis ? reservesModeleDevis(modeleDevis, !mb) : []), ...(fondImage?.avertissements ?? []),
       ...notesVues,
+      ...(scenarioDevis ? [...ecartsScenario.map((e) => `Scénario — ${e} (options de secours, utilisées seulement si la machine de rendu ne lit pas encore le scénario).`),
+        ...(await env.depot.typeRenduAutorise('film', { ...opts.valeur, scenario: scenarioDevis }) === false ? [AVERTISSEMENT_SCENARIO_SANS_MIGRATION] : [])] : []),
       ...phrasesPronosticVues(pronostic),
       ...(briefProjet && bp ? ['Brief du projet (Style & tendances, programme, habillage) : transmis au Studio, qui l’applique avec ses matières de catalogue et liste dans le résultat ce qu’il n’applique pas.'] : []),
       ...(briefProjet && src.source.genre === 'version' ? ['Brief du projet : NON appliqué — la version enregistrée dans l’Atelier 3D est rendue telle quelle.'] : [])],
@@ -2611,7 +2722,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (existant) {
     return {
       status: 'confirmation_requise', source: SOURCE_STUDIO,
-      data: { jeton_devis: jeton, confirmation_requise: true, deja_presente: true, type, options: opts.valeur, devis, ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}), ...(pronostic.length ? { pronostic_vues: pronostic } : {}) },
+      data: { jeton_devis: jeton, confirmation_requise: true, deja_presente: true, type, options: opts.valeur, devis, ...(sf && scenarioDevis ? { scenario_film: { empreinte: sf, titre: scenarioDevis.titre } } : {}), ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}), ...(pronostic.length ? { pronostic_vues: pronostic } : {}) },
       message:
         "RIEN N'A ÉTÉ LANCÉ. Ce devis a DÉJÀ été présenté à l'utilisateur dans un message précédent et reste valable " +
         `jusqu'à ${heureParis(charge.exp)} (heure de Paris). Si le DERNIER message de l'utilisateur donne son accord (« go », « oui », « vas-y », « confirme »…), ` +
@@ -2622,7 +2733,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   return {
     status: 'confirmation_requise', source: SOURCE_STUDIO,
     // jeton_devis EN PREMIER : le rappel des résultats précédents (index.ts) ne garde que les 900 premiers caractères.
-    data: { jeton_devis: jeton, confirmation_requise: true, type, options: opts.valeur, devis, ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}), ...(pronostic.length ? { pronostic_vues: pronostic } : {}) },
+    data: { jeton_devis: jeton, confirmation_requise: true, type, options: opts.valeur, devis, ...(sf && scenarioDevis ? { scenario_film: { empreinte: sf, titre: scenarioDevis.titre } } : {}), ...carteDevis, ...(fondImage ? { fond_image: fondImage.donnees } : {}), ...(pronostic.length ? { pronostic_vues: pronostic } : {}) },
     message:
       "RIEN N'A ÉTÉ LANCÉ. Ceci est un DEVIS. Présente-le (rendu, source, habillage, jetons, temps de calcul, file, état de la machine de rendu, avertissements, " +
       "heure limite en heure de Paris) et demande l'accord. Si l'utilisateur répond OUI dans son PROCHAIN message, rappelle studio_lancer_rendu avec " +

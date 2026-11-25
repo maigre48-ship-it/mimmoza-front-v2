@@ -1,0 +1,44 @@
+/* VIS-46 — carte « Scénario du film » (chat et Espace 3D). Couleurs en !important + sélecteur préfixé : lisibles même
+   sous `.jarvis-dossier * { color: inherit !important }`. Boutons actifs : bleu clair #dbeafe / #1e3a8a. */
+.mz-sf, .jarvis-dossier .mz-sf { margin: 10px 0; padding: 14px 16px; border: 1px solid #c7d2fe; border-radius: 14px; background: #ffffff; color: #0f172a !important; font-size: 13px; line-height: 1.5; }
+.mz-sf *, .jarvis-dossier .mz-sf * { box-sizing: border-box; }
+.mz-sf__tete, .jarvis-dossier .mz-sf__tete { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.mz-sf__tete strong, .jarvis-dossier .mz-sf__tete strong { font-size: 15px; color: #0f172a !important; }
+.mz-sf__sous, .jarvis-dossier .mz-sf__sous { margin: 2px 0 8px; font-size: 12px; color: #475569 !important; }
+.mz-sf__version, .jarvis-dossier .mz-sf__version { padding: 1px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3 !important; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.mz-sf__onglets { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.mz-sf__btn, .jarvis-dossier .mz-sf__btn { border: 1px solid #cbd5e1; border-radius: 8px; background: #ffffff; color: #0f172a !important; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+.mz-sf__btn:hover:not(:disabled) { background: #f1f5f9; }
+.mz-sf__btn:disabled, .jarvis-dossier .mz-sf__btn:disabled { opacity: .55; cursor: not-allowed; }
+.mz-sf__btn.is-actif, .jarvis-dossier .mz-sf__btn.is-actif, .jarvis-dossier .mz-sf .mz-sf__btn.is-actif { background: #dbeafe; border-color: #93c5fd; color: #1e3a8a !important; font-weight: 600; }
+.mz-sf__btn.is-principal, .jarvis-dossier .mz-sf .mz-sf__btn.is-principal { background: #dbeafe; border-color: #60a5fa; color: #1e3a8a !important; font-weight: 700; padding: 7px 14px; font-size: 13px; }
+.mz-sf__champ, .jarvis-dossier .mz-sf__champ { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; color: #334155 !important; font-size: 12px; font-weight: 600; }
+.mz-sf textarea, .mz-sf input[type="text"], .mz-sf select,
+.jarvis-dossier .mz-sf textarea, .jarvis-dossier .mz-sf input[type="text"], .jarvis-dossier .mz-sf select { width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 5px 8px; background: #ffffff; color: #0f172a !important; font: inherit; font-weight: 400; font-size: 13px; }
+.mz-sf textarea { resize: vertical; min-height: 44px; }
+.mz-sf__grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px 10px; }
+.mz-sf__plans { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mz-sf__plan, .jarvis-dossier .mz-sf__plan { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; background: #f8fafc; color: #0f172a !important; }
+.mz-sf__plan.is-ajoute, .jarvis-dossier .mz-sf__plan.is-ajoute { background: #ecfdf5; border-color: #86efac; }
+.mz-sf__plan.is-modifie, .jarvis-dossier .mz-sf__plan.is-modifie { background: #fefce8; border-color: #fde047; }
+.mz-sf__plan.is-deplace, .jarvis-dossier .mz-sf__plan.is-deplace { background: #eff6ff; border-color: #bfdbfe; }
+.mz-sf__plan.is-glisse { opacity: .5; }
+.mz-sf__plan-tete { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mz-sf__num, .jarvis-dossier .mz-sf__num { font-weight: 700; color: #1e3a8a !important; min-width: 22px; cursor: grab; }
+.mz-sf__plan-tete select { width: auto; flex: 1 1 140px; }
+.mz-sf__marque, .jarvis-dossier .mz-sf__marque { padding: 0 6px; border-radius: 999px; background: #fef08a; color: #713f12 !important; font-size: 11px; font-weight: 600; }
+.mz-sf__duree { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: #334155 !important; font-size: 12px; }
+.mz-sf__duree input[type="range"] { flex: 1; accent-color: #2563eb; }
+.mz-sf__compteur, .jarvis-dossier .mz-sf__compteur { align-self: flex-end; color: #64748b !important; font-size: 11px; font-weight: 400; }
+.mz-sf__total, .jarvis-dossier .mz-sf__total { margin: 10px 0 0; font-weight: 700; color: #0f172a !important; }
+.mz-sf__total.is-ko, .jarvis-dossier .mz-sf__total.is-ko { color: #b91c1c !important; }
+.mz-sf__liste, .jarvis-dossier .mz-sf__liste { margin: 6px 0 0; padding: 8px 10px 8px 26px; border-radius: 8px; font-size: 12px; }
+.mz-sf__liste.is-ok, .jarvis-dossier .mz-sf__liste.is-ok { background: #f0fdf4; color: #166534 !important; }
+.mz-sf__liste.is-ko, .jarvis-dossier .mz-sf__liste.is-ko { background: #fff7ed; color: #9a3412 !important; }
+.mz-sf__pied { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
+.mz-sf__cout, .jarvis-dossier .mz-sf__cout { flex-basis: 100%; margin: 0; color: #475569 !important; font-size: 12px; }
+.mz-sf__note, .jarvis-dossier .mz-sf__note { margin: 6px 0 0; color: #1e3a8a !important; font-size: 12px; }
+.mz-sf__apercu { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.mz-sf__apercu video { width: 100%; max-height: 320px; border-radius: 10px; background: #0f172a; }
+.mz-sf__vignettes { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+.mz-sf__vignettes img { width: 100%; border-radius: 6px; border: 1px solid #e2e8f0; }

@@ -280,7 +280,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   } : null;
   const panneauRendu = (assurer?: () => Promise<void>) => rendu && conversationId ? <FilmVisitePanel draft={rendu.draft} conversationId={conversationId}
     assurerValidation={assurer} commande={commandeRendu} terrainParDefaut={rendu.terrain} onValiderApercu={onValiderApercu} apercuValide={apercuValide}
-    parcoursRendu={parcoursRendu} /> : null;
+    parcoursRendu={parcoursRendu} messages={messages} onSend={onSend} /> : null;
 
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
     {parcoursUi}

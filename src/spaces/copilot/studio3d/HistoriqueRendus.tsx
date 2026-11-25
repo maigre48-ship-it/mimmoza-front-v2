@@ -14,6 +14,9 @@ import {
   type ResultatImage, type ResultatVisite, type TravailStudio, type TypeTravail,
 } from '../../../lib/studio/travauxLogique.ts';
 import { rendusDuType } from './renduParcours.ts';
+// VIS-46 : scénario du film (options.scenario, sinon mémo de la fiche) — « Relancer avec ce scénario », « Repartir de ce scénario ».
+import { scenarioDuTravail } from './scenarioFilmChat.ts';
+import type { ScenarioFilm } from '../../../lib/studio/scenarioFilm.ts';
 
 /** VIS-18b — rendu d'aperçu (image, film ou visite) : `options.qualite` (l'image le porte aussi dans son résultat). */
 export const estApercu = (t: TravailStudio): boolean => (t.options as { qualite?: unknown } | null)?.qualite === 'apercu';
@@ -30,10 +33,16 @@ export interface ActionsHistorique {
   onRelancer?: (t: TravailStudio) => void;
   /** Identifiant du rendu en cours de relance (bouton désactivé, pas de double lancement). */
   relance?: string | null;
+  /**
+   * VIS-46 — film avec scénario : « Relancer avec ce scénario » (lancer : le serveur ne relance QUE si le film précédent
+   * a échoué ou a été annulé, sinon « déjà lancé ») ou « Repartir de ce scénario » (modifier : la carte se rouvre).
+   */
+  onScenario?: (action: 'lancer' | 'modifier', s: ScenarioFilm) => void;
 }
 
 function LigneRendu({ t, a }: { t: TravailStudio; a: ActionsHistorique }) {
   const omis = phraseElementsOmis(t.elements_omis);
+  const sc = scenarioDuTravail(t);
   const resultatVisite = t.type === 'visite360' ? t.resultat as ResultatVisite | null : null;
   return <li>
     <div className="mzia-rendu__ligne">
@@ -55,6 +64,13 @@ function LigneRendu({ t, a }: { t: TravailStudio; a: ActionsHistorique }) {
         {a.relance === t.id ? <><Loader2 size={13} className="mzia-rendu__tourne" /> Relance…</> : <><RotateCcw size={13} /> Relancer</>}
       </button>}
     </div>
+    {sc && <div className="mzia-rendu__ligne mzia-rendu__scenario">
+      <small>Scénario « {sc.scenario.titre} » — {String(sc.scenario.duree_s).replace('.', ',')} s, {sc.scenario.plans.length} plans{sc.transmis ? '' : ' (dans la fiche du travail : base sans migration)'}</small>
+      {a.onScenario && <span className="mzia-rendu__actions">
+        <button type="button" onClick={() => a.onScenario?.('lancer', sc.scenario)}><RotateCcw size={13} /> Relancer avec ce scénario</button>
+        <button type="button" onClick={() => a.onScenario?.('modifier', sc.scenario)}>Repartir de ce scénario</button>
+      </span>}
+    </div>}
     {t.statut === 'echec' && <small className="mzia-rendu__erreur">{phraseSuivi(t)}</small>}
     {t.statut === 'termine' && omis && <small className="mzia-rendu__omis">{omis}</small>}
   </li>;

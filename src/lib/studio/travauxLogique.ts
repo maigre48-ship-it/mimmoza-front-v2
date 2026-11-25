@@ -201,6 +201,8 @@ export interface TravailStudio {
   termine_le: string | null;
   /** LOT X3 — `fiche.projet_extension` (contrat X0), lu tel quel ; revalidé à l'affichage (extensionMaison.ts). */
   projet_extension?: unknown;
+  /** VIS-46 — `fiche.scenario_film` (le ScenarioFilm v1 lui-même), lu tel quel ; revalidé à l'affichage. */
+  scenario_film?: unknown;
   /** LOT X3 — `resultat.extension` (machine de rendu, lot X4), lu tel quel. */
   resultat_extension?: unknown;
   /** LOT G10b — `resultat.maison` (maison neuve : contrôle, empreinte, plans), lu tel quel. */

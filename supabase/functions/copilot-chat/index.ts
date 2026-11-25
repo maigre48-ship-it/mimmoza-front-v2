@@ -85,6 +85,18 @@ import {
 import {
   blocComptesRendusStudio, executerOutilStudioCommander, OUTIL_STUDIO_COMMANDER, OUTIL_STUDIO_COMMANDER_DEF, studioCommandePertinente,
 } from './agent/studio-commandes.ts';
+// VIS-46 : films commandés par le chat — 3 scénarios proposés sur le projet en vigueur, modifiables, validés en un clic.
+import {
+  demandeFilm, depotFilmsSupabase, executerOutilProposerFilm, modificationFilm, OUTIL_PROPOSER_FILM, OUTIL_PROPOSER_FILM_DEF,
+} from './agent/studio-films.ts';
+import { lireBlocScenario } from '../../../src/lib/studio/filmsChat.ts';
+/** VIS-46 — consigne d'un tour « film » (demande, modification ou carte). */
+const CONSIGNE_FILM_CHAT =
+  'FILM DU PROJET (VIS-46) : une demande de film se traite par l’outil studio_proposer_film (3 scénarios construits par le serveur sur le projet en 3D), ' +
+  'JAMAIS par une question sur la durée, le format, l’ambiance ou les intérieurs, ni par un devis studio_lancer_rendu direct. ' +
+  'Une modification du film proposé (« raccourcis à 30 s », « ajoute un plan sur la cuisine », « plus de drone ») se passe telle quelle dans `modification`. ' +
+  'Le lancement se fait UNIQUEMENT par le bouton « Valider et lancer le film » de la carte ; l’aperçu par le bouton « Aperçu ». ' +
+  'Ne propose jamais un plan que l’outil a refusé (balcon sans balcon, etc.) et dis la raison donnée. Cette consigne PRIME sur la consigne de rendu du Studio pour un film.';
 // VIS-16 : « Préparer la plaquette » — état réel des missions, pack plaquette.
 import { blocEtatMissions, consignePlaquette, demandePlaquette, OUTILS_ETAT_VOLATIL, type MissionEtatReel } from './agent/plaquette.ts';
 import { etatMissionsUtile } from './agent/etat-missions.ts';
@@ -4624,6 +4636,8 @@ const TOOLS: ToolDef[] = [
   OUTIL_RETOUCHER_BATIMENT_DEF,
   // VIS-45 : le chat pilote le Studio (proposé seulement quand le tour parle d'un geste du Studio).
   OUTIL_STUDIO_COMMANDER_DEF,
+  // VIS-46 : scénarios de film (proposé seulement quand le tour parle d'un film ou modifie le film proposé).
+  OUTIL_PROPOSER_FILM_DEF,
 ];
 
 /**
@@ -4777,6 +4791,16 @@ async function executeTool(
       const brut = ctx as unknown as Record<string, unknown>;
       return executerOutilStudioCommander(input, { texteRecu: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '' }) as ToolResult;
     }
+    case OUTIL_PROPOSER_FILM: {
+      // VIS-46 : le SERVEUR construit les scénarios sur le projet en vigueur (aucun plan impossible) ; la carte est relue
+      // dans le message REÇU. Lecture bornée (JWT + conversation) ; rien n'est écrit.
+      const e = envStudio(ctx, auth);
+      const brut = ctx as unknown as Record<string, unknown>;
+      return (await executerOutilProposerFilm(input, {
+        userId: e.userId, conversationId: e.conversationId, depot: e.depot, depotFilms: depotFilmsSupabase(getAdmin()),
+        scenarioCarte: e.scenarioCarte ?? null, texteRecu: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '',
+      })) as ToolResult;
+    }
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
   }
@@ -4860,6 +4884,9 @@ function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
     porteeCarte: (brut.portee_carte ?? null) as EnvStudio['porteeCarte'],
     // VIS-18b : fond choisi dans le parcours (instantané de l'écran du tour, relu défensivement ; jamais persisté).
     fondParcours: (brut.fond_parcours ?? null) as EnvStudio['fondParcours'],
+    // VIS-46 : bloc ```mimmoza-scenario``` de la carte « Scénario du film », relu dans le message REÇU (jamais par le modèle).
+    scenarioCarte: (brut.scenario_carte ?? null) as EnvStudio['scenarioCarte'],
+    depotFilms: depotFilmsSupabase(getAdmin()),
   };
 }
 
@@ -11070,7 +11097,7 @@ async function runOrchestrator(params: {
   let system = [systemBase, consigneCarte, consigneChat].filter(Boolean).join('\n\n');
   const availableTools = toolsForMode(mode)
     .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE || tool.name === OUTIL_DECRIRE_BATIMENT
-      || tool.name === OUTIL_DESSINER_BATIMENT || tool.name === OUTIL_RETOUCHER_BATIMENT || tool.name === OUTIL_STUDIO_COMMANDER))
+      || tool.name === OUTIL_DESSINER_BATIMENT || tool.name === OUTIL_RETOUCHER_BATIMENT || tool.name === OUTIL_PROPOSER_FILM || tool.name === OUTIL_STUDIO_COMMANDER))
     .filter((tool) => !outilHorsChat(tool.name, ctx.route));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
@@ -11139,8 +11166,17 @@ async function runOrchestrator(params: {
   if (dessinModeleAuTour) system = `${system}\n\n${consigneDessinModele(photoAuTour)}`;
   else if (retoucheModeleAuTour && modeleConversation) system = `${system}\n\n${consigneRetoucheModele(modeleConversation)}`;
   else if (batimentAuTour && intentionDessinBatiment(userText, photoAuTour)) system = `${system}\n\n${consigneDessinBatiment(photoAuTour)}`;
+  // VIS-46 — films : clic de la carte (bloc du message reçu), demande de film, ou modification du film proposé.
+  const scenarioCarte = (ctx as unknown as Record<string, unknown>).scenario_carte as EnvStudio['scenarioCarte'];
+  const lancementFilmAuTour = agentDisponible(ctx.vertical) && scenarioCarte?.ok === true && scenarioCarte.valeur.action === 'lancer';
+  const filmDansConversation = (params.priorToolResults ?? '').includes(`### ${OUTIL_PROPOSER_FILM}`);
+  const filmAuTour = agentDisponible(ctx.vertical) && !lancementFilmAuTour && !extensionAuTour && !maisonAuTour && !plansAuTour
+    && (Boolean(scenarioCarte) || demandeFilm(userText) || (filmDansConversation && modificationFilm(userText)));
+  if (filmAuTour) system = `${system}\n\n${CONSIGNE_FILM_CHAT}`;
   const selectedNames = new Set([
     ...selection.toolNames,
+    ...(filmAuTour ? [OUTIL_PROPOSER_FILM] : []),
+    ...(lancementFilmAuTour ? NOMS_OUTILS_STUDIO : []),
     ...(ancienneCarteAuTour || (!DESSIN_MODELE_ACTIF && batimentAuTour) ? [OUTIL_DECRIRE_BATIMENT] : []),
     ...(dessinModeleAuTour ? [OUTIL_DESSINER_BATIMENT] : []),
     ...(retoucheModeleAuTour || retoucheProposee ? [OUTIL_RETOUCHER_BATIMENT, OUTIL_DESSINER_BATIMENT] : []),
@@ -11150,10 +11186,13 @@ async function runOrchestrator(params: {
     ...(extensionAuTour || parcoursEnCours ? [OUTIL_EXTENSION_MAISON] : []),
     ...(maisonAuTour || parcoursMaisonEnCours ? [OUTIL_MAISON_NEUVE] : []),
     // VIS-45 : geste du Studio demandé (ou réponse « oui » à une question d'accord de Mimmo) → outil de commande du Studio.
-    ...(agentDisponible(ctx.vertical) && studioCommandePertinente([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? [OUTIL_STUDIO_COMMANDER] : []),
+    // VIS-46 : un tour « film » n'offre PAS la commande « film » du Studio (une seule commande par action : la carte).
+    ...(agentDisponible(ctx.vertical) && !filmAuTour && !lancementFilmAuTour && studioCommandePertinente([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? [OUTIL_STUDIO_COMMANDER] : []),
     // Lot INT-10 : l'architecte d'intérieur reste proposé tant que le tour (ou la question précédente) parle d'aménagement.
     ...(interieurPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? ['amenager_interieur'] : []),
   ]);
+  // VIS-46 : tour « film » (hors clic) → pas de devis direct aux anciennes options ; le lancement passe par la carte.
+  if (filmAuTour) selectedNames.delete('studio_lancer_rendu');
   const tools = availableTools.filter((tool) => selectedNames.has(tool.name));
   const maxIter = MAX_TOOL_ITERATIONS[mode];
 
@@ -11183,6 +11222,7 @@ async function runOrchestrator(params: {
   let extensionForcee = false; // LOT X3 : un seul tour imposé sur le parcours d'extension
   let maisonForcee = false;    // LOT G10b : un seul tour imposé sur le parcours de maison neuve
   let plansForces = false;     // FINITIONS 18/11 : un seul tour imposé sur le devis des plans seuls
+  let filmForce = false;       // VIS-46 : un seul tour imposé sur les scénarios de film (ou sur le lancement du clic)
   let blocChoixExtension: string | null = null; // LOT X3 : questions du parcours, placées à la toute fin de la réponse
   let dernierTexte = '';
 
@@ -11272,8 +11312,13 @@ async function runOrchestrator(params: {
     const forcerPlans = !forcerMission && !forcerExtension && !forcerMaison && plansAuTour && !plansForces && iter === 0
       && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu');
     if (forcerPlans) plansForces = true;
-    const forcerRendu = !forcerMission && !forcerExtension && !forcerMaison && !forcerPlans && doitForcerLancerRendu({
-      texteUtilisateur: userText, appels: toolCallsLog, dejaForce: renduForce, briefCarte: Boolean(briefCarte),
+    // VIS-46 : demande de film → 3 scénarios d'abord (jamais l'ancien devis aux options) ; clic « Valider et lancer » → lancement.
+    const forcerFilm = !forcerMission && !forcerExtension && !forcerMaison && !forcerPlans && !filmForce && iter === 0
+      && ((filmAuTour && toolsDuTour.some((tool) => tool.name === OUTIL_PROPOSER_FILM))
+        || (lancementFilmAuTour && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu')));
+    if (forcerFilm) filmForce = true;
+    const forcerRendu = !forcerMission && !forcerExtension && !forcerMaison && !forcerPlans && !forcerFilm && doitForcerLancerRendu({
+      texteUtilisateur: userText, appels: toolCallsLog, dejaForce: renduForce || filmForce || filmAuTour, briefCarte: Boolean(briefCarte),
       outilDisponible: !(mode === 'quick' && rapportParcellaireAffiche) && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu'),
     });
     if (forcerRendu) renduForce = true;
@@ -11283,6 +11328,7 @@ async function runOrchestrator(params: {
       toolChoice: forcerMission ? { type: 'tool', name: 'proposer_mission' }
         : forcerExtension ? { type: 'tool', name: OUTIL_EXTENSION_MAISON }
         : forcerMaison ? { type: 'tool', name: OUTIL_MAISON_NEUVE }
+        : forcerFilm ? { type: 'tool', name: lancementFilmAuTour ? 'studio_lancer_rendu' : OUTIL_PROPOSER_FILM }
         : forcerRendu || forcerPlans ? { type: 'tool', name: 'studio_lancer_rendu' } : undefined,
       webBudget: webUnavailable || intentionMission.mission ? { search: 0, fetch: 0 }
         : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
@@ -12063,6 +12109,8 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).modele_carte = referenceModeleDuMessage(payload.message);
     // VIS-34 : même principe pour la réponse à la question de portée du dessin (jamais persistée dans le contexte).
     (effectiveContext as unknown as Record<string,unknown>).portee_carte = porteeDuMessage(payload.message);
+    // VIS-46 : même principe pour le scénario de film de la carte (bloc ```mimmoza-scenario```, jamais persisté).
+    (effectiveContext as unknown as Record<string,unknown>).scenario_carte = lireBlocScenario(payload.message);
     // VIS-18b : fond de l'image choisi dans le parcours (même principe : posé après l'instantané, jamais persisté).
     (effectiveContext as unknown as Record<string,unknown>).fond_parcours = fondDuParcours(instantaneParcours);
     // LOT X3 : le parcours d'extension lit les réponses dans le message REÇU (même principe : jamais persisté).

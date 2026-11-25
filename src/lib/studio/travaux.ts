@@ -27,7 +27,8 @@ export * from './manifesteVisite';
 export const BUCKET_RENDUS = 'studio-rendus';
 export const BUCKET_VISITES = 'visites';
 // LOT X3 : `projet_extension` (fiche.projet_extension, contrat X0) pour la carte de résultat d'un projet d'extension.
-const COLONNES = 'id,conversation_id,type,statut,progression,etape,options,resultat,elements_omis,erreur,cree_le,maj_le,demarre_le,termine_le,projet_extension:fiche->projet_extension';
+// VIS-46 : `scenario_film` (fiche.scenario_film : le scénario du film) pour l'historique des films.
+const COLONNES = 'id,conversation_id,type,statut,progression,etape,options,resultat,elements_omis,erreur,cree_le,maj_le,demarre_le,termine_le,projet_extension:fiche->projet_extension,scenario_film:fiche->scenario_film';
 const SONDAGE_MS = 5000;
 
 export type Reponse<T> = { disponible: true; valeur: T } | { disponible: false };

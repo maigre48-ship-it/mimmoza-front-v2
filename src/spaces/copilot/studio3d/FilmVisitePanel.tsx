@@ -46,6 +46,15 @@ import type { ReglagesFilm, ReglagesVisite } from '@/lib/studio/parcours';
 // « Relancer » sur un rendu en échec.
 import { estApercu, HistoriqueRendus } from './HistoriqueRendus';
 import type { FeuilleEtape } from './renduParcours';
+// VIS-46 — film commandé par le chat : la feuille « Film » montre la MÊME carte « Scénario du film » que le chat (seule
+// commande : « Valider et lancer le film ») ; sans scénario proposé, un bouton demande les 3 scénarios à Mimmo.
+import { CarteScenarioFilm } from './CarteScenarioFilm';
+import { derniereCarteScenarios } from './scenarioFilmChat';
+import { messageScenario } from '@/lib/studio/filmsChat';
+import type { ChatMessage } from '../types/copilot.types';
+
+/** VIS-46 — texte EXACT du bouton « Proposer des scénarios » (demande de film reconnue par le serveur). */
+export const DEMANDE_SCENARIOS_FILM = 'Propose-moi 3 scénarios de film pour ce projet.';
 
 /** VIS-17 — commande d'une étape du parcours : ouvrir une feuille (et sa définition) ou montrer les rendus réalisés. */
 export interface CommandeRendu { feuille: TypeTravail | null; qualite?: QualiteImage; jeton: number }
@@ -80,7 +89,7 @@ const AMBIANCES: Ambiance[] = ['jour', 'fin_de_journee', 'nuit'];
 /** VIS-28 — titre de l'écran quand le parcours a fixé le type. */
 const TITRES_PARCOURS: Record<TypeTravail, string> = { film: 'Votre film', visite360: 'Votre visite 360°', image: 'Vos images photoréalistes' };
 
-export function FilmVisitePanel({ draft, conversationId, assurerValidation, commande, terrainParDefaut, onValiderApercu, apercuValide, parcoursRendu }: {
+export function FilmVisitePanel({ draft, conversationId, assurerValidation, commande, terrainParDefaut, onValiderApercu, apercuValide, parcoursRendu, messages, onSend }: {
   draft: JarvisDraft;
   conversationId: string;
   /** Valide la fiche si elle ne l'est pas encore (comme « Voir en 3D »). */
@@ -94,7 +103,13 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   apercuValide?: string | null;
   /** VIS-28 : parcours choisi (Images, Film, Visite 360°) et étape affichée — null : écran libre (trois choix). */
   parcoursRendu?: ParcoursRendu | null;
+  /** VIS-46 : messages de la conversation (carte « Scénario du film » en vigueur) et envoi dans le chat. */
+  messages?: readonly ChatMessage[];
+  onSend?: (texte: string) => void;
 }) {
+  // VIS-46 : avec le chat branché, le film se commande par la carte de scénario (plus de feuille d'options en double).
+  const filmParScenario = Boolean(onSend && messages);
+  const carteFilm = filmParScenario ? derniereCarteScenarios(messages as never) : null;
   const [disponible, setDisponible] = useState<boolean | null>(null);
   const [travaux, setTravaux] = useState<TravailStudio[]>([]);
   const [feuille, setFeuille] = useState<TypeTravail | null>(null);
@@ -383,7 +398,15 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
           <span>{feuille === 'film' ? 'Votre film' : feuille === 'image' ? 'Votre image photoréaliste' : 'Votre visite 360°'}</span>
           <button type="button" className="mzia-rendu__fermer" aria-label="Fermer" onClick={() => setFeuille(null)}><X size={14} /></button>
         </div>
-        <div className="mzia-rendu__feuille-corps">
+        {feuille === 'film' && filmParScenario && <div className="mzia-rendu__feuille-corps">
+          {carteFilm
+            ? <CarteScenarioFilm carte={carteFilm} messageId={`local-espace3d-${carteFilm.appelId}`} onSend={onSend} compacte />
+            : <>
+              <p className="mzia-rendu__estimation">Mimmo propose 3 scénarios construits sur votre projet (arrivée par la rue, visite intérieure, format réseaux) ; vous les modifiez ou les validez ici ou dans le chat.</p>
+              <button type="button" className="mzia-rendu__lancer" onClick={() => onSend?.(DEMANDE_SCENARIOS_FILM)}>Proposer des scénarios de film</button>
+            </>}
+        </div>}
+        {!(feuille === 'film' && filmParScenario) && <div className="mzia-rendu__feuille-corps">
           {feuille === 'film' && <Choix titre="Durée" valeur={film.duree_s} options={[[30, '30 s'], [60, '1 min'], [90, '1 min 30']]}
             onChange={v => changerFilm({ duree_s: v })} />}
           {feuille === 'image' && (['exterieur', 'privatif', 'interieur'] as GroupeVue[]).map(groupe => (
@@ -447,7 +470,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
             {lancement ? <><Loader2 size={16} className="mzia-rendu__tourne" /> Lancement…</> : 'Lancer'}
           </button>
           <small>Vous serez prévenu ici quand ce sera prêt. Vous pouvez continuer à travailler.</small>
-        </div>
+        </div>}
       </div>}
 
       {!feuille && message && <p className="mzia-rendu__erreur" role="alert">{message}</p>}
@@ -506,7 +529,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
       {/* VIS-28 : rendus du type du parcours seulement (les autres derrière « Autres rendus (n) ») ; « Relancer » en échec. */}
       <HistoriqueRendus travaux={historique} type={typeParcours} onVoirFilm={t => void voirFilm(t)} onVoirImage={t => void voirImage(t)}
         onCopierLien={id => void copierLien(id)} copie={copie} onValiderApercu={onValiderApercu} apercuValide={apercuValide}
-        onRelancer={indispo ? undefined : relancer} relance={relance} />
+        onRelancer={indispo ? undefined : relancer} relance={relance}
+        onScenario={onSend ? (action, s) => onSend(messageScenario(action, s, 1, action === 'lancer' ? 'Relance le film avec ce scénario' : 'Je repars de ce scénario')) : undefined} />
     </section>
   );
 }

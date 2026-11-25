@@ -51,6 +51,10 @@ import { CarteModeleBatiment } from '../studio3d/CarteModeleBatiment';
 import { CarteCommandeStudio, LignesStudio } from '../studio3d/CarteCommandeStudio';
 import { lireCarteCommande } from '../studio3d/pontCommandesSite';
 import { lireCarteModele } from '../studio3d/modeleBatimentChat';
+// VIS-46 : films commandés par le chat — carte « Scénario du film » (seule commande du film) ; bloc du clic masqué.
+import { CarteScenarioFilm } from '../studio3d/CarteScenarioFilm';
+import { lireCarteScenarios } from '../studio3d/scenarioFilmChat';
+import { lireBlocScenario, sansBlocScenario } from '@/lib/studio/filmsChat';
 import { sansBlocReference } from '@/lib/studio/modeleBatimentMessage';
 // Lot brief-unifié : avec le panneau Espace 3D, le chat n'affiche qu'une ligne qui ouvre l'habillage dans le panneau.
 import { LigneHabillage } from '../studio3d/LigneHabillage';
@@ -188,6 +192,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     // VIS-25 lot B : la référence du bâtiment dessiné (```mimmoza-modele-ref```) est masquée aussi (même pastille).
     const blocBatiment = sansBlocDescription(sansBlocReference(blocBrief.visible).visible);
     const blocParcours = lireBlocParcours(blocBatiment.visible);
+    // VIS-46 : bloc ```mimmoza-scenario``` (clic de la carte « Scénario du film ») masqué ; une pastille le signale.
+    const blocFilm = lireBlocScenario(blocParcours.visible);
+    const texteVisible = blocFilm ? sansBlocScenario(blocParcours.visible) : blocParcours.visible;
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
         <div style={{
@@ -199,7 +206,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
           {blocBrief.brief && <br />}
           {blocParcours.apercuValide && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#dcfce7', color: '#15803d', fontSize: 11, fontWeight: 600 }}>Aperçu validé</span>}
           {blocParcours.apercuValide && <br />}
-          {blocParcours.visible}
+          {blocFilm && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#dbeafe', color: '#1e3a8a', fontSize: 11, fontWeight: 600 }}>Scénario du film</span>}
+          {blocFilm && <br />}
+          {texteVisible}
         </div>
       </div>
     );
@@ -218,6 +227,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             { const modele = lireCarteModele(tc); if (modele) return <CarteModeleBatiment key={tc.id} carte={modele} messageId={message.id} onSend={onSend} />; }
             // VIS-45 : le chat commande le Studio → carte de la commande (envoi unique, compte rendu, fichiers des plans).
             { const cmd = lireCarteCommande(tc); if (cmd) return <CarteCommandeStudio key={tc.id} carte={cmd} messageId={message.id} />; }
+            // VIS-46 : scénarios de film proposés → carte modifiable, « Valider et lancer le film », « Aperçu ».
+            { const film = lireCarteScenarios(tc); if (film) return <CarteScenarioFilm key={tc.id} carte={film} messageId={message.id} onSend={onSend} />; }
             { const photo = lireDemandePhotoMaison(tc); if (photo) return <DemandePhotoMaison requise={photo} contour={photo.contour} onSend={onSend} afficherTexte />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.
@@ -280,6 +291,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     || !!lireCarteBatiment(tc)
     || !!lireCarteModele(tc)
     || !!lireCarteCommande(tc)
+    || !!lireCarteScenarios(tc)
     || !!lireDemandeBrief(tc)
     || (OUTILS_PHOTO_PROJET.has(tc.name) && tc.status !== 'running' && !!lireDemandeAccordPhoto(tc.output))
     || (tc.name === OUTIL_EXTENSION_MAISON && tc.status !== 'running')

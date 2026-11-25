@@ -56,7 +56,12 @@ export interface ParamCatalogue {
   readonly description: string;
   readonly requis?: boolean;
   readonly valeurs?: readonly string[];
+  /** VIS-47 — longueur maximale d'un texte (défaut 120 ; ≤ MAX_TEXTE_PARAM). Un scénario de film est un texte JSON. */
+  readonly max?: number;
 }
+
+/** VIS-47 — longueur maximale d'un paramètre texte transporté par le canal (scénario de film en JSON). */
+export const MAX_TEXTE_PARAM = 16000;
 
 export interface EntreeCatalogueChat {
   /** Identifiant du REGISTRE du Studio (src/ui/commandes/registre.ts), vérifié par le test du Studio. */
@@ -127,6 +132,7 @@ export const CATALOGUE_COMMANDES_CHAT: readonly EntreeCatalogueChat[] = [
   { id: 'plans-architecte', libelle: 'Plans d’architecte', contrat: 'VIS-44', confirmation: true,
     quoi: 'Dossier de plans du bâtiment du Studio : PDF (A3/A1), DXF AutoCAD, IFC4, SVG et tableau des surfaces (surface habitable, surface de plancher, emprise).',
     params: { format: { type: 'choix', description: 'Format du PDF', valeurs: ['A3', 'A1'] } } },
+  { id: 'film-apercu', libelle: 'Aperçu du film (animatique)', contrat: 'VIS-47', confirmation: false, quoi: 'Aperçu gratuit du film dans le Studio : maquette simplifiée filmée par les caméras du scénario (mêmes plans que le film Unreal), vidéo WebM et une vignette par plan.', params: { scenario: { type: 'texte', description: 'Scénario du film (JSON du contrat ScenarioFilm v1)', requis: true, max: 16000 } } },
 ];
 
 export function entreeCatalogue(id: string): EntreeCatalogueChat | null {
@@ -156,7 +162,7 @@ export function validerCommandeChat(id: unknown, params: unknown): { ok: true; i
   for (const [cle, spec] of Object.entries(e.params)) {
     const v = brut[cle];
     if (v === undefined || v === null || v === '') { if (spec.requis) erreurs.push(`paramètre « ${cle} » manquant (${spec.description})`); continue; }
-    if (spec.type === 'texte') { if (typeof v !== 'string' || v.length > 120) erreurs.push(`« ${cle} » : texte de 120 caractères au plus`); else sortie[cle] = v.trim(); }
+    if (spec.type === 'texte') { const max = Math.min(spec.max ?? 120, MAX_TEXTE_PARAM); if (typeof v !== 'string' || v.length > max) erreurs.push(`« ${cle} » : texte de ${max} caractères au plus`); else sortie[cle] = v.trim(); }
     else if (spec.type === 'choix') { if (typeof v !== 'string' || !(spec.valeurs ?? []).includes(v)) erreurs.push(`« ${cle} » doit valoir : ${(spec.valeurs ?? []).join(', ')}`); else sortie[cle] = v; }
     else if (spec.type === 'nombre') { const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.replace(',', '.')) : NaN; if (!Number.isFinite(n)) erreurs.push(`« ${cle} » doit être un nombre`); else sortie[cle] = n; }
     else if (typeof v !== 'boolean') erreurs.push(`« ${cle} » doit être vrai ou faux`);
@@ -278,7 +284,7 @@ function lireParams(v: unknown): Record<string, string | number | boolean> | nul
   const out: Record<string, string | number | boolean> = {};
   for (const [k, x] of Object.entries(v).slice(0, 20)) {
     if (!/^[a-zA-Z][a-zA-Z0-9_]{0,40}$/.test(k)) return null;
-    if (typeof x === 'string' && x.length <= 300) out[k] = x;
+    if (typeof x === 'string' && x.length <= MAX_TEXTE_PARAM) out[k] = x;
     else if (typeof x === 'number' && Number.isFinite(x)) out[k] = x;
     else if (typeof x === 'boolean') out[k] = x;
     else return null;
