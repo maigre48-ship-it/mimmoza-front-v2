@@ -102,10 +102,11 @@ function LigneRendu({ t, a, remplaceLe }: { t: TravailStudio; a: ActionsHistoriq
 }
 
 /** Rendus terminés, en échec ou annulés ; `type` : celui du parcours (null : pas de parcours, tout est listé). */
-export function HistoriqueRendus({ travaux, type, max = 4, ...a }: ActionsHistorique & { travaux: readonly TravailStudio[]; type?: TypeTravail | null; max?: number }) {
+/** `tous` : TOUS les travaux, actifs compris — un échec relancé dont la relance est EN COURS est déjà « remplacé » (26/11). */
+export function HistoriqueRendus({ travaux, tous, type, max = 4, ...a }: ActionsHistorique & { travaux: readonly TravailStudio[]; tous?: readonly TravailStudio[]; type?: TypeTravail | null; max?: number }) {
   const [autresOuverts, setAutresOuverts] = useState(false);
   const { duType, autres } = rendusDuType(travaux, type);
-  const remplaces = echecsRemplaces(travaux);
+  const remplaces = echecsRemplaces(tous ?? travaux);
   if (!duType.length && !autres.length) return null;
   return <div className="mzia-rendu__historique">
     {duType.length > 0 && <>

@@ -527,7 +527,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
       </div>}
 
       {/* VIS-28 : rendus du type du parcours seulement (les autres derrière « Autres rendus (n) ») ; « Relancer » en échec. */}
-      <HistoriqueRendus travaux={historique} type={typeParcours} onVoirFilm={t => void voirFilm(t)} onVoirImage={t => void voirImage(t)}
+      <HistoriqueRendus travaux={historique} tous={travaux} type={typeParcours} onVoirFilm={t => void voirFilm(t)} onVoirImage={t => void voirImage(t)}
         onCopierLien={id => void copierLien(id)} copie={copie} onValiderApercu={onValiderApercu} apercuValide={apercuValide}
         onRelancer={indispo ? undefined : relancer} relance={relance}
         onScenario={onSend ? (action, s) => onSend(messageScenario(action, s, 1, action === 'lancer' ? 'Relance le film avec ce scénario' : 'Je repars de ce scénario')) : undefined} />
