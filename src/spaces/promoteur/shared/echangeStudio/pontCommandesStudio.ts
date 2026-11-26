@@ -132,7 +132,9 @@ export const CATALOGUE_COMMANDES_CHAT: readonly EntreeCatalogueChat[] = [
   { id: 'plans-architecte', libelle: 'Plans d’architecte', contrat: 'VIS-44', confirmation: true,
     quoi: 'Dossier de plans du bâtiment du Studio : PDF (A3/A1), DXF AutoCAD, IFC4, SVG et tableau des surfaces (surface habitable, surface de plancher, emprise).',
     params: { format: { type: 'choix', description: 'Format du PDF', valeurs: ['A3', 'A1'] } } },
+  { id: 'exterieur-mimmo-plante', libelle: 'Mimmo plante (extérieurs)', contrat: 'VIS-54', confirmation: false, quoi: 'Propose un aménagement extérieur complet (massifs au pied des façades, haies en limite, arbres, allée jusqu’à la porte) dans la page « Aménager les extérieurs » du Studio ; l’utilisateur l’ajuste ensuite. Rendu : Unreal pose exactement ces éléments.', params: { densite: { type: 'choix', description: 'Densité de végétation', valeurs: ['sobre', 'standard', 'luxuriante'] } } },
   { id: 'film-apercu', libelle: 'Aperçu du film (animatique)', contrat: 'VIS-47', confirmation: false, quoi: 'Aperçu gratuit du film dans le Studio : maquette simplifiée filmée par les caméras du scénario (mêmes plans que le film Unreal), vidéo WebM et une vignette par plan.', params: { scenario: { type: 'texte', description: 'Scénario du film (JSON du contrat ScenarioFilm v1)', requis: true, max: 16000 } } },
+  { id: 'interieur-decorer', libelle: 'Décorer le logement (Mimmo décore)', contrat: 'VIS-53', confirmation: false, quoi: 'Pose une déco cohérente dans chaque pièce du logement meublé, selon le style et la gamme : tableau au-dessus du lit et du canapé, objet sur chaque chevet, vase, tapis, grande plante, lampadaire. L’utilisateur l’ajuste ensuite (onglet Déco).', params: {} },
 ];
 
 export function entreeCatalogue(id: string): EntreeCatalogueChat | null {

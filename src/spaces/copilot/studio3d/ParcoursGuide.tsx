@@ -129,6 +129,7 @@ export function CarteParcours({ parcours, onAction, onType, onDetail, reglage, n
                 {dansLaCarte && depliee ? 'Fermer' : e.action.libelle}{courante && <ChevronRight size={14} aria-hidden="true" />}
               </button>
               {e.actionSecondaire && <button type="button" className="mz-parcours__action" onClick={() => onAction(e, e.actionSecondaire!)}>{e.actionSecondaire.libelle}</button>}
+                {e.actionTertiaire && <button type="button" className="mz-parcours__action" onClick={() => onAction(e, e.actionTertiaire!)}>{e.actionTertiaire.libelle}</button>}
             </span>}
           </div>
           {e.carteDansLeFil && e.statut !== 'bloquee' && <p className="mz-parcours__renvoi" role="note">{e.carteDansLeFil}</p>}

@@ -70,7 +70,9 @@ export type CleEtape = 'terrain' | 'conception' | 'volume' | 'style' | 'interieu
 export type CibleParcours = 'chat' | 'terrain' | 'programme' | 'mission' | 'dimensions' | 'studio-batiment' | 'habillage' | 'studio-interieur' | 'reglages-rendu'
   | 'feuille-image' | 'feuille-film' | 'feuille-visite' | 'apercu' | 'final' | 'resultats'
   /** VIS-24 — catalogue des matières et éléments 3D d'extérieur, ouvert dans un nouvel onglet. */
-  | 'catalogue-exterieur';
+  | 'catalogue-exterieur'
+  /** VIS-54 — page « Aménager les extérieurs » du Studio (Aménagement › Extérieurs). */
+  | 'studio-exterieur';
 
 export interface ActionParcours {
   cible: CibleParcours; libelle: string; message?: string;
@@ -94,6 +96,8 @@ export interface EtapeParcours {
   action: ActionParcours;
   /** Second accès utile (ex. gamme du logement témoin), facultatif. */
   actionSecondaire?: ActionParcours;
+  /** VIS-54 — troisième accès (étape 4 : « Aménager les extérieurs »). */
+  actionTertiaire?: ActionParcours;
   /**
    * VIS-18b — petit réglage affiché DANS l'étape (pas de nouvel écran) : `cible` (étape 4) et `gamme` (étape 5) quand
    * aucune étude Style & tendances n'est rattachée ; `fond` (étape 6 du parcours Images : étude / photo de rue / photo).
@@ -317,6 +321,8 @@ export function calculerParcours(s: SourcesParcours): Parcours {
       action: { cible: 'habillage', libelle: h.resume ? 'Modifier' : 'Choisir' },
       // VIS-24 : tout ce qui existe pour l'extérieur (matières, toitures, balcons, végétation…), dans un nouvel onglet.
       actionSecondaire: { cible: 'catalogue-exterieur', libelle: 'Voir le catalogue extérieur' },
+      // VIS-54 : l'utilisateur place lui-même la végétation et le décor, comme les meubles.
+      actionTertiaire: { cible: 'studio-exterieur', libelle: 'Aménager les extérieurs' },
       // VIS-21 : Mimmo attend le brief → la carte du brief est dans le fil ; pas de second bouton dans la carte du parcours.
       ...(h.attenduParMimmo ? { carteDansLeFil: 'Mimmo attend votre habillage : répondez avec la carte du brief créatif, plus haut dans la conversation.' } : {}),
       // VIS-18b : sans étude Style & tendances, la cible se règle ici (sinon : dans l'étude).

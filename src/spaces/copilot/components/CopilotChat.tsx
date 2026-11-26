@@ -260,11 +260,13 @@ export function CopilotChat({
     // VIS-33 : la conversation part dans l'adresse : les matières choisies dans la page reviennent dans SA carte d'habillage.
     if (action.cible === 'catalogue-exterieur') { window.open(adresseCatalogueConversation(currentConversationId ?? null), '_blank', 'noopener'); return; }
     if (action.cible === 'habillage') { ouvrirHabillage(null); return; }
-    if (action.cible === 'studio-interieur' || action.cible === 'studio-batiment') {
+    if (action.cible === 'studio-interieur' || action.cible === 'studio-batiment' || action.cible === 'studio-exterieur') {
       montrerPanneau3D();
       const demande: DemandeParcoursStudio = action.cible === 'studio-interieur'
         ? { etape: 'amenagement', sous: 'interieur', repondre: setNoticeParcours }
-        : { etape: 'batiment', sous: 'batiment', repondre: setNoticeParcours };
+        : action.cible === 'studio-exterieur'
+          ? { etape: 'amenagement', sous: 'vegetation', repondre: setNoticeParcours }
+          : { etape: 'batiment', sous: 'batiment', repondre: setNoticeParcours };
       window.dispatchEvent(new CustomEvent(EVENEMENT_PARCOURS_STUDIO, { detail: demande }));
       if (!demande.prise) setNoticeParcours('Le Studio ne peut pas s’ouvrir depuis cette page.');
       return;

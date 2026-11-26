@@ -21,6 +21,8 @@ const CIBLES_DANS_LA_PAGE: ReadonlySet<CibleParcours> = new Set<CibleParcours>([
   'feuille-image', 'feuille-film', 'feuille-visite', 'apercu', 'final', 'resultats',
   // VIS-24 : catalogue extérieur, ouvert dans un nouvel onglet (même site, jamais une autre page du chat).
   'catalogue-exterieur',
+  // VIS-54 : page « Aménager les extérieurs » du Studio.
+  'studio-exterieur',
 ]);
 
 function etats(): SourcesParcours[] {
