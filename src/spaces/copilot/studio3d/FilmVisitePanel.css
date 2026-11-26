@@ -167,3 +167,7 @@
 .mzia-grand__barre { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; color: #e2e8f0; font-size: 13px; cursor: default; }
 .mzia-grand__barre button, .mzia-grand__barre a { padding: 6px 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #f8fafc; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
 .mzia-grand__barre button:hover, .mzia-grand__barre a:hover { background: #334155; }
+
+/* 26/11 — échec déjà relancé : ligne discrète, sans message rouge ni « Relancer ». */
+.jarvis-dossier .mzia-rendu__remplace, .mzia-rendu__remplace { opacity: 0.7; }
+.jarvis-dossier .mzia-rendu__remplace small, .mzia-rendu__remplace small { color: #6b7280 !important; }

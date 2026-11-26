@@ -40,7 +40,32 @@ export interface ActionsHistorique {
   onScenario?: (action: 'lancer' | 'modifier', s: ScenarioFilm) => void;
 }
 
-function LigneRendu({ t, a }: { t: TravailStudio; a: ActionsHistorique }) {
+/**
+ * 26/11 — un rendu en ÉCHEC est « remplacé » dès qu'un rendu du même type a été lancé APRÈS lui (relance, ou nouveau
+ * rendu) et n'a pas lui-même échoué : son message d'erreur et son bouton « Relancer » ne servent plus. Pur.
+ * Renvoie, pour chaque échec remplacé, la date du rendu qui le remplace.
+ */
+export function echecsRemplaces(travaux: readonly TravailStudio[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const t of travaux) {
+    if (t.statut !== 'echec') continue;
+    const suivant = travaux
+      .filter((u) => u.type === t.type && u.id !== t.id && u.cree_le > t.cree_le && u.statut !== 'echec' && u.statut !== 'annule')
+      .sort((u, v) => (u.cree_le < v.cree_le ? -1 : 1))[0];
+    if (suivant) out.set(t.id, suivant.cree_le);
+  }
+  return out;
+}
+
+function LigneRendu({ t, a, remplaceLe }: { t: TravailStudio; a: ActionsHistorique; remplaceLe?: string | null }) {
+  if (t.statut === 'echec' && remplaceLe) {
+    return <li className="mzia-rendu__remplace">
+      <div className="mzia-rendu__ligne">
+        <span><b>{LIBELLES_TYPE[t.type]}</b> · {resumeOptions(t.type, t.options)}<br />
+          <small>{dateCourte(t.cree_le)} — échec, relancé le {dateCourte(remplaceLe)}</small></span>
+      </div>
+    </li>;
+  }
   const omis = phraseElementsOmis(t.elements_omis);
   const sc = scenarioDuTravail(t);
   const resultatVisite = t.type === 'visite360' ? t.resultat as ResultatVisite | null : null;
@@ -80,17 +105,18 @@ function LigneRendu({ t, a }: { t: TravailStudio; a: ActionsHistorique }) {
 export function HistoriqueRendus({ travaux, type, max = 4, ...a }: ActionsHistorique & { travaux: readonly TravailStudio[]; type?: TypeTravail | null; max?: number }) {
   const [autresOuverts, setAutresOuverts] = useState(false);
   const { duType, autres } = rendusDuType(travaux, type);
+  const remplaces = echecsRemplaces(travaux);
   if (!duType.length && !autres.length) return null;
   return <div className="mzia-rendu__historique">
     {duType.length > 0 && <>
       <h3>Déjà réalisés</h3>
-      <ul>{duType.slice(0, max).map((t) => <LigneRendu key={t.id} t={t} a={a} />)}</ul>
+      <ul>{duType.slice(0, max).map((t) => <LigneRendu key={t.id} t={t} a={a} remplaceLe={remplaces.get(t.id) ?? null} />)}</ul>
     </>}
     {autres.length > 0 && <>
       <button type="button" className="mzia-rendu__autres" aria-expanded={autresOuverts} onClick={() => setAutresOuverts((o) => !o)}>
         {autresOuverts ? 'Masquer les autres rendus' : `Autres rendus (${String(autres.length)})`}
       </button>
-      {autresOuverts && <ul>{autres.slice(0, max).map((t) => <LigneRendu key={t.id} t={t} a={a} />)}</ul>}
+      {autresOuverts && <ul>{autres.slice(0, max).map((t) => <LigneRendu key={t.id} t={t} a={a} remplaceLe={remplaces.get(t.id) ?? null} />)}</ul>}
     </>}
   </div>;
 }
