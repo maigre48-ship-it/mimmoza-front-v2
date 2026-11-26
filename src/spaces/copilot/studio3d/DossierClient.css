@@ -1,0 +1,22 @@
+/* VIS-60 — bouton « Préparer le dossier client » et bandeau « machine de rendu ». Couleurs en !important + sélecteur
+   préfixé : lisibles sous `.jarvis-dossier * { color: inherit !important }`. Boutons actifs : #dbeafe / #1e3a8a. */
+.mz-dossier, .jarvis-dossier .mz-dossier { margin: 8px 0; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 12px; background: #f8fafc; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #0f172a !important; }
+.mz-dossier__titre, .jarvis-dossier .mz-dossier__titre { margin: 0; font-weight: 700; font-size: 13px; color: #0f172a !important; }
+.mz-dossier__phrase, .jarvis-dossier .mz-dossier__phrase { margin: 0; line-height: 1.45; color: #334155 !important; }
+.mz-dossier__note, .jarvis-dossier .mz-dossier__note { margin: 0; font-size: 11px; color: #475569 !important; }
+.mz-dossier__erreur, .jarvis-dossier .mz-dossier__erreur { margin: 0; font-size: 12px; color: #991b1b !important; }
+.mz-dossier__btn, .jarvis-dossier .mz-dossier__btn {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #93c5fd; border-radius: 9px;
+  padding: 6px 12px; background: #ffffff; color: #1e3a8a !important; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.mz-dossier__btn:hover, .mz-dossier__btn.is-actif, .jarvis-dossier .mz-dossier__btn:hover, .jarvis-dossier .mz-dossier__btn.is-actif { background: #dbeafe; color: #1e3a8a !important; }
+.mz-dossier__btn:disabled, .jarvis-dossier .mz-dossier__btn:disabled { opacity: .55; cursor: not-allowed; }
+.mz-dossier__barre { height: 4px; border-radius: 4px; background: #e2e8f0; overflow: hidden; }
+.mz-dossier__barre > span { display: block; height: 100%; background: #1e3a8a; transition: width .2s; }
+
+.mz-machine, .jarvis-dossier .mz-machine { margin: 6px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 12px; display: flex; flex-direction: column; gap: 3px; color: #0f172a !important; }
+.mz-machine.is-hors_ligne, .jarvis-dossier .mz-machine.is-hors_ligne { border-color: #fecaca; background: #fef2f2; }
+.mz-machine.is-degradee, .mz-machine.is-inconnue, .jarvis-dossier .mz-machine.is-degradee, .jarvis-dossier .mz-machine.is-inconnue { border-color: #fde68a; background: #fffbeb; }
+.mz-machine.is-en_ligne, .mz-machine.is-occupee, .jarvis-dossier .mz-machine.is-en_ligne, .jarvis-dossier .mz-machine.is-occupee { border-color: #bbf7d0; background: #f0fdf4; }
+.mz-machine__titre, .jarvis-dossier .mz-machine__titre { margin: 0; font-weight: 700; color: #0f172a !important; }
+.mz-machine__client, .jarvis-dossier .mz-machine__client { margin: 0; color: #334155 !important; line-height: 1.45; }
