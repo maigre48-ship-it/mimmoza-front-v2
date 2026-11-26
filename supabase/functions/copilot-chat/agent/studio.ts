@@ -1154,6 +1154,62 @@ export async function modeleDuFil(depot: DepotStudio, userId: string, conversati
   return null;
 }
 
+/**
+ * VIS-50 — DESSIN VALIDÉ DE LA CONVERSATION retrouvé dans ses MESSAGES (même règle que le repli client
+ * `chargeVoirEn3D.ts::modeleDeLaConversation` → `modeleCourant` : le DERNIER message d'habillage, s'il porte la référence
+ * d'un dessin, et ce dessin retrouvé par son empreinte dans les résultats d'outils de la conversation).
+ *  - `{ modele, empreinte }` : dessin retrouvé ;
+ *  - `{ introuvable: empreinte }` : un dessin a été validé (référence dans le message) mais son modèle n'est plus lisible ;
+ *  - null : aucun dessin validé (ou dernier habillage sans dessin : la règle VIS-25 le fait sortir du projet).
+ * Sert aux conversations dont le dessin a été validé AVANT VIS-34 (rien d'enregistré dans `studio_preparations`).
+ */
+export async function dessinDuFil(depot: DepotStudio, userId: string, conversationId: string): Promise<{ modele: ModeleBatiment; empreinte: string } | { introuvable: string } | null> {
+  if (!depot.briefsMessages) return null;
+  let lignes: { texte: string; cree_le: string }[] = [];
+  try { lignes = await depot.briefsMessages(userId, conversationId); } catch { return null; }
+  for (const l of lignes) {
+    const v = briefDuMessage(l.texte);
+    if (!(v?.ok && v.valeur.brief)) continue;
+    const ref = referenceModeleDuMessage(l.texte);
+    if (!ref?.ok) return null;
+    const m = await modeleParEmpreinte(depotModeleDe(depot), userId, conversationId, ref.empreinte);
+    return m ? { modele: m, empreinte: ref.empreinte } : { introuvable: ref.empreinte };
+  }
+  return null;
+}
+
+/** VIS-50 — phrase du devis quand le dessin vient des messages (et non de la 3D préparée enregistrée). */
+export const NOTE_DESSIN_DU_FIL = 'Bâtiment dessiné dans cette conversation (validé avant l’enregistrement du projet en vigueur) : retrouvé dans les messages et joint au rendu — il remplace le projet préparé ; il est désormais enregistré avec la 3D préparée.';
+/** VIS-50 — un dessin a été validé mais son modèle est illisible : le rendu le DIT en tête (jamais un autre bâtiment en silence). */
+export const NOTE_DESSIN_INTROUVABLE = 'Vous avez validé un bâtiment dessiné dans cette conversation, mais ce dessin n’est plus lisible : le rendu montrera la 3D préparée, PAS votre dessin. Cliquez à nouveau « Reproduire en 3D » sous la carte du dessin, puis relancez.';
+
+/**
+ * VIS-50 — le dessin retrouvé dans les messages est ENREGISTRÉ avec la 3D préparée (comme VIS-34 à la validation) : une
+ * ligne PROPRE (clé = sha256 { base, projet }), même volume, `entree.projet_en_vigueur` + `resume.projet_en_vigueur`. La
+ * suite (rendus, parcours, Studio) lit alors la source qui fait foi. Portée « projet » (défaut VIS-34), non choisie :
+ * la question de portée reste à poser par `studio_preparer_3d`. Erreur → null (jamais bloquant).
+ */
+export async function persisterDessinDuFil(env: Pick<EnvStudio, 'depot' | 'conversationId' | 'mission'>, userId: string, prep: PreparationLue, modele: ModeleBatiment): Promise<string | null> {
+  if (!env.conversationId || env.mission) return null;
+  if (lireProjetEnVigueur(prep.entree, env.conversationId)) return null;
+  try {
+    const entree = (estObj(prep.entree) ? prep.entree : {}) as EntreePreparation;
+    const resume = (estObj(prep.resume) ? prep.resume : {}) as ResumePreparation;
+    const contradiction = contradictionProgramme(modele, entree.programme_volume as { logements?: number | null; libelle?: string | null } | null);
+    const projet = creerProjetEnVigueur(modele, { portee: PORTEE_DEFAUT, porteeChoisie: false, questionPosee: false, contradiction, conversationId: env.conversationId });
+    const bats = fini((resume as { batiments?: unknown }).batiments) ? (resume as { batiments: number }).batiments : 1;
+    const empreinte = await sha256Hex(jsonCanonique({ base: prep.empreinte, projet: {
+      empreinte: projet.empreinte, portee: projet.portee, choisie: false, question: false, contradiction, conversation: env.conversationId,
+    } }));
+    return await env.depot.enregistrerPreparation(userId, {
+      conception_id: prep.conception_id, conversation_id: env.conversationId, idu: prep.idu, empreinte,
+      entree: { ...entree, projet_en_vigueur: projet }, volume: prep.volume,
+      resume: { ...resume, projet_en_vigueur: resumerProjetEnVigueur(projet, { batimentsPrepares: bats, batimentsMoteur: bats }) },
+      origine: 'chat', version_calcul: VERSION_CALCUL,
+    });
+  } catch { return null; }
+}
+
 /** VIS-25 lot B : réserves du devis quand un bâtiment dessiné est rendu (ou ne peut pas l'être tel quel). */
 export function reservesModeleDevis(m: ModeleBatiment, plusieurs: boolean): string[] {
   return plusieurs
@@ -1508,11 +1564,21 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
      * à la hauteur retenue par le moteur sur ce terrain (modeleContraint). Plusieurs bâtiments : non joint (dit au devis).
      */
     modele?: ModeleBatiment | null;
+    /**
+     * VIS-50 : dessin validé retrouvé dans les MESSAGES de la conversation (`dessinDuFil`), pour une 3D préparée sans projet
+     * en vigueur enregistré (dessin validé avant VIS-34). Joint comme le projet en vigueur : portée « projet », même avec
+     * plusieurs bâtiments préparés, sans condition d'habillage (le dessin REMPLACE le projet préparé, VIS-35).
+     */
+    dessinConversation?: ModeleBatiment | null;
+    /** VIS-50 : empreinte d'un dessin validé mais illisible → `fiche.dessin_attendu` (avertissement en tête du rendu, VIS-35). */
+    dessinIntrouvable?: string | null;
   } = {}): Validation<Obj> {
   const decrit = descriptionPourBrief(options.description, brief);
   // VIS-34 : projet en vigueur ENREGISTRÉ avec cette 3D préparée (dessin validé de la conversation) — le serveur le joint
   // lui-même à la fiche, quel que soit l'appelant ; `options.modele` (chemin VIS-25) ne sert plus que de repli.
-  const projetVigueur = lireProjetEnVigueur(p.entree, conversationId);
+  // VIS-50 : à défaut, le dessin validé retrouvé dans les messages de la conversation (même règle que le repli client).
+  const projetVigueur = lireProjetEnVigueur(p.entree, conversationId)
+    ?? (options.dessinConversation ? creerProjetEnVigueur(options.dessinConversation, { portee: PORTEE_DEFAUT, conversationId }) : null);
   // Composition ou plusieurs bâtiments : ni style ni éléments (le Studio les poserait sur le premier bâtiment seulement).
   const decritSansStyle: DescriptionBatiment | null = decrit ? { ...decrit, style: 'contemporain' } : null;
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
@@ -1589,7 +1655,7 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
     })() : decrit && options.modele && !multi && !composition ? (() => {
       const c = modeleContraint(options.modele, v.niveaux);
       return { modele_batiment: { v: 1, empreinte: empreinteModele(options.modele), modele: c.modele, portee: PORTEE_DEFAUT, ...(c.notes.length ? { notes: c.notes } : {}) } };
-    })() : {}),
+    })() : options.dessinIntrouvable ? { dessin_attendu: { empreinte: options.dessinIntrouvable } } : {}),
     // Lot brief-unifié : bâtiment seul ou composition nommée — clauses et balcons sont déjà dans la commande ;
     // seuls les DÉTAILS (garde-corps, menuiseries, soubassement) voyagent à part, posés par le worker (scene.mts).
     ...(brief && !multi && detailsHabillage(brief) ? { habillage_batiments: { clauses: [], balcons: null, details: detailsHabillage(brief) } } : {}),
@@ -2326,6 +2392,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       }
     }
     let fiche: Obj;
+    let dessinRetrouve: ModeleBatiment | null = null;
+    let prepLancee: PreparationLue | null = null;
     if (j.s.genre === 'version') {
       fiche = { version: 1, conception: { conception_id: j.s.conception_id, n: j.s.n, modele_ref: j.s.modele_ref }, titre: `Conception — version ${j.s.n}`, conversation_id: j.c, origine: 'mimmo', ...(briefDuJeton(j.b) ? { brief_rendu: briefDuJeton(j.b) } : {}) };
     } else {
@@ -2352,10 +2420,17 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
         if (!modeleDevis) { const pv = lireProjetEnVigueur(prep.entree, j.c); if (pv?.empreinte === j.mb) modeleDevis = pv.modele; }
         if (!modeleDevis) return erreur('Le bâtiment dessiné de ce devis n’est plus lisible dans la conversation. RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer pour établir un nouveau devis, présente-le et attends l’accord.');
       }
+      // VIS-50 — 3D préparée SANS projet en vigueur enregistré (dessin validé avant VIS-34) : le dessin validé des MESSAGES
+      // est joint (celui du devis s'il est signé, sinon le dernier) ; introuvable → `dessin_attendu` (dit en tête du rendu).
+      const sansProjet = !avecExtension && !lireProjetEnVigueur(prep.entree, j.c);
+      const duFil = sansProjet ? (modeleDevis ? { modele: modeleDevis, empreinte: j.mb! } : await dessinDuFil(env.depot, uid, j.c)) : null;
+      dessinRetrouve = duFil && 'modele' in duFil ? duFil.modele : null;
       const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b), facades, { facadesDansSite: j.t === 'image' || avecExtension, briefProjet,
-        description: avecExtension ? null : (await descriptionDuFil(env.depot, uid, j.c))?.description ?? null, modele: modeleDevis });
+        description: avecExtension ? null : (await descriptionDuFil(env.depot, uid, j.c))?.description ?? null, modele: modeleDevis,
+        dessinConversation: dessinRetrouve, dessinIntrouvable: duFil && 'introuvable' in duFil ? duFil.introuvable : null });
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
+      prepLancee = prep;
     }
     // LOT G6 — avec le plan de la maison lu (`existant_lu`) : repris au cartouche des plans de l'extension.
     if (ext) fiche = ficheAvecProjetExtension(fiche, ext.projet, ext.existantLu ?? null);
@@ -2394,12 +2469,17 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       if (/Options du travail invalides/.test(m)) return erreur('Options refusées par la base. RIEN N’A ÉTÉ LANCÉ.');
       return erreur(`Le lancement n’a pas abouti (${m.slice(0, 200)}). RIEN N’A ÉTÉ LANCÉ.`);
     }
+    // VIS-50 : le dessin retrouvé dans les messages est ENREGISTRÉ avec la 3D préparée (la suite lit la source qui fait foi).
+    const dessinPersiste = dessinRetrouve && prepLancee ? (await persisterDessinDuFil({ ...env, conversationId: j.c }, uid, prepLancee, dessinRetrouve)) !== null : false;
     const machine = etatMachine(await env.depot.statsFile(), maintenant);
     return {
       status: 'ok', source: SOURCE_STUDIO,
-      data: { lance: true, ...vueTravail(t), machine: machine.phrase, suivi: 'studio_etat_rendu (sans argument : le plus récent de la conversation)',
+      data: { lance: true, ...vueTravail(t), machine: machine.phrase,
+        ...(dessinRetrouve ? { dessin_du_fil: { nom: fiche.projet_en_vigueur && estObj(fiche.projet_en_vigueur) ? fiche.projet_en_vigueur.nom : null, enregistre: dessinPersiste } } : {}),
+        ...(estObj(fiche.dessin_attendu) ? { avertissement_dessin: NOTE_DESSIN_INTROUVABLE } : {}), suivi: 'studio_etat_rendu (sans argument : le plus récent de la conversation)',
         ...(j.sf ? { scenario_transmis: !noteScenario, ...(noteScenario ? { avertissement_scenario: noteScenario } : {}) } : {}) },
-      message: (noteScenario ? `${noteScenario} ` : '') + (j.sf && !noteScenario ? 'Film lancé AVEC le scénario validé dans la carte (transmis tel quel à la machine de rendu, dans les options du film). ' : '') +
+      message: (estObj(fiche.dessin_attendu) ? `AVERTISSEMENT À DIRE EN PREMIER : ${NOTE_DESSIN_INTROUVABLE} ` : '') + (dessinRetrouve ? `${NOTE_DESSIN_DU_FIL} ` : '') +
+        (noteScenario ? `${noteScenario} ` : '') + (j.sf && !noteScenario ? 'Film lancé AVEC le scénario validé dans la carte (transmis tel quel à la machine de rendu, dans les options du film). ' : '') +
         (j.ps ? 'Plans (SANS image) ENREGISTRÉS dans la file : n’annonce aucune image. ' : '') + 'Rendu ENREGISTRÉ dans la file (statut « en attente » tant que la machine de rendu ne l’a pas pris). ' +
         'Dis qu’il est enregistré ; n’annonce aucun démarrage ni délai qui ne soit pas renvoyé. Le suivi s’affiche aussi dans le Dossier 3D.' +
         ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' +
@@ -2617,10 +2697,16 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // VIS-25 lot B : bâtiment dessiné en vigueur (avec sa description) ; son empreinte est signée dans le devis.
   let modeleDevis: ModeleBatiment | null = null;
   let mb: string | null = null;
+  let noteDessinDevis: string | null = null;
   if (src.source.genre === 'preparation') {
     decritDevis = extension ? null : descriptionPourBrief((await descriptionDuFil(env.depot, uid, env.conversationId))?.description, brief);
     modeleDevis = decritDevis ? (await modeleDuFil(env.depot, uid, env.conversationId))?.modele ?? null : null;
-    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet, description: decritDevis, modele: modeleDevis });
+    // VIS-50 : 3D préparée sans projet en vigueur enregistré → dessin validé des MESSAGES (signé dans le devis : `mb`).
+    const duFilDevis = !extension && !lireProjetEnVigueur(src.source.preparation.entree, env.conversationId) ? await dessinDuFil(env.depot, uid, env.conversationId) : null;
+    if (duFilDevis && 'modele' in duFilDevis) { modeleDevis = duFilDevis.modele; noteDessinDevis = NOTE_DESSIN_DU_FIL; }
+    if (duFilDevis && 'introuvable' in duFilDevis) noteDessinDevis = NOTE_DESSIN_INTROUVABLE;
+    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief, null, { briefProjet, description: decritDevis, modele: modeleDevis,
+      dessinConversation: duFilDevis && 'modele' in duFilDevis ? duFilDevis.modele : null, dessinIntrouvable: duFilDevis && 'introuvable' in duFilDevis ? duFilDevis.introuvable : null });
     mb = f.ok && estObj(f.valeur.modele_batiment) && typeof f.valeur.modele_batiment.empreinte === 'string' ? f.valeur.modele_batiment.empreinte : null;
     // VIS-34 : dessin enregistré avec la 3D préparée (même sans description dans le fil) → ses réserves figurent au devis.
     modeleDevis ??= lireProjetEnVigueur(src.source.preparation.entree, env.conversationId)?.modele ?? null;
@@ -2687,7 +2773,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     ...(type === 'image' ? { fond: LIBELLES_FOND[fondDe(opts.valeur)] } : {}),
-    avertissements: [...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(decritDevis && !mb ? reservesDescription(decritDevis, plusieurs || nbBatiments > 0) : []),
+    avertissements: [...(noteDessinDevis ? [noteDessinDevis] : []), ...(noteFondExtension ? [noteFondExtension] : []), ...(extension ? avertissementsRenduExtension(extension.projet, type) : avertissementsSource(src.source)), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments, briefProjet !== null) : []), ...(decritDevis && !mb ? reservesDescription(decritDevis, plusieurs || nbBatiments > 0) : []),
       ...(modeleDevis ? reservesModeleDevis(modeleDevis, !mb) : []), ...(fondImage?.avertissements ?? []),
       ...notesVues,
       ...(scenarioDevis ? [...ecartsScenario.map((e) => `Scénario — ${e} (options de secours, utilisées seulement si la machine de rendu ne lit pas encore le scénario).`),

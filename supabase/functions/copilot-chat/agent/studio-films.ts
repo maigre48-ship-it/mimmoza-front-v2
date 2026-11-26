@@ -11,7 +11,7 @@
 // Rien n'est écrit ni facturé par cet outil (seul le tour de conversation compte, comme d'habitude).
 // =============================================================
 import type { OutilDef, ResultatOutil } from './types.ts';
-import { briefDuFil, type DepotStudio } from './studio.ts';
+import { briefDuFil, dessinDuFil, type DepotStudio } from './studio.ts';
 import { lireProjetEnVigueur } from '../../../../src/lib/studio/projetEnVigueur.ts';
 import { empreinteScenario, resumerScenario, validerScenario, type ScenarioFilm } from '../../../../src/lib/studio/scenarioFilm.ts';
 import {
@@ -97,6 +97,10 @@ export async function projetFilme(depot: DepotStudio, userId: string, conversati
   const ambiance = brief ? AMBIANCE_BRIEF[brief.ambiance] ?? null : null;
   const pv = lireProjetEnVigueur(prep.entree, conversationId);
   if (pv) return { capacites: capacitesDepuisModele(pv.modele, { empreinte: pv.empreinte, ambiance }), source: 'dessin', preparationId: prep.id };
+  // VIS-50 : dessin validé AVANT VIS-34 (rien d'enregistré avec la 3D préparée) → le dessin des MESSAGES de la conversation
+  // (même règle que le repli client et que la fiche du rendu) : les scénarios suivent le bâtiment DESSINÉ.
+  const fil = await dessinDuFil(depot, userId, conversationId);
+  if (fil && 'modele' in fil) return { capacites: capacitesDepuisModele(fil.modele, { empreinte: fil.empreinte, ambiance }), source: 'dessin', preparationId: prep.id };
   const resume = estObj(prep.resume) ? prep.resume : {};
   const nom = typeof resume.titre === 'string' ? resume.titre : null;
   return {
