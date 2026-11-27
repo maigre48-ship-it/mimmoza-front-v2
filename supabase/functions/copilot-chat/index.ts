@@ -90,6 +90,23 @@ import {
   demandeFilm, depotFilmsSupabase, executerOutilProposerFilm, modificationFilm, OUTIL_PROPOSER_FILM, OUTIL_PROPOSER_FILM_DEF,
 } from './agent/studio-films.ts';
 import { lireBlocScenario } from '../../../src/lib/studio/filmsChat.ts';
+// VIS-71 — branchement des lots du 27/11 (outils en LECTURE seule, aucun débit) :
+//   · VIS-60 dossier client (studio_dossier_client) ; · VIS-70 atouts du quartier (quartier_atouts) ;
+//   · VIS-67 grille de vente dans le Studio (grille_vente) ; · VIS-65 style de façade lu dans le chat (consigne).
+import { demandeDossierClient, depotDossierClientSupabase, executerOutilDossierClient, OUTIL_DOSSIER_CLIENT, OUTIL_DOSSIER_CLIENT_DEF } from './agent/dossier-client.ts';
+import { CONSIGNE_QUARTIER, demandeQuartier, depotQuartierSupabase, executerOutilQuartier, OUTIL_QUARTIER_VENTE, OUTIL_QUARTIER_VENTE_DEF } from './agent/quartier-vente.ts';
+import { executerOutilGrilleVente, grilleVentePertinente, lecteurLotsSupabase, OUTIL_GRILLE_VENTE, OUTIL_GRILLE_VENTE_DEF } from './agent/grille-vente.ts';
+import { commandeStyleFacade, MENTION_APERCU_STYLE } from '../../../src/lib/studio/styleFacade.ts';
+/** VIS-71 — style de façade demandé dans le message REÇU : enregistré par le serveur (relu au prochain devis / lancement). */
+function consigneStyleFacade(texte: string): string | null {
+  const c = commandeStyleFacade(texte);
+  if (!c) return null;
+  return `STYLE DE FAÇADE (VIS-65) : l’utilisateur demande la façade en style « ${c.style.libelle} ». C’est ENREGISTRÉ : le serveur le relit ` +
+    'dans ce message et le reporte dans la fiche du PROCHAIN rendu (image, film ou visite) ; aucun outil n’est nécessaire pour l’enregistrer, ' +
+    'rien n’est lancé ni débité. Confirme en une ou deux phrases, en reprenant : « ' + c.reponse + ' »' +
+    (c.style.apercu ? ` Précise que ce style est un aperçu ${MENTION_APERCU_STYLE}.` : '') +
+    ' Propose ensuite, sans insister, de lancer un rendu pour le voir. N’appelle pas studio_commander pour ce style.';
+}
 /** VIS-46 — consigne d'un tour « film » (demande, modification ou carte). */
 const CONSIGNE_FILM_CHAT =
   'FILM DU PROJET (VIS-46) : une demande de film se traite par l’outil studio_proposer_film (3 scénarios construits par le serveur sur le projet en 3D), ' +
@@ -4638,6 +4655,10 @@ const TOOLS: ToolDef[] = [
   OUTIL_STUDIO_COMMANDER_DEF,
   // VIS-46 : scénarios de film (proposé seulement quand le tour parle d'un film ou modifie le film proposé).
   OUTIL_PROPOSER_FILM_DEF,
+  // VIS-71 (lots VIS-60 / VIS-70 / VIS-67) : proposés seulement quand le tour en parle ; lecture seule, aucun débit.
+  OUTIL_DOSSIER_CLIENT_DEF,
+  OUTIL_QUARTIER_VENTE_DEF,
+  OUTIL_GRILLE_VENTE_DEF,
 ];
 
 /**
@@ -4799,6 +4820,36 @@ async function executeTool(
       return (await executerOutilProposerFilm(input, {
         userId: e.userId, conversationId: e.conversationId, depot: e.depot, depotFilms: depotFilmsSupabase(getAdmin()),
         scenarioCarte: e.scenarioCarte ?? null, texteRecu: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '',
+      })) as ToolResult;
+    }
+    case OUTIL_DOSSIER_CLIENT: {
+      // VIS-60 : lecture des travaux de l'utilisateur ET de la conversation (JWT vérifié) ; rien n'est écrit ni débité.
+      const brut = ctx as unknown as Record<string, unknown>;
+      return (await executerOutilDossierClient(input, {
+        userId: auth?.userId ?? null, conversationId: typeof brut.conversation_id === 'string' ? brut.conversation_id : null,
+        depot: depotDossierClientSupabase(getAdmin()),
+      })) as ToolResult;
+    }
+    case OUTIL_QUARTIER_VENTE: {
+      // VIS-70 : sources publiques en lecture (BPE, gares, GTFS, OSM, SIRENE) ; rien n'est écrit, aucun jeton débité.
+      const brut = ctx as unknown as Record<string, unknown>;
+      return (await executerOutilQuartier(input, {
+        conversationId: typeof brut.conversation_id === 'string' ? brut.conversation_id : null,
+        depot: depotQuartierSupabase(getAdmin() as never, {
+          sirene: INTERNAL_FUNCTIONS.sirene
+            ? (lat, lon) => callInternalFunction(INTERNAL_FUNCTIONS.sirene!, { latitude: lat, longitude: lon, radius_km: 1, limit: 30 })
+            : undefined,
+        }),
+        resoudrePoint: async (i) => { const r = await resolvePointForTool(i, ctx); return { lat: r.lat, lon: r.lon, precision: r.precision }; },
+      })) as ToolResult;
+    }
+    case OUTIL_GRILLE_VENTE: {
+      // VIS-67 : filtre lu dans le message REÇU (sans IA), commande `grille-vente` validée et transmise au Studio par le site.
+      const brut = ctx as unknown as Record<string, unknown>;
+      return (await executerOutilGrilleVente(input, {
+        texteRecu: typeof brut.message_utilisateur === 'string' ? brut.message_utilisateur : '',
+        conversationId: typeof brut.conversation_id === 'string' ? brut.conversation_id : null,
+        lireLots: lecteurLotsSupabase(getAdmin(), auth?.userId ?? null),
       })) as ToolResult;
     }
     default:
@@ -11098,6 +11149,8 @@ async function runOrchestrator(params: {
   const availableTools = toolsForMode(mode)
     .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name) || tool.name === OUTIL_EXTENSION_MAISON || tool.name === OUTIL_MAISON_NEUVE || tool.name === OUTIL_DECRIRE_BATIMENT
       || tool.name === OUTIL_DESSINER_BATIMENT || tool.name === OUTIL_RETOUCHER_BATIMENT || tool.name === OUTIL_PROPOSER_FILM || tool.name === OUTIL_STUDIO_COMMANDER))
+    // VIS-71 : outils du bureau de vente et du dossier client, réservés eux aussi au vertical promoteur.
+    .filter((tool) => agentDisponible(ctx.vertical) || !(tool.name === OUTIL_DOSSIER_CLIENT || tool.name === OUTIL_QUARTIER_VENTE || tool.name === OUTIL_GRILLE_VENTE))
     .filter((tool) => !outilHorsChat(tool.name, ctx.route));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
@@ -11173,6 +11226,14 @@ async function runOrchestrator(params: {
   const filmAuTour = agentDisponible(ctx.vertical) && !lancementFilmAuTour && !extensionAuTour && !maisonAuTour && !plansAuTour
     && (Boolean(scenarioCarte) || demandeFilm(userText) || (filmDansConversation && modificationFilm(userText)));
   if (filmAuTour) system = `${system}\n\n${CONSIGNE_FILM_CHAT}`;
+  // VIS-71 — dossier client, quartier, grille de vente : outils PROPOSÉS quand le tour en parle (jamais imposés).
+  const dossierClientAuTour = agentDisponible(ctx.vertical) && demandeDossierClient(userText);
+  const quartierAuTour = agentDisponible(ctx.vertical) && demandeQuartier(userText);
+  const grilleVenteAuTour = agentDisponible(ctx.vertical) && !filmAuTour && grilleVentePertinente([userText]);
+  if (quartierAuTour) system = `${system}\n\n${CONSIGNE_QUARTIER}`;
+  // VIS-65 / VIS-71 — style de façade demandé en une phrase (« passe la façade en contemporain bois et zinc »).
+  const consigneStyle = agentDisponible(ctx.vertical) ? consigneStyleFacade(userText) : null;
+  if (consigneStyle) system = `${system}\n\n${consigneStyle}`;
   const selectedNames = new Set([
     ...selection.toolNames,
     ...(filmAuTour ? [OUTIL_PROPOSER_FILM] : []),
@@ -11190,7 +11251,12 @@ async function runOrchestrator(params: {
     ...(agentDisponible(ctx.vertical) && !filmAuTour && !lancementFilmAuTour && studioCommandePertinente([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? [OUTIL_STUDIO_COMMANDER] : []),
     // Lot INT-10 : l'architecte d'intérieur reste proposé tant que le tour (ou la question précédente) parle d'aménagement.
     ...(interieurPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']) ? ['amenager_interieur'] : []),
+    // VIS-71 : dossier client (VIS-60), atouts du quartier (VIS-70), grille de vente (VIS-67).
+    ...(dossierClientAuTour ? [OUTIL_DOSSIER_CLIENT] : []),
+    ...(quartierAuTour ? [OUTIL_QUARTIER_VENTE] : []),
+    ...(grilleVenteAuTour ? [OUTIL_GRILLE_VENTE] : []),
   ]);
+
   // VIS-46 : tour « film » (hors clic) → pas de devis direct aux anciennes options ; le lancement passe par la carte.
   if (filmAuTour) selectedNames.delete('studio_lancer_rendu');
   const tools = availableTools.filter((tool) => selectedNames.has(tool.name));

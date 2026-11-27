@@ -5,7 +5,7 @@
  * Un bouton par action : « Ouvrir la grille dans le Studio » (rappelle `onOuvrir`, branché sur l'envoi de la commande).
  */
 import type { JSX } from 'react';
-import { textesCarteGrilleVente, type CarteGrilleVente as Carte } from './carteGrilleVente';
+import { textesCarteGrilleVente, type CarteGrilleVente as Carte } from './carteGrilleVente.ts';
 
 const ENCRE = '#0f172a';
 const DOUX = '#334155';

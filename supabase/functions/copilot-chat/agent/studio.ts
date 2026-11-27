@@ -118,6 +118,12 @@ import { avecLivraisonParDefaut, validerOptionLivraison } from '../../../../src/
 // VIS-15 : assiette groupée (plusieurs parcelles) — parcelles demandées / couvertes par la conception.
 import { idusDeLaConception, idusDeLaDemande, libelleAssiette, type AssietteFonciere } from './assiette.ts';
 // VIS-32 : liste blanche des matières du catalogue extérieur par partie (module pur partagé avec le site).
+// VIS-71 : phrase de la machine de rendu par le SIGNAL DE VIE (rpc studio_machine_etat, migration VIS-60) ; sans signal :
+// repli sur l'état déduit de la file (etatMachine).
+import { lireSignalMachine, phraseMachineSignal } from './machine-rendu.ts';
+// VIS-71 : style de façade du kit VIS-65 (carte « Habiller le projet » ou phrase du chat) → habillage_batiments.details.style_facade.
+import { ficheAvecStyleFacade, libelleStyleFacade, styleDuChat, styleFacadeRetenu, type StyleDate } from '../../../../src/lib/studio/styleFacade.ts';
+import type { SignalMachine } from '../../../../src/lib/studio/etatMachineRendu.ts';
 import { LIBELLES_PARTIE_CATALOGUE, PARTIES_CATALOGUE, lireMatieresBrief, matiereAutorisee, type MatieresBrief, type PartieCatalogue } from '../../../../src/spaces/copilot/studio3d/matieresParPartie.ts';
 
 // Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
@@ -1455,6 +1461,21 @@ export function plusRecente(a: string | null, b: string | null): string | null {
 }
 
 /** État DÉDUIT de la machine de rendu (pas de battement de cœur au repos) — formulé comme une déduction. */
+/** VIS-71 — style de façade du projet : le plus récent du thème Matières (traces) et du chat (messages) ; null : aucun. */
+export async function styleFacadeDuProjet(depot: DepotStudio, userId: string, conversationId: string, traces: unknown[] | null): Promise<StyleDate | null> {
+  const carte = traces ? habillageDesTraces(traces).styleFacade ?? null : null;
+  let chat: StyleDate | null = null;
+  if (depot.messagesUtilisateur) { try { chat = styleDuChat(await depot.messagesUtilisateur(userId, conversationId)); } catch { chat = null; } }
+  return styleFacadeRetenu(carte, chat);
+}
+
+/** VIS-71 — phrase de la machine : signal de vie s'il existe, sinon état déduit de la file (jamais d'erreur). */
+export async function phraseMachine(depot: Pick<DepotStudio, 'signalMachine'>, stats: StatsFile | null, maintenant: number): Promise<string> {
+  let signal: SignalMachine | null = null;
+  if (depot.signalMachine) { try { signal = await depot.signalMachine(); } catch { signal = null; } }
+  return phraseMachineSignal(signal, maintenant) ?? etatMachine(stats, maintenant).phrase;
+}
+
 export function etatMachine(s: StatsFile | null, maintenant: number): { etat: EtatMachine; phrase: string } {
   if (!s) return { etat: 'inconnue', phrase: 'État de la machine de rendu inconnu (file illisible) : le rendu démarrera quand elle prendra le travail.' };
   // VIS-57 — une date absente, illisible ou dans le futur (horloges décalées) n'est JAMAIS convertie en durée : « inconnue ».
@@ -1707,6 +1728,16 @@ export interface DepotStudio {
   /** _studio_job_options_valides(type, options) : true / false ; null si la base n'a pas pu répondre. */
   typeRenduAutorise(type: TypeRendu, options: Obj): Promise<boolean | null>;
   statsFile(): Promise<StatsFile | null>;
+  /**
+   * VIS-71 — signal de vie de la machine de rendu (rpc `studio_machine_etat`, migration VIS-60) ; null : pas de signal
+   * (migration non appliquée, worker pas rebranché, lecture en panne) → phrase déduite de la file. Facultatif.
+   */
+  signalMachine?(): Promise<SignalMachine | null>;
+  /**
+   * VIS-71 — derniers messages de l'utilisateur dans la conversation (texte, date), plus récents d'abord, pour y relire une
+   * demande de style de façade. Facultatif ; erreur → [] (aucun style deviné).
+   */
+  messagesUtilisateur?(userId: string, conversationId: string): Promise<{ texte: string; cree_le: string }[]>;
   /**
    * VIS-57 — traces « Habiller le projet » de la conversation (`copilot_action_runs.params`, origine mimmoza-habillage),
    * plus récentes d'abord. null : lecture impossible (la garde ne bloque pas sur une panne). Facultatif : anciens dépôts, tests.
@@ -2461,9 +2492,15 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     // VIS-57 — habillage du projet (traces de la conversation) : rappel dans `fiche.habillage_projet` et aménagement
     // extérieur PLACÉ par l'utilisateur dans `fiche.amenagement_exterieur` (posé tel quel par Unreal ; absent : jardin
     // composé automatiquement). Jamais pour une extension (la maison existante garde son jardin).
+    let tracesHab: unknown[] | null = null;
     if (!ext && env.depot.habillageTraces) {
-      const traces = await env.depot.habillageTraces(uid, j.c);
-      if (traces) fiche = ficheAvecHabillage(fiche, habillageDesTraces(traces));
+      tracesHab = await env.depot.habillageTraces(uid, j.c);
+      if (tracesHab) fiche = ficheAvecHabillage(fiche, habillageDesTraces(tracesHab));
+    }
+    // VIS-71 — style de façade (kit VIS-65) : `habillage_batiments.details.style_facade`, liste blanche ; jamais pour une extension.
+    if (!ext) {
+      const sf = await styleFacadeDuProjet(env.depot, uid, j.c, tracesHab);
+      if (sf) fiche = ficheAvecStyleFacade(fiche, sf.id);
     }
     const rappelHab = estObj(fiche.habillage_projet) && Array.isArray(fiche.habillage_projet.rappel) ? (fiche.habillage_projet.rappel as string[]) : [];
     // FINITIONS 18/11 — plans seuls : la machine de rendu saute l'image et ne produit que les plans.
@@ -2502,7 +2539,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     }
     // VIS-50 : le dessin retrouvé dans les messages est ENREGISTRÉ avec la 3D préparée (la suite lit la source qui fait foi).
     const dessinPersiste = dessinRetrouve && prepLancee ? (await persisterDessinDuFil({ ...env, conversationId: j.c }, uid, prepLancee, dessinRetrouve)) !== null : false;
-    const machine = etatMachine(await env.depot.statsFile(), maintenant);
+    const machine = { phrase: await phraseMachine(env.depot, await env.depot.statsFile(), maintenant) };
     return {
       status: 'ok', source: SOURCE_STUDIO,
       data: { lance: true, ...vueTravail(t), machine: machine.phrase,
@@ -2699,7 +2736,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   let optsEntree = optionsDemandees;
   if (brief && !ambianceExplicite) {
     if (type === 'image' && brief.ambiance === 'nuit' && !brief.defauts.includes('ambiance') && origineBrief === 'fourni') {
-      return erreur('L’image se rend de jour ou en fin de journée (pas de nuit) : demande lequel des deux, ou propose un film / une visite 360° de nuit. RIEN N’A ÉTÉ LANCÉ.');
+      return erreur('L’image se rend de jour ou en fin de journée (pas de nuit) : demande lequel des deux. Ne propose aucun rendu de nuit (VIS-71 : rendu de nuit momentanément indisponible). RIEN N’A ÉTÉ LANCÉ.');
     }
     // VIS-14 (I2) : image — l'ambiance du brief d'habillage n'est transmise que si l'utilisateur l'a CHOISIE (pas une
     // valeur par défaut) ; sinon rien : le worker applique l'ambiance du brief projet, ou « jour ».
@@ -2757,14 +2794,18 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // extérieurs et végétation — doit être choisi dans le Studio ou délégué à Mimmo (traces de la conversation). Sinon :
   // AUCUN devis, la carte « Habiller le projet » s'affiche. Dépôt sans lecture des traces, ou lecture en panne : pas de garde.
   let habillageDevis: HabillageProjet | null = null;
+  let tracesDevis: unknown[] | null = null;
   if (!extension && env.depot.habillageTraces && env.conversationId) {
     const traces = await env.depot.habillageTraces(uid, env.conversationId);
+    tracesDevis = traces;
     if (traces) {
       habillageDevis = habillageDesTraces(traces);
       const g = gardeHabillage(habillageDevis, type);
       if (g) return { ...g, source: SOURCE_STUDIO };
     }
   }
+  // VIS-71 — style de façade retenu (dit dans le devis ; posé dans la fiche au lancement).
+  const styleDevis = !extension && env.conversationId ? await styleFacadeDuProjet(env.depot, uid, env.conversationId, tracesDevis) : null;
   const actifs = await env.depot.travauxActifs(uid);
   if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
   // VIS-10 — vues « sous condition » (privatifs, intérieurs) : pronostic d'après l'habillage connu, sinon « selon le projet ».
@@ -2774,7 +2815,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   // LOT P2 — fond de l'image : couverture Panoramax et façade sur voie, dites dans le devis (rien n'est promis).
   const fondImage = type === 'image' && src.source.genre === 'preparation' ? await fondDuDevis(env, uid, src.source.preparation, opts.valeur, !!extension) : null;
   const stats = await env.depot.statsFile();
-  const machine = etatMachine(stats, maintenant);
+  const machine = { phrase: await phraseMachine(env.depot, stats, maintenant) };
   const sourceJeton: ChargeJeton['s'] = src.source.genre === 'version' ? src.source : { genre: 'preparation', preparation_id: src.source.preparation.id };
   // Un devis encore valable, aux mêmes paramètres (brief compris), a-t-il déjà été présenté dans un message précédent ?
   // Alors on le renvoie tel quel (même jeton) : l'accord donné après l'avoir lu reste confirmable.
@@ -2811,6 +2852,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     ...(brief ? { habillage: libelleBrief(brief) } : {}),
     // VIS-57 — rappel de l'habillage du projet (choisi par l'utilisateur ou délégué à Mimmo), thème par thème.
     ...(habillageDevis ? { habillage_projet: rappelHabillage(habillageDevis) } : {}),
+    ...(styleDevis ? { style_facade: `${libelleStyleFacade(styleDevis.id)} (${styleDevis.source === 'chat' ? 'demandé dans le chat' : 'choisi dans « Habiller le projet »'})` } : {}),
     ...(briefProjet && bp ? { brief_projet: resumeBriefProjetDevis(briefProjet) } : {}),
     jetons: 0,
     cout_jetons: 'Aucun jeton débité pour ce rendu : les rendus ne sont pas facturés aujourd’hui (seul ce message du chat est compté, comme d’habitude).',
@@ -2939,7 +2981,7 @@ async function devisPlansSeuls(env: EnvStudio, uid: string, maintenant: number):
     calcul_gpu: 'Calcul sur la machine de rendu Mimmoza, sans image ni rendu 3D ; aucun service payant externe.',
     duree: 'quelques minutes une fois le travail démarré — estimation, non mesurée pour ce projet',
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
-    machine_de_rendu: etatMachine(stats, maintenant).phrase,
+    machine_de_rendu: await phraseMachine(env.depot, stats, maintenant),
     avertissements: ['Plans indicatifs, tirés du même projet que l’image : à faire valider par un professionnel avant tout dépôt.', 'Vous pourrez demander l’image ensuite : elle partira du même projet.'],
     valable_jusqu_a: `${heureParis(charge.exp)} (heure de Paris)`,
   };
@@ -3184,7 +3226,7 @@ async function etatRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     const [pos, stats] = await Promise.all([env.depot.positionFile(t.cree_le), env.depot.statsFile()]);
     data.position_file = pos;
     data.attente_depuis_min = Math.max(0, Math.round((maintenant - Date.parse(t.cree_le)) / 60_000));
-    data.machine = etatMachine(stats, maintenant).phrase;
+    data.machine = await phraseMachine(env.depot, stats, maintenant);
   }
   // VIS-57 — échec : la VRAIE cause (détail technique de client_errors), jamais « vérifiez la description du bâtiment » à tort.
   if (t.statut === 'echec' && t.erreur) {
@@ -3331,6 +3373,9 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
           derniereActivite: plusRecente(actCours.data?.[0]?.maj_le ?? null, actFin.data?.[0]?.termine_le ?? null) };
       } catch { return null; }
     },
+    async signalMachine() {
+      return lireSignalMachine(admin as unknown as Parameters<typeof lireSignalMachine>[0]);
+    },
     async habillageTraces(userId, conversationId) {
       try {
         const { data, error } = await admin.from('copilot_action_runs').select('params')
@@ -3425,6 +3470,20 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
     },
     // VIS-25 lot B : lecture serveur bornée à l'utilisateur ET à la conversation ; le modèle est revalidé à la lecture.
     sortiesModele: depotModeleSupabase(admin).sortiesModele,
+    async messagesUtilisateur(userId, conversationId) {
+      // VIS-71 : lecture serveur (service) bornée à l'utilisateur ET à la conversation ; seul le texte est relu.
+      const { data, error } = await admin.from('copilot_messages').select('content,created_at')
+        .eq('user_id', userId).eq('conversation_id', conversationId).eq('role', 'user')
+        .order('created_at', { ascending: false }).limit(BRIEF_MESSAGES_RELUS);
+      if (error || !Array.isArray(data)) return [];
+      return data.flatMap((l) => {
+        const ligne = l as { content?: unknown; created_at?: unknown };
+        const texte = Array.isArray(ligne.content)
+          ? ligne.content.map((c) => (estObj(c) && c.type === 'text' && typeof c.text === 'string' ? c.text : '')).join('\n')
+          : typeof ligne.content === 'string' ? ligne.content : '';
+        return texte.trim() && typeof ligne.created_at === 'string' ? [{ texte, cree_le: ligne.created_at }] : [];
+      });
+    },
     async briefsMessages(userId, conversationId) {
       // Lecture serveur (service) bornée à l'utilisateur ET à la conversation ; le bloc est revalidé par briefDuMessage.
       const { data, error } = await admin.from('copilot_messages').select('content,created_at')

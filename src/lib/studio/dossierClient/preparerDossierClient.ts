@@ -12,7 +12,10 @@ import {
   collecterLivrables, etatDossier, MENTION_DOSSIER, nomFichierSur, noticeDossier, programmeDepuisResume, raccourciUrl, TITRE_DOSSIER,
   type EtatDossier, type FichierDossier, type ManifesteDossier, type TravailDossier,
 } from './dossierClientLogique.ts';
-import { construirePdfDossier } from './pdfDossier.ts';
+import { construirePdfDossier, type PageQuartierDossier } from './pdfDossier.ts';
+// VIS-71 : page « Le quartier » du dossier (atouts VIS-70 : ceux de la carte du chat s'ils sont en session, sinon recalculés).
+import { chargerAtoutsQuartier, lireAtoutsSession, lireProjetConversation } from '../../quartier/chargerQuartier.ts';
+import { texteDossierQuartier } from '../../quartier/texteAtouts.ts';
 import { creerZipStocke, type EntreeZipStocke } from './zipStocke.ts';
 
 /** Validité du lien du film inscrit dans le PDF (le MP4 est aussi dans le ZIP). */
@@ -52,6 +55,26 @@ async function telecharger(f: { bucket: string; chemin: string }): Promise<Uint8
   return new Uint8Array(await data.arrayBuffer());
 }
 
+/** Délai au-delà duquel la page quartier est omise (le dossier ne doit jamais attendre une source lente). */
+export const DELAI_QUARTIER_MS = 25_000;
+
+/** VIS-71 — page « Le quartier » : null si le projet n'est pas localisé ou si aucune source n'a répondu (jamais simulée). */
+export async function lirePageQuartier(conversationId: string): Promise<PageQuartierDossier | null> {
+  try {
+    const projet = await lireProjetConversation(conversationId);
+    if (!projet) return null;
+    const atouts = lireAtoutsSession(projet) ?? await Promise.race([
+      chargerAtoutsQuartier(projet),
+      new Promise<null>((r) => setTimeout(() => r(null), DELAI_QUARTIER_MS)),
+    ]);
+    if (!atouts) return null;
+    const t = texteDossierQuartier(atouts);
+    return t.lignes.length ? t : null;
+  } catch {
+    return null;
+  }
+}
+
 function dateFr(d = new Date()): string {
   return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: 'long', year: 'numeric' }).format(d);
 }
@@ -66,6 +89,8 @@ export async function preparerDossierClient(o: {
   const progres = (etape: string, fait: number, total: number) => o.surProgres?.({ etape, fait, total });
   progres('Lecture des livrables', 0, 1);
   const [travaux, resume] = await Promise.all([lireTravauxDossier(o.conversationId), lireResume(o.conversationId)]);
+  // VIS-71 : lancé tout de suite, attendu au moment du PDF (en parallèle des téléchargements).
+  const quartierP = lirePageQuartier(o.conversationId);
   const m = collecterLivrables(travaux);
   const etat = etatDossier(travaux, m);
   if (!etat.preparable) throw new Error(etat.phrase);
@@ -99,7 +124,8 @@ export async function preparerDossierClient(o: {
   }
   const date = dateFr();
   const programme = programmeDepuisResume(resume, { titre: o.titre, adresse: o.adresse ?? null });
-  const pdf = construirePdfDossier({ titre: o.titre, adresse: o.adresse, date, programme, manifeste: m, octets, lienFilm: lienF, lienVisite: lienV });
+  const quartier = await quartierP;
+  const pdf = construirePdfDossier({ titre: o.titre, adresse: o.adresse, date, programme, manifeste: m, octets, lienFilm: lienF, lienVisite: lienV, quartier });
   const nomPdf = `${nomFichierSur(`Dossier-presentation-${o.titre}`, 80)}.pdf`;
 
   progres('Assemblage de l’archive', 0, 1);

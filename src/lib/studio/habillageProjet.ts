@@ -16,7 +16,12 @@
 // `fiche.amenagement_exterieur` = l'aménagement placé par l'utilisateur, format `mimmozia.amenagement-exterieur` v1).
 // L'aménagement lui-même vient du Studio, publié dans le stockage local partagé (même origine) sous
 // CLE_AMENAGEMENT_PARTAGE (mimmozia-studio › src/ui/exterieur/partageExterieur.ts — même clé, même forme).
+//
+// VIS-71 — thème Matières : la carte propose aussi le STYLE DE FAÇADE du kit VIS-65 (7 styles, styleFacade.ts). Le choix
+// voyage dans la même trace (`style_facade`, liste blanche) ; « Laisser Mimmo choisir » n'en écrit aucun (le Studio garde
+// le style du dessin, sinon « contemporain sobre »).
 // =============================================================================
+import { estStyleFacade, libelleStyleFacade } from './styleFacade.ts';
 
 export const ORIGINE_TRACE_HABILLAGE = 'mimmoza-habillage';
 export const TYPE_TRACE_HABILLAGE = 'habillage-projet';
@@ -47,7 +52,7 @@ export const DEFINITIONS_THEMES: Readonly<Record<ThemeHabillage, DefinitionTheme
     detail: 'Façade (murs extérieurs), toiture (couverture du toit) et sols (pièces sèches du logement).',
     studio: { etape: 'batiment', sous: 'materiaux', libelle: 'Bâtiment › Matériaux' },
     commandeMimmo: null,
-    delegation: 'matières proposées par Mimmo (habillage par défaut du projet)',
+    delegation: 'matières proposées par Mimmo (habillage par défaut du projet, façade en style sobre)',
     choisi: 'choisies',
   },
   deco: {
@@ -73,6 +78,8 @@ export interface HabillageProjet {
   themes: Partial<Record<ThemeHabillage, ChoixTheme>>;
   /** Aménagement extérieur placé par l'utilisateur (thème « exterieur » choisi) ; null : composition automatique. */
   amenagement: Record<string, unknown> | null;
+  /** VIS-71 — style de façade choisi dans le thème Matières (identifiant du kit) et sa date ; absent : aucun choix. */
+  styleFacade?: { id: string; le: string } | null;
 }
 
 export const habillageVide = (): HabillageProjet => ({ themes: {}, amenagement: null });
@@ -135,11 +142,13 @@ export function lireAmenagementPartage(s: StockageLecture | null, projetId: stri
 /* ───────────────────────── Traces (copilot_action_runs) ───────────────────────── */
 
 /** `params` de la trace d'un choix de thème (écrite par le site ; relue par le serveur). */
-export function paramsTraceHabillage(theme: ThemeHabillage, mode: ModeTheme, o: { resume?: string | null; amenagement?: Obj | null; le: string }): Obj {
+export function paramsTraceHabillage(theme: ThemeHabillage, mode: ModeTheme, o: { resume?: string | null; amenagement?: Obj | null; le: string; styleFacade?: string | null }): Obj {
   return {
     origine: ORIGINE_TRACE_HABILLAGE, type: TYPE_TRACE_HABILLAGE, v: VERSION_HABILLAGE, theme, mode,
     resume: txt(o.resume, 300), le: o.le,
     ...(theme === 'exterieur' && mode === 'choisi' && o.amenagement ? { amenagement: o.amenagement } : {}),
+    // VIS-71 : style de façade du kit (liste blanche), thème Matières choisi seulement.
+    ...(theme === 'matieres' && mode === 'choisi' && estStyleFacade(o.styleFacade) ? { style_facade: o.styleFacade } : {}),
   };
 }
 
@@ -161,6 +170,8 @@ export function habillageDesTraces(traces: readonly unknown[]): HabillageProjet 
     const avant = h.themes[t.theme];
     if (avant && avant.le >= t.le) continue;
     h.themes[t.theme] = { mode: t.mode, resume: txt(t.resume, 300), le: t.le };
+    // VIS-71 : le DERNIER choix du thème Matières fixe le style (délégué ou sans style : aucun style écrit).
+    if (t.theme === 'matieres') h.styleFacade = t.mode === 'choisi' && estStyleFacade(t.style_facade) ? { id: t.style_facade, le: t.le } : null;
     if (t.theme === 'exterieur') {
       const l = t.mode === 'choisi' ? amenagementTransportable(t.amenagement) : null;
       if (t.le >= amenagementLe) { h.amenagement = l?.ok ? l.amenagement : null; amenagementLe = t.le; }
@@ -181,6 +192,9 @@ export function rappelHabillage(h: HabillageProjet): string[] {
     const c = h.themes[t];
     if (!c) return `${d.titre} : à choisir`;
     if (c.mode === 'delegue') return `${d.titre} : ${d.delegation}`;
+    if (t === 'matieres' && h.styleFacade && !(c.resume ?? '').includes('style de façade')) {
+      return `${d.titre} : ${d.choisi} par vous — style de façade « ${libelleStyleFacade(h.styleFacade.id)} »${c.resume ? ` ; ${c.resume}` : ''}`;
+    }
     if (t === 'exterieur') {
       return `${d.titre} : ${d.choisi} par vous dans le Studio — ${h.amenagement ? `${resumeAmenagement(h.amenagement)}, posés tels quels au rendu` : 'aucun élément placé transmis, jardin composé automatiquement'}`;
     }

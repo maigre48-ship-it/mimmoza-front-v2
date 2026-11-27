@@ -13,6 +13,10 @@ import { ArrowUpRight, Box, FileStack } from 'lucide-react';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
 // Film ou visite 360° en 3 clics (contrat docs/studio/CONTRAT_FILM_VISITE.md).
 import { FilmVisitePanel } from './FilmVisitePanel';
+// VIS-71 : état de la machine de rendu (VIS-60), dossier client (VIS-60) et page Quartier (VIS-70) dans l'écran des rendus.
+import { BandeauMachineRendu } from './BandeauMachineRendu';
+import { BoutonDossierClient } from './BoutonDossierClient';
+import { BoutonPageQuartier } from '@/spaces/quartier/BoutonPageQuartier';
 import './JarvisDraftPanel.css';
 // Parcelle de la conversation + volume d'étude simple, et « Voir en 3D réaliste dans Studio » (même parcours que « Voir en 3D »).
 import { useContexteVolume, VolumeParcelleSection } from './VolumeParcelleSection';
@@ -70,6 +74,12 @@ type Field = keyof typeof LABELS;
 
 /** R2 — résultat de l'ouverture : `parcelle-requise` = poser la question minimale dans le dossier. */
 export type IssueOuvertureStudio = void | 'parcelle-requise';
+
+/** VIS-71 — titre du dossier client : objectif du projet, sinon sa localisation, sinon « Projet ». */
+function titreDossierClient(d: JarvisDraft): string {
+  const t = (d.objectif ?? d.localisation ?? '').replace(/\s+/g, ' ').trim();
+  return t ? t.slice(0, 80) : 'Projet';
+}
 
 export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend, habillage, onHabillage, parcours, onParcours, commandeParcours, etapeDemandee, noticeParcours, onValiderApercu, apercuValide }: {
   messages: readonly ChatMessage[];
@@ -278,9 +288,16 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   const parcoursRendu: ParcoursRendu | null = parcours ? {
     type: TRAVAIL_DU_PARCOURS[parcours.type], cle: etapeRendu?.cle ?? '', feuille: feuilleDeLEtape(parcours.type, etapeRendu),
   } : null;
-  const panneauRendu = (assurer?: () => Promise<void>) => rendu && conversationId ? <FilmVisitePanel draft={rendu.draft} conversationId={conversationId}
-    assurerValidation={assurer} commande={commandeRendu} terrainParDefaut={rendu.terrain} onValiderApercu={onValiderApercu} apercuValide={apercuValide}
-    parcoursRendu={parcoursRendu} messages={messages} onSend={onSend} /> : null;
+  // VIS-71 : un bouton par action — bandeau de la machine (seulement s'il y a quelque chose d'utile à dire), rendus,
+  // « Préparer le dossier client » (seulement quand un livrable existe), « Quartier et plan masse ».
+  const panneauRendu = (assurer?: () => Promise<void>) => rendu && conversationId ? <>
+    <BandeauMachineRendu conversationId={conversationId} />
+    <FilmVisitePanel draft={rendu.draft} conversationId={conversationId}
+      assurerValidation={assurer} commande={commandeRendu} terrainParDefaut={rendu.terrain} onValiderApercu={onValiderApercu} apercuValide={apercuValide}
+      parcoursRendu={parcoursRendu} messages={messages} onSend={onSend} />
+    <BoutonDossierClient conversationId={conversationId} titre={titreDossierClient(rendu.draft)} adresse={rendu.draft.localisation ?? null} />
+    <p style={{ margin: '6px 0' }}><BoutonPageQuartier conversationId={conversationId} /></p>
+  </> : null;
 
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
     {parcoursUi}

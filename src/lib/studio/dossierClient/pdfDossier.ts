@@ -3,7 +3,7 @@
  * Fonctionne dans le navigateur ET sous Node (tests) : aucune toile (canvas), le QR code est dessiné en carrés vectoriels.
  *
  * Pages : couverture (perspective pleine largeur, titre, adresse, date, mention) → programme et surfaces (SDP / SHAB,
- * logements, gabarit…) + contenu du dossier → une planche par image → plans (aperçus + liste des fichiers) → film et
+ * logements, gabarit…) + contenu du dossier → « Le quartier » (VIS-70 / VIS-71, si les atouts sont connus) → une planche par image → plans (aperçus + liste des fichiers) → film et
  * visite 360° (QR codes et liens cliquables). Pied de page : « Mimmoza · Dossier de présentation · Images non
  * contractuelles · n / N ». Aucun nom de fournisseur d'assets ; aucun avertissement technique du worker.
  */
@@ -21,8 +21,19 @@ export interface EntreePdfDossier {
   readonly octets: ReadonlyMap<string, Uint8Array>;
   readonly lienFilm?: string | null;
   readonly lienVisite?: string | null;
+  /** VIS-71 — page « Le quartier » (texteDossierQuartier, VIS-70) ; absente : page omise, jamais simulée. */
+  readonly quartier?: PageQuartierDossier | null;
   /** Tests : flux non compressés (texte lisible dans les octets). */
   readonly compresser?: boolean;
+}
+
+/** VIS-71 — contenu de la page « Le quartier » (forme de src/lib/quartier/texteAtouts.ts › texteDossierQuartier). */
+export interface PageQuartierDossier {
+  readonly titre: string;
+  readonly accroche: string;
+  readonly lignes: readonly (readonly [string, string])[];
+  readonly sources: string;
+  readonly mention: string;
 }
 
 const BLEU = [30, 58, 138] as const;      // #1e3a8a
@@ -208,6 +219,34 @@ export function construirePdfDossier(e: EntreePdfDossier): Uint8Array {
   contenu.forEach((c, i) => doc.text(textePdf(`-  ${c}`), 172, 49 + i * 8));
   doc.setFontSize(9);
   doc.text(textePdf('Fichiers complets (film MP4, images HD, plans) dans l’archive ZIP jointe.'), 172, 49 + contenu.length * 8 + 4);
+
+  // 2 bis. VIS-71 — Le quartier (atouts réels, temps estimés) : seulement si au moins une catégorie est renseignée.
+  const q = e.quartier;
+  if (q && q.lignes.length) {
+    doc.addPage();
+    entete(doc, q.titre || 'Le quartier', titre);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(...BLEU);
+    const accroche = doc.splitTextToSize(textePdf(q.accroche), L - 28) as string[];
+    doc.text(accroche, 14, 36);
+    let yq = 36 + accroche.length * 6 + 6;
+    doc.setFontSize(10.5);
+    q.lignes.slice(0, 9).forEach(([lib, val], i) => {
+      if (i % 2) doc.setFillColor(255, 255, 255); else doc.setFillColor(241, 245, 249);
+      doc.rect(14, yq - 6, L - 28, 11, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...BLEU);
+      doc.text(textePdf(lib), 18, yq);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...GRIS);
+      doc.text((doc.splitTextToSize(textePdf(val), L - 100) as string[])[0] ?? '', 80, yq);
+      yq += 12;
+    });
+    doc.setFontSize(8);
+    doc.setTextColor(...GRIS);
+    doc.text(doc.splitTextToSize(textePdf(`${q.mention} ${q.sources}`), L - 28) as string[], 14, Math.min(yq + 4, H - 22));
+  }
 
   // 3. Planches.
   m.images.forEach((im, i) => {

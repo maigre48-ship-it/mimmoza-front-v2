@@ -9,6 +9,8 @@
 // Chaque choix est une trace `copilot_action_runs` (aucun jeton, aucun message du chat) relue par le serveur.
 // Le lancement n'est possible que lorsque CHAQUE thème est choisi ou délégué (garde du serveur et boutons grisés).
 // Logique : src/lib/studio/habillageProjet.ts.
+// VIS-71 — thème Matières : les 7 styles de façade du kit VIS-65 (un bouton par style ; le clic choisit le thème avec ce
+// style). « Laisser Mimmo choisir » n'écrit aucun style : le Studio garde le style sobre (ou celui du dessin).
 // =============================================================================
 import { useMemo, useState } from 'react';
 import { useCopilotStore } from '../store/copilotStore';
@@ -21,6 +23,7 @@ import { dernierMessagePersiste, envoyerCommandeStudio } from './pontCommandesSi
 import { ouvrirLeStudio } from './CarteCommandeStudio';
 import { projetIdChat } from './projetChat';
 import { briefCourant, recapitulatif } from './briefCreatif';
+import { libelleStyleFacade, STYLES_FACADE_KIT, styleFacadeKit } from '@/lib/studio/styleFacade';
 import './CarteHabillageProjet.css';
 
 /** Habillage de la conversation courante, d'après les traces relues (rechargement compris). */
@@ -53,13 +56,13 @@ export function CarteHabillageProjet({ messageId, type, onSend, integree }: Prop
 
   const attache = !messageId.startsWith('local-') ? messageId : dernierMessagePersiste(messages as never);
 
-  const tracer = (theme: ThemeHabillage, mode: ModeTheme, resume: string | null, amenagement: Record<string, unknown> | null = null) => {
+  const tracer = (theme: ThemeHabillage, mode: ModeTheme, resume: string | null, amenagement: Record<string, unknown> | null = null, styleFacade: string | null = null) => {
     if (!attache) { setNote('Envoyez d’abord un message à Mimmo : le choix se range dans la conversation.'); return false; }
     const le = new Date().toISOString();
     const run: ActionRun = {
       messageId: attache, actionKind: 'run_step', outcome: 'done', decidedBy: 'user', createdAt: le,
       message: `${DEFINITIONS_THEMES[theme].titre} : ${mode === 'delegue' ? 'Mimmo choisit' : 'choisi dans le Studio'}`,
-      params: paramsTraceHabillage(theme, mode, { resume, amenagement, le }),
+      params: paramsTraceHabillage(theme, mode, { resume, amenagement, le, styleFacade }),
     };
     remember(run);
     setModifie((m) => ({ ...m, [theme]: false }));
@@ -83,9 +86,17 @@ export function CarteHabillageProjet({ messageId, type, onSend, integree }: Prop
       return;
     }
     const brief = theme === 'matieres' ? briefCourant(messages as never) : null;
+    // VIS-71 : le style de façade déjà choisi est gardé quand les matières sont validées après le Studio.
+    const style = theme === 'matieres' ? h.styleFacade?.id ?? null : null;
     tracer(theme, 'choisi', theme === 'matieres'
-      ? `${brief ? `${recapitulatif(brief)} ; ` : ''}façade, toiture et sols réglés dans Bâtiment › Matériaux`.slice(0, 300)
-      : 'déco posée pièce par pièce dans l’onglet Déco');
+      ? `${style ? `style de façade « ${libelleStyleFacade(style)} » ; ` : ''}${brief ? `${recapitulatif(brief)} ; ` : ''}façade, toiture et sols réglés dans Bâtiment › Matériaux`.slice(0, 300)
+      : 'déco posée pièce par pièce dans l’onglet Déco', null, style);
+  };
+
+  /** VIS-71 — un clic sur un style = thème Matières choisi avec ce style de façade (rien n'est lancé ni débité). */
+  const choisirStyle = (id: string) => {
+    if (!styleFacadeKit(id)) return;
+    tracer('matieres', 'choisi', `style de façade « ${libelleStyleFacade(id)} »`, null, id);
   };
 
   const deleguer = (theme: ThemeHabillage) => {
@@ -131,6 +142,20 @@ export function CarteHabillageProjet({ messageId, type, onSend, integree }: Prop
                   <button type="button" className="mz-hab__btn" onClick={() => deleguer(t)}>Laisser Mimmo choisir</button>
                 </> : <button type="button" className="mz-hab__btn" onClick={() => setModifie((m) => ({ ...m, [t]: true }))}>Modifier</button>}
               </div>
+              {t === 'matieres' && enEdition && (
+                <div className="mz-hab__styles" role="group" aria-label="Style de façade">
+                  <span className="mz-hab__styles-titre">Style de façade</span>
+                  <div className="mz-hab__actions">
+                    {STYLES_FACADE_KIT.map((s) => (
+                      <button key={s.id} type="button" title={s.description} aria-pressed={h.styleFacade?.id === s.id}
+                        className={`mz-hab__btn${h.styleFacade?.id === s.id ? ' is-actif' : ''}`} onClick={() => choisirStyle(s.id)}>
+                        {libelleStyleFacade(s.id).charAt(0).toUpperCase()}{libelleStyleFacade(s.id).slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="mz-hab__styles-note">« Laisser Mimmo choisir » garde le style contemporain sobre (ou celui de votre dessin). Les volumes et les ouvertures ne changent pas.</span>
+                </div>
+              )}
             </li>
           );
         })}

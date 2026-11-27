@@ -6,7 +6,7 @@
 // conversation (contour + centroïde) ; ?lat&lon prime s'il est fourni.
 // Données : src/lib/quartier/chargerQuartier.ts (BPE, GTFS, gares, OSM, SIRENE) ; livrables : studio_jobs de la
 // conversation lus comme le dossier client (VIS-60, lecture seule) → menu Plan masse · Situation · Extérieur · Plans ·
-// Intérieur · Galerie, visite /visite/<id> (VIS-69), grille de vente (VIS-67, simple lien).
+// Intérieur · Galerie, visite /visite/<id> (VIS-69), grille de vente (VIS-67) ouverte DANS le Studio par le pont (VIS-71).
 // =============================================================================
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -18,6 +18,7 @@ import { construireMenuVente, vueDepuisAdresse, type VueVente } from '../../lib/
 import { collecterLivrables, type ManifesteDossier } from '../../lib/studio/dossierClient/dossierClientLogique.ts';
 import { lireTravauxDossier } from '../../lib/studio/dossierClient/preparerDossierClient.ts';
 import { VueQuartier } from './VueQuartier';
+import { envoyerCommandeStudio } from '../copilot/studio3d/pontCommandesSite';
 
 const VALIDITE_URL_S = 3600;
 
@@ -102,11 +103,29 @@ export default function PageQuartier() {
 
   useEffect(() => { document.title = `Quartier — ${projet?.libelle ?? 'Mimmoza'}`; }, [projet]);
 
+  // VIS-71 — grille de vente : commande `grille-vente` envoyée à l'onglet Studio de la conversation (un clic = une commande).
+  const [noteGrille, setNoteGrille] = useState<string | null>(null);
+  const [envoiGrille, setEnvoiGrille] = useState(false);
+  const ouvrirGrille = useCallback(() => {
+    const d = menu.grilleVente;
+    if (!d.projetId || !d.conversationId || envoiGrille) return;
+    setEnvoiGrille(true);
+    setNoteGrille('Envoi au Studio…');
+    void envoyerCommandeStudio({
+      projetId: d.projetId, conversationId: d.conversationId, messageId: null, appelId: `quartier-grille-vente-${Date.now()}`,
+      libelle: d.libelle, commande: { id: d.commande.id, params: { ...d.commande.params } },
+    }).then((r) => {
+      setNoteGrille(r.etat === 'en-cours' ? 'Le Studio ouvre la grille de vente.'
+        : `${r.message} Ouvrez le Studio depuis la conversation du projet : la grille s’y ouvrira.`);
+    }).finally(() => setEnvoiGrille(false));
+  }, [menu.grilleVente, envoiGrille]);
+
   return (
     <VueQuartier
       titre={projet?.libelle ?? 'Votre projet'} adresse={projet?.adresse ?? (projet?.communeInsee ? `Commune ${projet.communeInsee}` : null)}
       atouts={atouts} chargement={chargement} erreur={erreur} menu={menu} vue={vue} onVue={changerVue} urls={urls} urlFilm={urlFilm}
       onActualiser={projet ? () => void charger(projet, true) : undefined} categorieInitiale={categorieInitiale}
+      onGrilleVente={menu.grilleVente.projetId ? ouvrirGrille : undefined} noteGrilleVente={noteGrille}
     />
   );
 }

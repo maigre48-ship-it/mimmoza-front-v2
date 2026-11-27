@@ -35,6 +35,10 @@ export interface PropsVueQuartier {
   forcerPlan?: boolean;
   /** Catégorie ouverte à l'arrivée (?categorie=… : lien direct « Écoles autour du projet »). */
   categorieInitiale?: CategorieQuartier | null;
+  /** VIS-71 — « Grille de vente » : envoie la commande `grille-vente` au Studio (absent sans conversation : bouton grisé). */
+  onGrilleVente?: () => void;
+  /** VIS-71 — issue de l'envoi (« Le Studio ouvre la grille… » / commande en attente) ; null avant le clic. */
+  noteGrilleVente?: string | null;
 }
 
 export function VueQuartier(p: PropsVueQuartier) {
@@ -62,7 +66,12 @@ export function VueQuartier(p: PropsVueQuartier) {
                   aria-current={p.vue === e.vue ? 'page' : undefined} title={e.detail} onClick={() => p.onVue(e.vue)}>{e.libelle}</button>
           ))}
         </nav>
-        <a className="mz-qr__bouton mz-qr__bouton--plein" href={p.menu.grilleVente.lien}>{p.menu.grilleVente.libelle}</a>
+        <div className="mz-qr__grille">
+          <button type="button" className="mz-qr__bouton mz-qr__bouton--plein" disabled={!p.onGrilleVente}
+            title={p.onGrilleVente ? 'Ouvre la grille de vente dans le Studio (lots, statuts, prix)' : 'Ouvrez la page depuis la conversation du projet'}
+            onClick={() => p.onGrilleVente?.()}>{p.menu.grilleVente.libelle} dans le Studio</button>
+          {p.noteGrilleVente && <span className="mz-qr__note-grille" role="status">{p.noteGrilleVente}</span>}
+        </div>
       </header>
 
       <main className="mz-qr__scene">

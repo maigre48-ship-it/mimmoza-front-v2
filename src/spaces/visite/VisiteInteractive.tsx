@@ -40,6 +40,9 @@ interface Fiche {
 
 const INCLINAISON_INTERIEUR = -8;
 
+/** VIS-71 (27/11/2026) — rendu de nuit cassé : aucune bascule jour / nuit dans la visite (repasser à true une fois réparé). */
+const VISITE_NUIT_PROPOSEE: boolean = false;
+
 export default function VisiteInteractive({ visite, manifeste, dossier, visiteId }: VisiteInteractiveProps) {
   const [recherche, setRecherche] = useSearchParams();
   const racine = useRef<HTMLDivElement>(null);
@@ -53,7 +56,8 @@ export default function VisiteInteractive({ visite, manifeste, dossier, visiteId
   const depart = parId.get(recherche.get("p") ?? "") ?? parId.get(visite.departConseille) ?? visite.panoramas[0];
   const [courant, setCourant] = useState<PanoramaInteractif>(depart);
   const courantRef = useRef(courant);
-  const nuitPossible = visite.ambiances.includes("nuit");
+  // VIS-71 : la bascule « jour et nuit » n'est PAS proposée tant que le rendu de nuit est cassé (VISITE_NUIT_PROPOSEE).
+  const nuitPossible = VISITE_NUIT_PROPOSEE && visite.ambiances.includes("nuit");
   const [ambiance, setAmbiance] = useState<Ambiance>(recherche.get("ambiance") === "nuit" && nuitPossible ? "nuit" : "jour");
   const ambianceRef = useRef(ambiance);
   const [pret, setPret] = useState(false);

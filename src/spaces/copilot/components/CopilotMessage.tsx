@@ -49,7 +49,14 @@ import { sansBlocDescription } from '@/lib/studio/descriptionBatiment';
 import { CarteModeleBatiment } from '../studio3d/CarteModeleBatiment';
 // VIS-45 : commande du chat exécutée par le Studio (compte rendu, plans) et activité du Studio rattachée au message.
 import { CarteCommandeStudio, LignesStudio } from '../studio3d/CarteCommandeStudio';
-import { lireCarteCommande } from '../studio3d/pontCommandesSite';
+import { lireCarteCommande, OUTIL_GRILLE_VENTE } from '../studio3d/pontCommandesSite';
+// VIS-71 : cartes des lots du 27/11 — quartier (VIS-70), grille de vente (VIS-67), dossier client mis en évidence (VIS-60).
+import { CarteQuartierChat } from '@/spaces/quartier/CarteQuartierChat';
+import { lireCarteQuartier } from '@/lib/quartier/texteAtouts';
+// Extensions explicites : CarteGrilleVente.tsx et carteGrilleVente.ts ne diffèrent que par la casse (Windows).
+import { CarteGrilleVente } from '@/lib/vente/CarteGrilleVente.tsx';
+import { lireCarteGrilleVente } from '@/lib/vente/carteGrilleVente.ts';
+import { signalerDossierClient } from '@/lib/studio/dossierClient/evenement';
 import { lireCarteModele } from '../studio3d/modeleBatimentChat';
 // VIS-46 : films commandés par le chat — carte « Scénario du film » (seule commande du film) ; bloc du clic masqué.
 import { CarteScenarioFilm } from '../studio3d/CarteScenarioFilm';
@@ -107,6 +114,9 @@ export function CopilotMessage(props: MessageProps) {
   </div>}><CopilotMessageContent {...props} /></CopilotRenderBoundary>;
 }
 
+/** VIS-71 — appels `studio_dossier_client` déjà signalés (un seul signal par appel, rechargements compris). */
+const DOSSIERS_SIGNALES = new Set<string>();
+
 function CopilotMessageContent({ message, question, conversationId, onSend, onVisualiserMission, onRemplirSaisie, onOuvrirHabillage }: MessageProps) {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
@@ -115,6 +125,15 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   // complète en base (sans coût) ou demande la suite une seule fois.
   const incomplet = useCopilotStore((s) => Boolean(s.incomplets?.[message.id]));
   const { resume } = useCopilotStreaming();
+  // VIS-60 / VIS-71 : Mimmo propose le dossier client (outil studio_dossier_client, `pret`) → le bouton de l'Espace 3D
+  // se met en évidence. Une fois par appel ; aucune préparation automatique.
+  useEffect(() => {
+    if (!conversationId || message.status !== 'complete') return;
+    for (const tc of message.toolCalls) {
+      if (DOSSIERS_SIGNALES.has(tc.id)) continue;
+      if (signalerDossierClient(conversationId, tc)) DOSSIERS_SIGNALES.add(tc.id);
+    }
+  }, [conversationId, message.status, message.toolCalls]);
   const [exporting, setExporting] = useState<'pdf' | 'xlsx' | 'docx' | 'pptx' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -228,8 +247,14 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             { const batiment = lireCarteBatiment(tc); if (batiment) return <CarteDescriptionBatiment key={tc.id} carte={batiment} messageId={message.id} onSend={onSend} />; }
             // VIS-25 lot B : bâtiment dessiné (modèle composé) ou retouché → carte « Votre bâtiment » (à la place de la carte d'outil).
             { const modele = lireCarteModele(tc); if (modele) return <CarteModeleBatiment key={tc.id} carte={modele} messageId={message.id} onSend={onSend} />; }
+            // VIS-67 / VIS-71 : grille de vente → synthèse (si les lots sont connus) + carte de la commande `grille-vente`
+            // (envoi UNIQUE au Studio, compte rendu ; « Ouvrir le Studio » seulement si la commande attend).
+            { const gv = tc.name === OUTIL_GRILLE_VENTE && tc.status !== 'running' ? lireCarteGrilleVente((tc.output as { data?: unknown } | null | undefined)?.data) : null;
+              if (gv) { const cmd = lireCarteCommande(tc); return <><CarteGrilleVente carte={gv} />{cmd && <CarteCommandeStudio key={tc.id} carte={cmd} messageId={message.id} />}</>; } }
             // VIS-45 : le chat commande le Studio → carte de la commande (envoi unique, compte rendu, fichiers des plans).
             { const cmd = lireCarteCommande(tc); if (cmd) return <CarteCommandeStudio key={tc.id} carte={cmd} messageId={message.id} />; }
+            // VIS-70 / VIS-71 : atouts du quartier → carte « Le quartier » et bouton « Ouvrir la page Quartier ».
+            { const q = lireCarteQuartier(tc); if (q) return <CarteQuartierChat key={tc.id} carte={q} />; }
             // VIS-46 : scénarios de film proposés → carte modifiable, « Valider et lancer le film », « Aperçu ».
             { const film = lireCarteScenarios(tc); if (film) return <CarteScenarioFilm key={tc.id} carte={film} messageId={message.id} onSend={onSend} />; }
             { const hab = lireDemandeHabillage(tc); if (hab) return <CarteHabillageProjet key={tc.id} messageId={message.id} type={hab.type} onSend={hab.type === 'film' ? undefined : onSend} />; }
@@ -295,6 +320,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     || !!lireCarteBatiment(tc)
     || !!lireCarteModele(tc)
     || !!lireCarteCommande(tc)
+    || !!lireCarteQuartier(tc)
     || !!lireCarteScenarios(tc)
     || !!lireDemandeBrief(tc)
     || (OUTILS_PHOTO_PROJET.has(tc.name) && tc.status !== 'running' && !!lireDemandeAccordPhoto(tc.output))

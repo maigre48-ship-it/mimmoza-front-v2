@@ -25,3 +25,7 @@
 .mz-hab__note, .jarvis-dossier .mz-hab__note { margin: 8px 0 0; color: #1e3a8a !important; font-size: 12px; }
 .mz-hab__pied { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0; }
 .mz-hab__rappel, .jarvis-dossier .mz-hab__rappel { margin: 6px 0 0; padding: 6px 10px 6px 24px; border-radius: 8px; background: #eff6ff; color: #1e3a8a !important; font-size: 12px; }
+/* VIS-71 — styles de façade du kit (thème Matières). */
+.mz-hab__styles, .jarvis-dossier .mz-hab__styles { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e2e8f0; display: flex; flex-direction: column; gap: 4px; }
+.mz-hab__styles-titre, .jarvis-dossier .mz-hab__styles-titre { font-size: 12px; font-weight: 700; color: #0f172a !important; }
+.mz-hab__styles-note, .jarvis-dossier .mz-hab__styles-note { font-size: 11px; color: #475569 !important; }

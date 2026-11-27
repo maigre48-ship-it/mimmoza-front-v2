@@ -154,6 +154,29 @@ describe('VIS-60 — PDF', () => {
   });
 });
 
+describe('VIS-71 — page « Le quartier » du dossier client', () => {
+  const base = () => collecterLivrables([image, film, plansExt, visite]);
+  const octets = () => new Map<string, Uint8Array>();
+  const entree = { titre: 'Résidence Ascain', date: '27 novembre 2026', programme: programmeDepuisResume({ sdp_estimee_m2: 960 }), lienFilm: null, lienVisite: null, compresser: false };
+  const pages = (b: Uint8Array) => (Buffer.from(b).toString('latin1').match(/\/Type \/Page\b/g) ?? []).length;
+  it('avec atouts : une page de plus, accroche, catégories, mention « non contractuels »', () => {
+    const sans = construirePdfDossier({ ...entree, manifeste: base(), octets: octets() });
+    const avec = construirePdfDossier({ ...entree, manifeste: base(), octets: octets(), quartier: {
+      titre: 'Le quartier', accroche: 'À 5 min à pied : boulangerie, école maternelle. Gare de Saint-Jean-de-Luz à 12 min en voiture.',
+      lignes: [['Transports', 'Arrêt Ascain Bourg · 300 m · environ 4 min à pied'], ['Écoles', 'École publique · 450 m · environ 6 min à pied']],
+      sources: 'Sources : BPE (Insee, Licence Ouverte).', mention: 'Distances à vol d’oiseau ; temps estimés, indicatifs et non contractuels.',
+    } });
+    assert.equal(pages(avec), pages(sans) + 1);
+    const s = Buffer.from(avec).toString('latin1');
+    for (const attendu of ['Le quartier', 'Transports', 'Arr', 'non contractuels', 'BPE']) assert.ok(s.includes(attendu), attendu);
+  });
+  it('sans catégorie renseignée : aucune page (jamais simulée)', () => {
+    const sans = construirePdfDossier({ ...entree, manifeste: base(), octets: octets() });
+    const vide = construirePdfDossier({ ...entree, manifeste: base(), octets: octets(), quartier: { titre: 'Le quartier', accroche: '', lignes: [], sources: '', mention: '' } });
+    assert.equal(pages(vide), pages(sans));
+  });
+});
+
 describe('VIS-60 — ZIP stocké', () => {
   it('CRC32 de référence', () => assert.equal(crc32(new TextEncoder().encode('123456789')), 0xcbf43926));
   it('aller-retour : noms UTF-8, données, CRC', () => {

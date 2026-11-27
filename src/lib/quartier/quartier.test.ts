@@ -6,7 +6,7 @@ import { lieuxDepuisOverpass, requeteOverpass } from './overpassQuartier.ts';
 import { classerBpe, classerOsm, CATEGORIES_QUARTIER } from './categoriesQuartier.ts';
 import { distanceM, minutesPied, minutesTransport, minutesVelo, rayonIsochroneM, libelleDistance, cercleGeoJson } from './tempsTrajet.ts';
 import { lignesSynthese, lireCarteQuartier, texteDossierQuartier, OUTIL_QUARTIER_VENTE, CARTE_QUARTIER } from './texteAtouts.ts';
-import { adressePageQuartier, construireMenuVente, lienGrilleVente, vueDepuisAdresse } from './navigationVente.ts';
+import { adressePageQuartier, construireMenuVente, demandeGrilleVente, vueDepuisAdresse } from './navigationVente.ts';
 import { collecterLivrables } from '../studio/dossierClient/dossierClientLogique.ts';
 import * as F from './__fixtures__/quartierFixtures.ts';
 
@@ -216,7 +216,11 @@ describe('menu de navigation du bureau de vente', () => {
     const int = m.entrees.find((e) => e.vue === 'interieur')!;
     assert.equal(int.lien, 'https://mimmoza.fr/visite/v-42');
     assert.equal(m.entrees.find((e) => e.vue === 'plans')!.disponible, false);
-    assert.equal(m.grilleVente.lien, '/mimmozia/vente?conversation=c1');
+    // VIS-71 : la grille s'ouvre DANS le Studio (commande `grille-vente` du pont), jamais par une route /mimmozia/vente.
+    assert.deepEqual(m.grilleVente.commande, { id: 'grille-vente', params: {} });
+    assert.equal(m.grilleVente.projetId, 'mzchat-c1');
+    assert.equal(m.grilleVente.lienConversation, '/mimmozia?conversation=c1');
+    assert.ok(!JSON.stringify(m).includes('/mimmozia/vente'));
   });
   it('sans livrable : rien de simulé', () => {
     const m = construireMenuVente(null);
@@ -225,7 +229,7 @@ describe('menu de navigation du bureau de vente', () => {
   });
   it('adresses', () => {
     assert.equal(adressePageQuartier({ conversationId: 'c 1', lat: 43.3, lon: -1.6, vue: 'plan-masse' }), '/mimmozia/quartier?conversation=c+1&lat=43.300000&lon=-1.600000&vue=plan-masse');
-    assert.equal(lienGrilleVente(null), '/mimmozia/vente');
+    assert.deepEqual([demandeGrilleVente(null).projetId, demandeGrilleVente(null).lienConversation], [null, null]);
     assert.equal(vueDepuisAdresse('galerie'), 'galerie');
     assert.equal(vueDepuisAdresse('xx'), 'situation');
   });

@@ -4,7 +4,9 @@
 // branché sur ce qui EXISTE déjà pour le projet :
 //   · rendus Studio / Unreal (images extérieures et intérieures, film) et plans : collecterLivrables (VIS-60, lu tel quel) ;
 //   · visite : lien public /visite/<id> (la nouvelle visionneuse est l'affaire de VIS-69 — même adresse) ;
-//   · grille de vente (VIS-67) : simple lien, adresse ROUTE_GRILLE_VENTE (à confirmer avec VIS-67).
+//   · grille de vente (VIS-67) : elle s'ouvre DANS LE STUDIO, par le pont des commandes (commande `grille-vente` du
+//     catalogue pontCommandesStudio.ts) — il n'existe AUCUNE route /mimmozia/vente (VIS-71). Le site envoie la commande
+//     à l'onglet Studio de la conversation (accusé → « en cours ») ou la met en attente : le Studio l'exécute à son ouverture.
 // Une entrée sans contenu reste visible mais « À venir » (jamais masquée, jamais simulée).
 // Module PUR.
 // =============================================================================
@@ -16,9 +18,21 @@ export const LIBELLES_VUE: Readonly<Record<VueVente, string>> = {
   'plan-masse': 'Plan masse', situation: 'Situation', exterieur: 'Extérieur', plans: 'Plans', interieur: 'Intérieur', galerie: 'Galerie',
 };
 
-/** Page Quartier (cette page) et grille de vente (VIS-67). */
+/** Page Quartier (cette page). */
 export const ROUTE_PAGE_QUARTIER = '/mimmozia/quartier';
-export const ROUTE_GRILLE_VENTE = '/mimmozia/vente';
+/** Commande du pont (catalogue VIS-67) qui ouvre la grille de vente dans le Studio. */
+export const COMMANDE_GRILLE_VENTE = 'grille-vente';
+
+/** Ce que le menu « Grille de vente » envoie au Studio (par envoyerCommandeStudio, côté site). */
+export interface DemandeGrilleVente {
+  readonly libelle: string;
+  readonly commande: { readonly id: typeof COMMANDE_GRILLE_VENTE; readonly params: Record<string, string | number | boolean> };
+  /** Projet commun site / Studio (`mzchat-<conversation>`, même règle que projetChat.ts › projetIdChat) ; null sans conversation. */
+  readonly projetId: string | null;
+  readonly conversationId: string | null;
+  /** Conversation MimmozIA d'où ouvrir le Studio si la commande attend (aucun onglet Studio ouvert). */
+  readonly lienConversation: string | null;
+}
 
 export interface EntreeMenuVente {
   readonly vue: VueVente;
@@ -32,7 +46,7 @@ export interface EntreeMenuVente {
 
 export interface MenuVente {
   readonly entrees: readonly EntreeMenuVente[];
-  readonly grilleVente: { readonly libelle: string; readonly lien: string };
+  readonly grilleVente: DemandeGrilleVente;
   /** Meilleure vue aérienne rendue (fond « Plan masse » à la place de la carte, au choix). */
   readonly vueAerienne: FichierDossier | null;
   readonly imagesExterieures: readonly FichierDossier[];
@@ -53,8 +67,14 @@ export function adressePageQuartier(o: { conversationId?: string | null; lat?: n
   return s ? `${ROUTE_PAGE_QUARTIER}?${s}` : ROUTE_PAGE_QUARTIER;
 }
 
-export function lienGrilleVente(conversationId?: string | null): string {
-  return conversationId ? `${ROUTE_GRILLE_VENTE}?conversation=${encodeURIComponent(conversationId)}` : ROUTE_GRILLE_VENTE;
+/** Demande d'ouverture de la grille de vente dans le Studio (commande `grille-vente`, sans filtre). Pur. */
+export function demandeGrilleVente(conversationId?: string | null): DemandeGrilleVente {
+  const c = conversationId?.trim() || null;
+  return {
+    libelle: 'Grille de vente', commande: { id: COMMANDE_GRILLE_VENTE, params: {} },
+    projetId: c ? `mzchat-${c}`.slice(0, 80) : null, conversationId: c,
+    lienConversation: c ? `/mimmozia?conversation=${encodeURIComponent(c)}` : null,
+  };
 }
 
 const pluriel = (n: number, m: string) => `${n} ${m}${n > 1 ? 's' : ''}`;
@@ -81,7 +101,7 @@ export function construireMenuVente(m: ManifesteDossier | null, o: { conversatio
     { vue: 'galerie', libelle: LIBELLES_VUE.galerie, disponible: images.length > 0 || film !== null,
       detail: images.length || film ? `${pluriel(images.length, 'image')}${film ? ' · film' : ''}` : 'À venir' },
   ];
-  return { entrees, grilleVente: { libelle: 'Grille de vente', lien: lienGrilleVente(o.conversationId) }, vueAerienne: aerienne, imagesExterieures: ext, imagesInterieures: int, plans };
+  return { entrees, grilleVente: demandeGrilleVente(o.conversationId), vueAerienne: aerienne, imagesExterieures: ext, imagesInterieures: int, plans };
 }
 
 export function vueDepuisAdresse(v: string | null): VueVente {

@@ -142,3 +142,6 @@
   .mz-qr__legende { display: none; }
   .mz-qr-fond--plan { padding: 8px; }
 }
+/* VIS-71 — « Grille de vente dans le Studio » (bouton) et issue de l'envoi, lisibles sous `.jarvis-dossier`. */
+.mz-qr__grille, .jarvis-dossier .mz-qr__grille { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 280px; }
+.mz-qr__note-grille, .jarvis-dossier .mz-qr__note-grille { font-size: 11.5px; line-height: 1.35; color: #e2e8f0 !important; text-align: right; }

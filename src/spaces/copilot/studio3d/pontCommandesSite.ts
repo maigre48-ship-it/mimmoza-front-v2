@@ -299,6 +299,8 @@ export function installerPontCommandesSite(deps: DepsPontSite): () => void {
 /* ─── Carte de l'outil `studio_commander` ─── */
 
 export const OUTIL_STUDIO_COMMANDER = 'studio_commander';
+/** VIS-67 / VIS-71 : l'outil `grille_vente` rend AUSSI une carte `commande-studio` (commande `grille-vente`), transmise pareil. */
+export const OUTIL_GRILLE_VENTE = 'grille_vente';
 /** Au-delà, une carte relue (ancienne conversation) n'envoie plus rien d'elle-même. */
 export const FENETRE_ENVOI_MS = 15 * 60_000;
 
@@ -314,7 +316,7 @@ const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 /** PURE — carte d'un appel `studio_commander` terminé (null : autre outil, en cours, ou attente de l'accord). */
 export function lireCarteCommande(tc: { id: string; name: string; status?: string; output?: unknown }): CarteCommande | null {
-  if (tc.name !== OUTIL_STUDIO_COMMANDER || tc.status === 'running') return null;
+  if ((tc.name !== OUTIL_STUDIO_COMMANDER && tc.name !== OUTIL_GRILLE_VENTE) || tc.status === 'running') return null;
   const o = tc.output;
   if (!estObjet(o) || o.status !== 'ok' || !estObjet(o.data) || o.data.carte !== 'commande-studio') return null;
   const d = o.data;
