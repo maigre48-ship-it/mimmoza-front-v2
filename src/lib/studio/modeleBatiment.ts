@@ -221,6 +221,42 @@ export interface ModeleBatiment {
   ouvertures: OuvertureModele[];
   elements: ElementModele[];
   remarques: string | null;
+  /**
+   * VIS-63 — PROGRAMME DE LA FICHE (facultatif) : nombre de logements visé et typologies demandées (« 22 logements du T1
+   * au T4 », `charge.programme.typologies`). Absent : le découpage d'un collectif suit le mix par défaut du moteur,
+   * EXACTEMENT comme avant. Présent : le découpage ne pose aucune typologie hors de la liste et vise ces nombres
+   * (interieurArchitecte/decoupageCollectif.ts, quotas par niveau calculés dans archviz/enrich.ts).
+   */
+  programme?: ProgrammeModele;
+}
+
+/** VIS-63 — programme de logements de la fiche (nombres par typologie, T1 = studio). */
+export interface ProgrammeModele {
+  /** Nombre de logements visé (somme des typologies si absent). */
+  logements: number | null;
+  typologies: Partial<Record<'T1' | 'T2' | 'T3' | 'T4' | 'T5', number>>;
+}
+
+/** VIS-63 — lecture du programme (borné, nombres entiers ≥ 0) ; null si rien d'utilisable. */
+export function lireProgrammeModele(v: unknown): ProgrammeModele | null {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const typologies: Partial<Record<'T1' | 'T2' | 'T3' | 'T4' | 'T5', number>> = {};
+  const brut = o['typologies'];
+  const poser = (t: string, n: unknown) => {
+    const k = t === 'studio' ? 'T1' : t === 'T5+' ? 'T5' : t;
+    if (k !== 'T1' && k !== 'T2' && k !== 'T3' && k !== 'T4' && k !== 'T5') return;
+    if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return;
+    typologies[k] = (typologies[k] ?? 0) + Math.min(500, Math.round(n));
+  };
+  /* Deux formes admises : { T1: 3, T2: 7 } ou [{ type: 'T1', nombre: 3 }] (forme de `charge.programme.typologies`). */
+  if (Array.isArray(brut)) for (const x of brut) { if (typeof x === 'object' && x !== null) poser(String((x as Record<string, unknown>)['type']), (x as Record<string, unknown>)['nombre']); }
+  else if (typeof brut === 'object' && brut !== null) for (const [t, n] of Object.entries(brut)) poser(t, n);
+  const somme = Object.values(typologies).reduce((a, n) => a + (n ?? 0), 0);
+  if (!(somme > 0)) return null;
+  const l = o['logements'];
+  const logements = typeof l === 'number' && Number.isFinite(l) && l >= 1 ? Math.min(1000, Math.round(l)) : null;
+  return { logements, typologies };
 }
 
 /** Bornes du contrat. */
@@ -1072,6 +1108,11 @@ function validerInterne(
   const modele: ModeleBatiment = {
     v: MODELE_VERSION, origine, nom, type, style, styleLibre, matieres, volumes, ouvertures, elements, remarques,
   };
+  /* VIS-63 — programme de la fiche : gardé seulement s'il est lisible (absent : modèle EXACTEMENT comme avant). */
+  if (brut.programme !== undefined && brut.programme !== null) {
+    const programme = lireProgrammeModele(brut.programme);
+    if (programme) modele.programme = programme; else note('programme de logements illisible : ignoré');
+  }
   if (options.strict && corrections.length) return echec(`Modèle refusé : ${corrections[0]}.`);
   return { ok: true, modele, corrections, avertissements };
 }
