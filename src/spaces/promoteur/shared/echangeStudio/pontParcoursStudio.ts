@@ -34,7 +34,7 @@ export const SOUS_ONGLETS_STUDIO = {
   batiment: ['batiment', 'plans', 'bibliotheque', 'style', 'materiaux'],
   amenagement: ['quartier', 'voisinage', 'vegetation', 'objets', 'interieur'],
   images: ['archviz', 'lumiere', 'rendu', 'visite', 'production-images'],
-  film: ['film-auto', 'film', 'livraison'],
+  film: ['film-auto', 'film', 'livraison', 'grille-vente'],
   dessins: ['plans-vues', 'dossier-dp-pc', 'plan-existant'],
 } as const;
 export type EtapeStudio = keyof typeof SOUS_ONGLETS_STUDIO;

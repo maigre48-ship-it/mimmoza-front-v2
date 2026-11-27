@@ -135,6 +135,38 @@ export const CATALOGUE_COMMANDES_CHAT: readonly EntreeCatalogueChat[] = [
   { id: 'exterieur-mimmo-plante', libelle: 'Mimmo plante (extérieurs)', contrat: 'VIS-54', confirmation: false, quoi: 'Propose un aménagement extérieur complet (massifs au pied des façades, haies en limite, arbres, allée jusqu’à la porte) dans la page « Aménager les extérieurs » du Studio ; l’utilisateur l’ajuste ensuite. Rendu : Unreal pose exactement ces éléments.', params: { densite: { type: 'choix', description: 'Densité de végétation', valeurs: ['sobre', 'standard', 'luxuriante'] } } },
   { id: 'film-apercu', libelle: 'Aperçu du film (animatique)', contrat: 'VIS-47', confirmation: false, quoi: 'Aperçu gratuit du film dans le Studio : maquette simplifiée filmée par les caméras du scénario (mêmes plans que le film Unreal), vidéo WebM et une vignette par plan.', params: { scenario: { type: 'texte', description: 'Scénario du film (JSON du contrat ScenarioFilm v1)', requis: true, max: 16000 } } },
   { id: 'interieur-decorer', libelle: 'Décorer le logement (Mimmo décore)', contrat: 'VIS-53', confirmation: false, quoi: 'Pose une déco cohérente dans chaque pièce du logement meublé, selon le style et la gamme : tableau au-dessus du lit et du canapé, objet sur chaque chevet, vase, tapis, grande plante, lampadaire. L’utilisateur l’ajuste ensuite (onglet Déco).', params: {} },
+  // VIS-67 — grille de vente (bureau de vente) : lots allumés sur la maquette 3D selon le filtre, fiche, comparateur, statuts.
+  { id: 'grille-vente', libelle: 'Grille de vente', contrat: 'VIS-67', confirmation: false,
+    quoi: 'Ouvre la grille de vente du bâtiment dans le Studio : les lots qui correspondent au filtre s’allument sur la maquette 3D (étage, prix, surface, typologie, orientation, extérieur, parking, statut), fiche du lot, comparateur de 2 à 3 lots. Le compte rendu donne le nombre de lots retenus, les premiers et la fourchette de prix.',
+    params: {
+      demande: { type: 'texte', description: 'La demande de l’utilisateur en français (« T3 libres au-dessus du 2e étage orientés sud »), lue par le Studio sans IA', max: 300 },
+      typologies: { type: 'texte', description: 'Typologies séparées par des virgules : T1, T2, T3, T4, T5, commerce', max: 60 },
+      statuts: { type: 'texte', description: 'Statuts : libre, optionne, reserve, vendu', max: 60 },
+      orientations: { type: 'texte', description: 'Orientations : nord, nord-est, est, sud-est, sud, sud-ouest, ouest, nord-ouest', max: 80 },
+      etageMin: { type: 'nombre', description: 'Étage minimum (0 = RDC ; « au-dessus du 2e » = 3)' },
+      etageMax: { type: 'nombre', description: 'Étage maximum (0 = RDC)' },
+      prixMin: { type: 'nombre', description: 'Prix minimum (€)' },
+      prixMax: { type: 'nombre', description: 'Prix maximum (€)' },
+      surfaceMin: { type: 'nombre', description: 'Surface habitable minimum (m²)' },
+      surfaceMax: { type: 'nombre', description: 'Surface habitable maximum (m²)' },
+      parkingsMin: { type: 'nombre', description: 'Nombre minimum de places de parking' },
+      exterieur: { type: 'booleen', description: 'Avec extérieur (balcon, loggia, terrasse, jardin) : vrai ; sans : faux' },
+      comparer: { type: 'texte', description: 'Lots à comparer, 2 ou 3 (« A203,A305 »)', max: 40 },
+      lot: { type: 'texte', description: 'Lot dont la fiche s’ouvre (« A203 »)', max: 12 },
+    } },
+  { id: 'lot-statut', libelle: 'Statut d’un lot', contrat: 'VIS-67', confirmation: false,
+    quoi: 'Passe un lot de la grille de vente en libre, optionné, réservé ou vendu (prix décidé facultatif).',
+    params: {
+      lot: { type: 'texte', description: 'Numéro du lot (« A203 »)', requis: true, max: 12 },
+      statut: { type: 'choix', description: 'Statut', requis: true, valeurs: ['libre', 'optionne', 'reserve', 'vendu'] },
+      prix: { type: 'nombre', description: 'Prix décidé (€), facultatif' },
+    } },
+  { id: 'grille-vente-prix', libelle: 'Prix de base de la grille de vente', contrat: 'VIS-67', confirmation: false,
+    quoi: 'Règle le prix de base au m² habitable (et d’une place de parking) : les prix proposés de tous les lots non forcés sont recalculés (coefficients d’étage, d’orientation et de vue).',
+    params: { prixM2: { type: 'nombre', description: 'Prix de base au m² SHAB (€ TTC)', requis: true }, prixParking: { type: 'nombre', description: 'Prix d’une place de parking (€)' } } },
+  { id: 'grille-vente-exporter', libelle: 'Exporter la grille de vente', contrat: 'VIS-67', confirmation: true,
+    quoi: 'Télécharge la grille de vente (lots, surfaces, annexes, orientation, parkings, prix, statuts) en Excel (.xlsx) ou CSV.',
+    params: { format: { type: 'choix', description: 'Format', valeurs: ['xlsx', 'csv'] } } },
 ];
 
 export function entreeCatalogue(id: string): EntreeCatalogueChat | null {
