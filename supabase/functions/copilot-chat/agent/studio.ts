@@ -58,6 +58,10 @@ import type { ResultatOutil } from './types.ts';
 // VIS-46 — films commandés par le chat : scénario (contrat ScenarioFilm v1) porté par le devis et le travail.
 import { empreinteScenario, resumerScenario, type ScenarioFilm } from '../../../../src/lib/studio/scenarioFilm.ts';
 import { lireBlocScenario, optionsFilmDepuisScenario, type BlocScenario } from '../../../../src/lib/studio/filmsChat.ts';
+// VIS-57 — « Habiller le projet » (matières, déco, extérieurs) avant tout rendu, relu dans les traces de la conversation.
+import { ficheAvecHabillage, gardeHabillage, habillageDesTraces, ORIGINE_TRACE_HABILLAGE, rappelHabillage, type HabillageProjet } from '../../../../src/lib/studio/habillageProjet.ts';
+// VIS-57 — vraie cause d'un échec (au lieu de « Vérifiez la description du bâtiment »).
+import { causeEchecRendu } from '../../../../src/lib/studio/causeEchecRendu.ts';
 import type { DepotFilms } from './studio-films.ts';
 // LOT P2 (11/11/2026) — image dans sa rue : options de fond (règles partagées avec le site et la base), couverture
 // Panoramax (Licence Ouverte, instance IGN) et façades sur voie transmises à la machine de rendu.
@@ -1441,21 +1445,33 @@ export interface StatsFile {
 
 export type EtatMachine = 'occupee' | 'active_recemment' | 'silencieuse' | 'inconnue';
 
+/** VIS-57 — la plus récente de deux dates ISO lisibles ; null si aucune ne l'est. PUR. */
+export function plusRecente(a: string | null, b: string | null): string | null {
+  const ta = a ? Date.parse(a) : NaN;
+  const tb = b ? Date.parse(b) : NaN;
+  if (!Number.isFinite(ta)) return Number.isFinite(tb) ? b : null;
+  if (!Number.isFinite(tb)) return a;
+  return ta >= tb ? a : b;
+}
+
 /** État DÉDUIT de la machine de rendu (pas de battement de cœur au repos) — formulé comme une déduction. */
 export function etatMachine(s: StatsFile | null, maintenant: number): { etat: EtatMachine; phrase: string } {
   if (!s) return { etat: 'inconnue', phrase: 'État de la machine de rendu inconnu (file illisible) : le rendu démarrera quand elle prendra le travail.' };
-  const depuis = (iso: string | null) => (iso ? maintenant - Date.parse(iso) : Number.POSITIVE_INFINITY);
+  // VIS-57 — une date absente, illisible ou dans le futur (horloges décalées) n'est JAMAIS convertie en durée : « inconnue ».
+  const depuis = (iso: string | null) => { const t = iso ? Date.parse(iso) : NaN; return Number.isFinite(t) && t <= maintenant + 60_000 ? Math.max(0, maintenant - t) : Number.POSITIVE_INFINITY; };
   const activite = depuis(s.derniereActivite);
   const attente = depuis(s.plusAncienneAttente);
   const duree = (ms: number) => (ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))} min` : ms < 172_800_000 ? `${Math.round(ms / 3_600_000)} h` : `${Math.round(ms / 86_400_000)} jours`);
+  // Ce que mesure la date : le dernier rendu traité (ou en cours), PAS l'arrêt de la machine (aucun signal au repos).
+  const dernierTraite = Number.isFinite(activite) ? `dernier rendu traité ou en cours il y a ${duree(activite)}` : 'aucun rendu traité connu';
   if (s.enCours > 0 && activite <= ACTIVITE_RECENTE_MS) {
     return { etat: 'occupee', phrase: `La machine de rendu est en ligne et occupée (${s.enCours} rendu en cours, ${s.attente} en attente) : un seul rendu à la fois.` };
   }
   if (s.attente > 0 && attente > ATTENTE_SUSPECTE_MS && activite > ATTENTE_SUSPECTE_MS) {
-    return { etat: 'silencieuse', phrase: `La machine de rendu ne donne pas signe de vie (${s.attente} rendu(s) en attente depuis ${duree(attente)}, dernière activité ${Number.isFinite(activite) ? `il y a ${duree(activite)}` : 'inconnue'}) : elle est probablement éteinte. Le rendu restera EN ATTENTE jusqu’à sa reprise.` };
+    return { etat: 'silencieuse', phrase: `La machine de rendu ne prend pas les rendus (${s.attente} rendu(s) en attente depuis ${duree(attente)} ; ${dernierTraite}) : elle est probablement éteinte, depuis une durée inconnue (elle n’envoie aucun signal au repos). Le rendu restera EN ATTENTE jusqu’à sa reprise.` };
   }
   if (activite <= ACTIVITE_RECENTE_MS) return { etat: 'active_recemment', phrase: `La machine de rendu a été active il y a ${duree(activite)}.` };
-  return { etat: 'inconnue', phrase: `Dernière activité connue de la machine de rendu : ${Number.isFinite(activite) ? `il y a ${duree(activite)}` : 'aucune'}. Elle peut être éteinte : le rendu démarre dès qu’elle prend le travail (elle n’envoie aucun signal au repos).` };
+  return { etat: 'inconnue', phrase: `La machine de rendu peut être éteinte ou simplement au repos : elle n’envoie aucun signal quand elle attend (${dernierTraite} — ce n’est pas la durée d’un arrêt). Le rendu démarre dès qu’elle prend le travail.` };
 }
 
 // ── Jeton de devis (HMAC-SHA256) ───────────────────────────────────────────
@@ -1691,6 +1707,13 @@ export interface DepotStudio {
   /** _studio_job_options_valides(type, options) : true / false ; null si la base n'a pas pu répondre. */
   typeRenduAutorise(type: TypeRendu, options: Obj): Promise<boolean | null>;
   statsFile(): Promise<StatsFile | null>;
+  /**
+   * VIS-57 — traces « Habiller le projet » de la conversation (`copilot_action_runs.params`, origine mimmoza-habillage),
+   * plus récentes d'abord. null : lecture impossible (la garde ne bloque pas sur une panne). Facultatif : anciens dépôts, tests.
+   */
+  habillageTraces?(userId: string, conversationId: string): Promise<unknown[] | null>;
+  /** VIS-57 — première ligne de la cause technique du dernier échec d'un travail (client_errors) ; null : inconnue. Facultatif. */
+  causeEchec?(jobId: string): Promise<string | null>;
   travauxActifs(userId: string): Promise<number>;
   travailParDevis(userId: string, devisId: string): Promise<TravailLu | null>;
   /**
@@ -2435,6 +2458,14 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     // LOT G6 — avec le plan de la maison lu (`existant_lu`) : repris au cartouche des plans de l'extension.
     if (ext) fiche = ficheAvecProjetExtension(fiche, ext.projet, ext.existantLu ?? null);
     fiche.devis_id = j.id;
+    // VIS-57 — habillage du projet (traces de la conversation) : rappel dans `fiche.habillage_projet` et aménagement
+    // extérieur PLACÉ par l'utilisateur dans `fiche.amenagement_exterieur` (posé tel quel par Unreal ; absent : jardin
+    // composé automatiquement). Jamais pour une extension (la maison existante garde son jardin).
+    if (!ext && env.depot.habillageTraces) {
+      const traces = await env.depot.habillageTraces(uid, j.c);
+      if (traces) fiche = ficheAvecHabillage(fiche, habillageDesTraces(traces));
+    }
+    const rappelHab = estObj(fiche.habillage_projet) && Array.isArray(fiche.habillage_projet.rappel) ? (fiche.habillage_projet.rappel as string[]) : [];
     // FINITIONS 18/11 — plans seuls : la machine de rendu saute l'image et ne produit que les plans.
     if (j.ps) fiche.plans_seuls = true;
     let optionsTravail: Obj = avecLivraisonParDefaut(j.t, j.o, { plansSeuls: !!j.ps });
@@ -2480,6 +2511,7 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
         ...(j.sf ? { scenario_transmis: !noteScenario, ...(noteScenario ? { avertissement_scenario: noteScenario } : {}) } : {}) },
       message: (estObj(fiche.dessin_attendu) ? `AVERTISSEMENT À DIRE EN PREMIER : ${NOTE_DESSIN_INTROUVABLE} ` : '') + (dessinRetrouve ? `${NOTE_DESSIN_DU_FIL} ` : '') +
         (noteScenario ? `${noteScenario} ` : '') + (j.sf && !noteScenario ? 'Film lancé AVEC le scénario validé dans la carte (transmis tel quel à la machine de rendu, dans les options du film). ' : '') +
+        (rappelHab.length ? `Habillage du projet transmis — rappelle-le en une ligne : ${rappelHab.join(' ; ')}. ` : '') +
         (j.ps ? 'Plans (SANS image) ENREGISTRÉS dans la file : n’annonce aucune image. ' : '') + 'Rendu ENREGISTRÉ dans la file (statut « en attente » tant que la machine de rendu ne l’a pas pris). ' +
         'Dis qu’il est enregistré ; n’annonce aucun démarrage ni délai qui ne soit pas renvoyé. Le suivi s’affiche aussi dans le Dossier 3D.' +
         ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' +
@@ -2721,6 +2753,18 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine), prevu });
     }
   }
+  // VIS-57 — « HABILLER LE PROJET » : avant tout devis (film, image, visite), chaque thème — matières, déco des pièces,
+  // extérieurs et végétation — doit être choisi dans le Studio ou délégué à Mimmo (traces de la conversation). Sinon :
+  // AUCUN devis, la carte « Habiller le projet » s'affiche. Dépôt sans lecture des traces, ou lecture en panne : pas de garde.
+  let habillageDevis: HabillageProjet | null = null;
+  if (!extension && env.depot.habillageTraces && env.conversationId) {
+    const traces = await env.depot.habillageTraces(uid, env.conversationId);
+    if (traces) {
+      habillageDevis = habillageDesTraces(traces);
+      const g = gardeHabillage(habillageDevis, type);
+      if (g) return { ...g, source: SOURCE_STUDIO };
+    }
+  }
   const actifs = await env.depot.travauxActifs(uid);
   if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
   // VIS-10 — vues « sous condition » (privatifs, intérieurs) : pronostic d'après l'habillage connu, sinon « selon le projet ».
@@ -2765,6 +2809,8 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     ...(scenarioDevis ? { scenario: resumerScenario(scenarioDevis) } : {}),
     source: libelleSource(src.source),
     ...(brief ? { habillage: libelleBrief(brief) } : {}),
+    // VIS-57 — rappel de l'habillage du projet (choisi par l'utilisateur ou délégué à Mimmo), thème par thème.
+    ...(habillageDevis ? { habillage_projet: rappelHabillage(habillageDevis) } : {}),
     ...(briefProjet && bp ? { brief_projet: resumeBriefProjetDevis(briefProjet) } : {}),
     jetons: 0,
     cout_jetons: 'Aucun jeton débité pour ce rendu : les rendus ne sont pas facturés aujourd’hui (seul ce message du chat est compté, comme d’habitude).',
@@ -3140,6 +3186,12 @@ async function etatRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     data.attente_depuis_min = Math.max(0, Math.round((maintenant - Date.parse(t.cree_le)) / 60_000));
     data.machine = etatMachine(stats, maintenant).phrase;
   }
+  // VIS-57 — échec : la VRAIE cause (détail technique de client_errors), jamais « vérifiez la description du bâtiment » à tort.
+  if (t.statut === 'echec' && t.erreur) {
+    const detail = env.depot.causeEchec ? await env.depot.causeEchec(t.id) : null;
+    const c = causeEchecRendu({ erreur: t.erreur, etape: t.etape, type: t.type, detail });
+    if (c.corrigee) { data.erreur = c.phrase; data.cause_echec = c.phrase; data.message_machine_remplace = true; }
+  }
   const omis = Array.isArray(t.elements_omis) ? t.elements_omis.filter(estObj).map((e) => txt(e.categorie, 80)).filter(Boolean) : [];
   if (omis.length) data.elements_omis = omis;
   if (t.statut === 'termine' && estObj(t.resultat)) {
@@ -3265,13 +3317,36 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
     },
     async statsFile() {
       try {
-        const [att, enc, act] = await Promise.all([
+        // VIS-57 — activité RÉELLE de la machine : progression d'un rendu en cours (maj_le écrit par le worker) ou fin d'un
+        // rendu qu'elle a traité (termine_le). Plus `maj_le` de toute ligne : une annulation, une relance ou une
+        // correction d'un AUTRE acteur la modifiait et la durée affichée était fausse.
+        const [att, enc, actCours, actFin] = await Promise.all([
           admin.from('studio_jobs').select('cree_le', { count: 'exact' }).eq('statut', 'en_attente').order('cree_le', { ascending: true }).limit(1),
           admin.from('studio_jobs').select('id', { count: 'exact', head: true }).eq('statut', 'en_cours'),
-          admin.from('studio_jobs').select('maj_le').not('worker_id', 'is', null).order('maj_le', { ascending: false }).limit(1),
+          admin.from('studio_jobs').select('maj_le').eq('statut', 'en_cours').not('worker_id', 'is', null).order('maj_le', { ascending: false }).limit(1),
+          admin.from('studio_jobs').select('termine_le').in('statut', ['termine', 'echec']).not('worker_id', 'is', null).not('termine_le', 'is', null).order('termine_le', { ascending: false }).limit(1),
         ]);
-        if (att.error || enc.error || act.error) return null;
-        return { attente: att.count ?? 0, plusAncienneAttente: att.data?.[0]?.cree_le ?? null, enCours: enc.count ?? 0, derniereActivite: act.data?.[0]?.maj_le ?? null };
+        if (att.error || enc.error || actCours.error || actFin.error) return null;
+        return { attente: att.count ?? 0, plusAncienneAttente: att.data?.[0]?.cree_le ?? null, enCours: enc.count ?? 0,
+          derniereActivite: plusRecente(actCours.data?.[0]?.maj_le ?? null, actFin.data?.[0]?.termine_le ?? null) };
+      } catch { return null; }
+    },
+    async habillageTraces(userId, conversationId) {
+      try {
+        const { data, error } = await admin.from('copilot_action_runs').select('params')
+          .eq('user_id', userId).eq('conversation_id', conversationId).eq('params->>origine', ORIGINE_TRACE_HABILLAGE)
+          .order('created_at', { ascending: false }).limit(30);
+        if (error || !Array.isArray(data)) return null;
+        return data.map((l: { params?: unknown }) => l.params);
+      } catch { return null; }
+    },
+    async causeEchec(jobId) {
+      try {
+        const { data, error } = await admin.from('client_errors').select('message')
+          .eq('context->>job_id', jobId).order('created_at', { ascending: false }).limit(1);
+        if (error || !Array.isArray(data) || !data.length) return null;
+        const m = (data[0] as { message?: unknown }).message;
+        return typeof m === 'string' && m.trim() ? m : null;
       } catch { return null; }
     },
     async travauxActifs(userId) {

@@ -21,6 +21,9 @@ import { messageScenario } from '@/lib/studio/filmsChat';
 import { ajouterPlan, deplacerPlan, estRetouche, etatScenario, majPlan, marques, supprimerPlan, type CarteScenarios } from './scenarioFilmChat';
 import { envoyerCommandeStudio, useCommandesStudio } from './pontCommandesSite';
 import { projetIdChat } from './projetChat';
+// VIS-57 — « Habiller le projet » avant le film : le lancement attend que chaque thème soit choisi ou délégué.
+import { CarteHabillageProjet, useHabillageProjet } from './CarteHabillageProjet';
+import { habillageComplet } from '@/lib/studio/habillageProjet';
 import './CarteScenarioFilm.css';
 
 const AMB: Record<ScenarioFilm['ambiance'], string> = { jour: 'Journée', fin_de_journee: 'Fin de journée', nuit: 'Nuit', couvert: 'Ciel couvert' };
@@ -58,9 +61,10 @@ export function CarteScenarioFilm({ carte, messageId, onSend, compacte }: Props)
   const apercu = useCommandesStudio((st) => st.parAppel[appelApercu]);
   const changer = (n: ScenarioFilm) => setLocaux((l) => l.map((x, i) => (i === choix ? n : x)));
   const possibles = SUJETS_PLAN.filter((x) => carte.projet.sujets.includes(x));
+  const habille = habillageComplet(useHabillageProjet());
 
   const lancer = () => {
-    if (!onSend || envoi || !etat.ok) return;
+    if (!onSend || envoi || !etat.ok || !habille) return;
     setEnvoi('lancer');
     onSend(messageScenario('lancer', s, carte.version + (retouche ? 1 : 0)));
   };
@@ -171,9 +175,12 @@ export function CarteScenarioFilm({ carte, messageId, onSend, compacte }: Props)
       <p className={`mz-sf__total${etat.ok ? '' : ' is-ko'}`}>Total : {sec(etat.total)} · {s.plans.length} plans{m.champs.has('duree_s') ? ' (durée modifiée)' : ''}</p>
       {!etat.ok && <ul className="mz-sf__liste is-ko">{etat.erreurs.map((e, i) => <li key={i}>{e}</li>)}</ul>}
 
+      {/* VIS-57 : Mimmo rappelle (et fait choisir) l'habillage du projet avant le film — matières, déco, extérieurs. */}
+      <CarteHabillageProjet messageId={messageId} type="film" integree />
       <div className="mz-sf__pied">
-        <button type="button" className="mz-sf__btn is-principal" disabled={!onSend || !etat.ok || envoi !== null} onClick={lancer}>
-          {envoi === 'lancer' ? 'Film demandé…' : 'Valider et lancer le film'}
+        <button type="button" className="mz-sf__btn is-principal" disabled={!onSend || !etat.ok || envoi !== null || !habille} onClick={lancer}
+          title={habille ? undefined : 'Choisissez ou déléguez chaque thème de l’habillage du projet (ci-dessus)'}>
+          {envoi === 'lancer' ? 'Film demandé…' : habille ? 'Valider et lancer le film' : 'Habillez le projet pour lancer le film'}
         </button>
         <button type="button" className="mz-sf__btn" disabled={!conversationId || !etat.ok || Boolean(apercu && apercu.etat !== 'echec')} onClick={demanderApercu}>Aperçu (gratuit)</button>
         {retouche && <button type="button" className="mz-sf__btn" disabled={!onSend || !etat.ok || envoi !== null} onClick={enregistrer}>Enregistrer mes retouches</button>}

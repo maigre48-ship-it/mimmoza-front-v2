@@ -1,0 +1,11 @@
+/* VIS-57 — barre de progression d'un rendu. Couleurs en !important + sélecteur préfixé : lisibles même sous
+   `.jarvis-dossier * { color: inherit !important }`. */
+.mz-barre-rendu, .jarvis-dossier .mz-barre-rendu { margin: 6px 0 8px; display: flex; flex-direction: column; gap: 4px; color: #0f172a !important; }
+.mz-barre-rendu__ligne, .jarvis-dossier .mz-barre-rendu__ligne { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; }
+.mz-barre-rendu__etape, .jarvis-dossier .mz-barre-rendu__etape { color: #334155 !important; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.mz-barre-rendu__pourcent, .jarvis-dossier .mz-barre-rendu__pourcent { color: #1e3a8a !important; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mz-barre-rendu__piste, .jarvis-dossier .mz-barre-rendu__piste { height: 8px; border-radius: 999px; background: #dbeafe; overflow: hidden; }
+.mz-barre-rendu__piste i, .jarvis-dossier .mz-barre-rendu__piste i { display: block; height: 100%; border-radius: inherit; background: #2563eb; transition: width .4s ease; }
+.mz-barre-rendu__piste i.is-attente, .jarvis-dossier .mz-barre-rendu__piste i.is-attente { background: #93c5fd; }
+.mz-barre-rendu__reste, .jarvis-dossier .mz-barre-rendu__reste { color: #475569 !important; font-size: 11px; }
+@media (prefers-reduced-motion: reduce) { .mz-barre-rendu__piste i { transition: none; } }

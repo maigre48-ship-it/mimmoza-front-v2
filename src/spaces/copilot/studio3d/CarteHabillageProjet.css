@@ -1,0 +1,27 @@
+/* VIS-57 — carte « Habiller le projet » (chat, carte de scénario, Espace 3D). Couleurs en !important + sélecteur
+   préfixé : lisibles même sous `.jarvis-dossier * { color: inherit !important }`. Boutons actifs : #dbeafe / #1e3a8a. */
+.mz-hab, .jarvis-dossier .mz-hab { margin: 10px 0; padding: 12px 14px; border: 1px solid #c7d2fe; border-radius: 14px; background: #ffffff; color: #0f172a !important; font-size: 13px; line-height: 1.5; }
+.mz-hab.is-integree, .jarvis-dossier .mz-hab.is-integree { margin: 8px 0; padding: 10px 12px; border-color: #e2e8f0; background: #f8fafc; }
+.mz-hab *, .jarvis-dossier .mz-hab * { box-sizing: border-box; }
+.mz-hab__tete, .jarvis-dossier .mz-hab__tete { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.mz-hab__tete strong, .jarvis-dossier .mz-hab__tete strong { font-size: 14px; color: #0f172a !important; }
+.mz-hab__etat, .jarvis-dossier .mz-hab__etat { padding: 1px 8px; border-radius: 999px; background: #fff7ed; color: #9a3412 !important; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.mz-hab__etat.is-ok, .jarvis-dossier .mz-hab__etat.is-ok { background: #dcfce7; color: #166534 !important; }
+.mz-hab__sous, .jarvis-dossier .mz-hab__sous { margin: 2px 0 8px; font-size: 12px; color: #475569 !important; }
+.mz-hab__themes { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mz-hab__theme, .jarvis-dossier .mz-hab__theme { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; background: #ffffff; color: #0f172a !important; }
+.mz-hab__theme.is-fait, .jarvis-dossier .mz-hab__theme.is-fait { border-color: #bfdbfe; background: #f8fbff; }
+.mz-hab__ligne { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mz-hab__titre, .jarvis-dossier .mz-hab__titre { font-weight: 700; color: #0f172a !important; }
+.mz-hab__pastille, .jarvis-dossier .mz-hab__pastille { padding: 0 8px; border-radius: 999px; background: #dbeafe; color: #1e3a8a !important; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.mz-hab__pastille.is-delegue, .jarvis-dossier .mz-hab__pastille.is-delegue { background: #ede9fe; color: #4c1d95 !important; }
+.mz-hab__detail, .jarvis-dossier .mz-hab__detail { margin: 2px 0 6px; color: #475569 !important; font-size: 12px; }
+.mz-hab__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mz-hab__btn, .jarvis-dossier .mz-hab__btn { border: 1px solid #cbd5e1; border-radius: 8px; background: #ffffff; color: #0f172a !important; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.mz-hab__btn:hover:not(:disabled), .jarvis-dossier .mz-hab__btn:hover:not(:disabled) { background: #f1f5f9; }
+.mz-hab__btn:disabled, .jarvis-dossier .mz-hab__btn:disabled { opacity: .55; cursor: not-allowed; }
+.mz-hab__btn.is-actif, .jarvis-dossier .mz-hab .mz-hab__btn.is-actif { background: #dbeafe; border-color: #93c5fd; color: #1e3a8a !important; font-weight: 600; }
+.mz-hab__btn.is-principal, .jarvis-dossier .mz-hab .mz-hab__btn.is-principal { background: #dbeafe; border-color: #60a5fa; color: #1e3a8a !important; font-weight: 700; }
+.mz-hab__note, .jarvis-dossier .mz-hab__note { margin: 8px 0 0; color: #1e3a8a !important; font-size: 12px; }
+.mz-hab__pied { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0; }
+.mz-hab__rappel, .jarvis-dossier .mz-hab__rappel { margin: 6px 0 0; padding: 6px 10px 6px 24px; border-radius: 8px; background: #eff6ff; color: #1e3a8a !important; font-size: 12px; }

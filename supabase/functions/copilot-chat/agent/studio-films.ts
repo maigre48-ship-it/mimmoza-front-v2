@@ -13,6 +13,8 @@
 import type { OutilDef, ResultatOutil } from './types.ts';
 import { briefDuFil, dessinDuFil, type DepotStudio } from './studio.ts';
 import { lireProjetEnVigueur } from '../../../../src/lib/studio/projetEnVigueur.ts';
+// VIS-57 — la carte de scénario rappelle l'habillage du projet (matières, déco, extérieurs), choisi ou délégué.
+import { habillageComplet, habillageDesTraces, rappelHabillage, themesManquants } from '../../../../src/lib/studio/habillageProjet.ts';
 import { empreinteScenario, resumerScenario, validerScenario, type ScenarioFilm } from '../../../../src/lib/studio/scenarioFilm.ts';
 import {
   BLOC_SCENARIO, capacitesDepuisBrief, capacitesDepuisModele, differencesScenarios, lireBlocScenario, modifierScenarioParPhrase,
@@ -169,8 +171,27 @@ function sortie(etat: EtatCarteFilm, plus: { differences?: DifferencesScenario[]
 const CONSIGNE_CARTE = ' La carte « Scénario du film » s’affiche sous ta réponse : chaque scénario y est modifiable (intention, plans, durées, mouvements, ordre, ambiance, format, musique, voix off) ' +
   'avec « Valider et lancer le film » (un seul clic : le devis et le lancement, sans autre question) et « Aperçu » (gratuit). Ne recopie pas les plans, ne pose AUCUNE question, n’annonce aucun lancement.';
 
-/** Exécution de l'outil. N'écrit rien. */
+/**
+ * Exécution de l'outil. N'écrit rien. VIS-57 : toute carte de scénarios porte le rappel de l'habillage du projet
+ * (`data.habillage` : complet, rappel, manquants) ; le lancement attend que chaque thème soit choisi ou délégué.
+ */
 export async function executerOutilProposerFilm(input: Record<string, unknown>, env: EnvFilms): Promise<ResultatOutil> {
+  const r = await proposerFilm(input, env);
+  if (r.status !== 'ok' || !estObj(r.data) || r.data.carte !== 'scenarios-film' || !env.userId || !env.conversationId || !env.depot.habillageTraces) return r;
+  const traces = await env.depot.habillageTraces(env.userId, env.conversationId);
+  if (!traces) return r;
+  const h = habillageDesTraces(traces);
+  const complet = habillageComplet(h);
+  return {
+    ...r,
+    data: { ...r.data, habillage: { complet, rappel: rappelHabillage(h), manquants: themesManquants(h) } },
+    message: `${r.message ?? ''} HABILLAGE DU PROJET : ${complet
+      ? `rappelle-le en une ligne (${rappelHabillage(h).join(' ; ')}).`
+      : 'la carte affiche aussi « Habillage du projet » (matières, déco, extérieurs) : le film ne se lance qu’une fois chaque thème choisi dans le Studio ou délégué à Mimmo — dis-le en une phrase.'}`,
+  };
+}
+
+async function proposerFilm(input: Record<string, unknown>, env: EnvFilms): Promise<ResultatOutil> {
   const err = (m: string, status = 'error'): ResultatOutil => ({ status, source: SOURCE_FILMS, message: m });
   if (!env.userId || !env.conversationId) return err('Ouvrez d’abord une conversation : le film est rattaché au projet du chat. Rien n’a été proposé.');
   const projet = await projetFilme(env.depot, env.userId, env.conversationId);

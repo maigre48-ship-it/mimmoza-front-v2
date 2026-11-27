@@ -53,6 +53,9 @@ import { lireCarteCommande } from '../studio3d/pontCommandesSite';
 import { lireCarteModele } from '../studio3d/modeleBatimentChat';
 // VIS-46 : films commandés par le chat — carte « Scénario du film » (seule commande du film) ; bloc du clic masqué.
 import { CarteScenarioFilm } from '../studio3d/CarteScenarioFilm';
+// VIS-57 : « Habiller le projet » demandé par le serveur avant le devis d'une image ou d'une visite (ou d'un film).
+import { CarteHabillageProjet } from '../studio3d/CarteHabillageProjet';
+import { lireDemandeHabillage } from '@/lib/studio/habillageProjet';
 import { lireCarteScenarios } from '../studio3d/scenarioFilmChat';
 import { lireBlocScenario, sansBlocScenario } from '@/lib/studio/filmsChat';
 import { sansBlocReference } from '@/lib/studio/modeleBatimentMessage';
@@ -229,6 +232,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             { const cmd = lireCarteCommande(tc); if (cmd) return <CarteCommandeStudio key={tc.id} carte={cmd} messageId={message.id} />; }
             // VIS-46 : scénarios de film proposés → carte modifiable, « Valider et lancer le film », « Aperçu ».
             { const film = lireCarteScenarios(tc); if (film) return <CarteScenarioFilm key={tc.id} carte={film} messageId={message.id} onSend={onSend} />; }
+            { const hab = lireDemandeHabillage(tc); if (hab) return <CarteHabillageProjet key={tc.id} messageId={message.id} type={hab.type} onSend={hab.type === 'film' ? undefined : onSend} />; }
             { const photo = lireDemandePhotoMaison(tc); if (photo) return <DemandePhotoMaison requise={photo} contour={photo.contour} onSend={onSend} afficherTexte />; }
             // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
             // LOT BRIEF-UNIFIÉ : panneau Espace 3D présent → une seule ligne compacte qui l'ouvre sur l'habillage.

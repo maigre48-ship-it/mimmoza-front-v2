@@ -19,6 +19,8 @@ import { lireLivraisonCommerciale, lireNiveauRealisme, lireRenduMimmoza, valider
 import { CLES_FOND, fondDe, LIBELLES_FOND, validerFond, type OptionsFond } from './fondImage.ts';
 // LOT G8 — durée d'une image dans une photo.
 import { dureeImagePhotoCourte, estFondPhoto } from './dureeRendu.ts';
+// VIS-57 — vraie cause d'un échec (au lieu de « Vérifiez la description du bâtiment »).
+import { causeEchecRendu } from './causeEchecRendu.ts';
 // LOT P5-SITE (12/11/2026) — effacement de l'existant : masque corrigé dans l'atelier, mention du résultat.
 // LOT X9 — photo réelle obligatoire pour une image d'extension.
 import { photoRequiseDuResultat, type PhotoRequise } from './photoReelle.ts';
@@ -425,14 +427,22 @@ export function libelleStatut(statut: StatutTravail): string {
   }
 }
 
-/** Phrase de suivi affichée sous la barre de progression. */
-export function phraseSuivi(travail: Pick<TravailStudio, 'type' | 'statut' | 'etape' | 'progression' | 'erreur'>): string {
+/**
+ * Phrase de suivi affichée sous la barre de progression. VIS-57 : échec — les messages génériques de la machine qui
+ * renvoyaient à tort à « la description du bâtiment » sont remplacés par la cause réelle (causeEchecRendu.ts) ;
+ * `detail` : détail technique lu ailleurs (RPC studio_job_cause_echec, Edge), facultatif.
+ */
+export function phraseSuivi(travail: Pick<TravailStudio, 'type' | 'statut' | 'etape' | 'progression' | 'erreur'>, detail: string | null = null): string {
   const quoi = travail.type === 'film' ? 'Votre film' : travail.type === 'image' ? 'Votre image' : 'Votre visite 360°';
   switch (travail.statut) {
     case 'en_attente': return `${quoi} est dans la file : la préparation démarre dès que le Studio est libre.`;
     case 'en_cours': return travail.etape?.trim() ? `${travail.etape.trim()} — ${String(borner(travail.progression))} %` : `Préparation en cours — ${String(borner(travail.progression))} %`;
     case 'termine': return `${quoi} est prêt${travail.type === 'film' ? '' : 'e'}.`;
-    case 'echec': return travail.erreur?.trim() ? `La préparation n’a pas abouti : ${travail.erreur.trim()}` : 'La préparation n’a pas abouti. Vous pouvez relancer.';
+    case 'echec': {
+      if (!travail.erreur?.trim()) return 'La préparation n’a pas abouti. Vous pouvez relancer.';
+      const c = causeEchecRendu({ erreur: travail.erreur, etape: travail.etape, type: travail.type, detail });
+      return c.corrigee ? c.phrase : `La préparation n’a pas abouti : ${c.phrase}`;
+    }
     case 'annule': return 'Préparation annulée.';
   }
 }

@@ -79,6 +79,17 @@ export async function creerTravail(travail: NouveauTravail): Promise<Reponse<Tra
 }
 
 /** Annule un travail en attente ou en cours (seule modification permise à l'utilisateur). */
+/**
+ * VIS-57 — première ligne de la cause technique d'un rendu en ÉCHEC (RPC `studio_job_cause_echec`, migration
+ * 20261127020000, réservée au propriétaire du travail). null : migration non appliquée, aucune cause, erreur réseau.
+ */
+export async function lireCauseEchec(id: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc('studio_job_cause_echec', { p_job_id: id });
+    return error || typeof data !== 'string' || !data.trim() ? null : data;
+  } catch { return null; }
+}
+
 export async function annulerTravail(id: string): Promise<TravailStudio | null> {
   const { data, error } = await supabase.from('studio_jobs')
     .update({ statut: 'annule' }).eq('id', id)

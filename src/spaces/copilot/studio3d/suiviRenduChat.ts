@@ -183,7 +183,7 @@ const QUOI: Record<TypeTravail, string> = { film: 'Le film', visite360: 'La visi
  * Vue de la carte. `travail` : ligne relue (null = pas encore relue) ; `introuvable` : la
  * lecture a répondu « aucune ligne » (supprimée ou non visible) ; `maintenant` : horloge (ms).
  */
-export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi, maintenant: number, introuvable = false): VueCarteSuivi {
+export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi, maintenant: number, introuvable = false, detailEchec: string | null = null): VueCarteSuivi {
   const type = travail?.type ?? indice.type;
   const libelle = type ? LIBELLES_TYPE[type] : 'Rendu Studio';
   const base = { progression: null, details: [] as string[], alerte: null, omis: null, avertissements: [] as string[], image: null, existant: existantDuTravail(travail), photoRequise: null };
@@ -248,7 +248,8 @@ export function vueCarteSuivi(travail: TravailStudio | null, indice: IndiceSuivi
     case 'echec':
       return {
         ...base, etat: 'echec', actif: false, titre: `${libelle} — échec`, pastille: 'Échec',
-        phrase: `${phraseSuivi(travail).replace(/ Vous pouvez relancer\.$/, '').replace(/([^.!?…])$/u, '$1.')} Vous pouvez demander à Mimmo de relancer le rendu.`,
+        // VIS-57 : vraie cause (détail technique de l'échec s'il a pu être lu), jamais « vérifiez la description » à tort.
+        phrase: `${phraseSuivi(travail, detailEchec).replace(/ Vous pouvez relancer\.$/, '').replace(/([^.!?…])$/u, '$1.')} Vous pouvez demander à Mimmo de relancer le rendu.`,
       };
     case 'annule':
       return { ...base, etat: 'annule', actif: false, titre: `${libelle} — annulé`, pastille: 'Annulé', phrase: 'Ce rendu a été annulé.' };

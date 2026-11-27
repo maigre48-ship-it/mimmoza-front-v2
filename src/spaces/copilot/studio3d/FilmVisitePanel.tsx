@@ -49,6 +49,11 @@ import type { FeuilleEtape } from './renduParcours';
 // VIS-46 — film commandé par le chat : la feuille « Film » montre la MÊME carte « Scénario du film » que le chat (seule
 // commande : « Valider et lancer le film ») ; sans scénario proposé, un bouton demande les 3 scénarios à Mimmo.
 import { CarteScenarioFilm } from './CarteScenarioFilm';
+// VIS-57 — vraie barre de progression (étape en clair, %, temps restant estimé).
+import { BarreProgressionRendu } from './BarreProgressionRendu';
+// VIS-57 — « Habiller le projet » avant de lancer (matières, déco, extérieurs) ; l'aménagement extérieur part avec le travail.
+import { CarteHabillageProjet, useHabillageProjet } from './CarteHabillageProjet';
+import { ficheAvecHabillage, habillageComplet } from '@/lib/studio/habillageProjet';
 import { derniereCarteScenarios } from './scenarioFilmChat';
 import { messageScenario } from '@/lib/studio/filmsChat';
 import type { ChatMessage } from '../types/copilot.types';
@@ -112,6 +117,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   const carteFilm = filmParScenario ? derniereCarteScenarios(messages as never) : null;
   const [disponible, setDisponible] = useState<boolean | null>(null);
   const [travaux, setTravaux] = useState<TravailStudio[]>([]);
+  const habillage = useHabillageProjet();
   const [feuille, setFeuille] = useState<TypeTravail | null>(null);
   // VIS-17 : réglages film / visite repris de la mémoire du parcours (personnalisation gardée d'une visite à l'autre).
   const [film, setFilm] = useState<OptionsFilm>(() => ({ ...optionsParDefaut('film'), ...(lireMemoireParcours(conversationId).film as Partial<OptionsFilm> | null ?? {}) }));
@@ -221,6 +227,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
    */
   const lancerTravail = async (type: TypeTravail, options: unknown, relanceDe?: string) => {
     if (lancement) return;
+    // VIS-57 : aucun rendu tant que chaque thème de l'habillage n'est pas choisi ou délégué.
+    if (!habillageComplet(habillage)) { if (relanceDe) ouvrirFeuille(type); setMessage('Habillez d’abord le projet : choisissez ou déléguez chaque thème (matières, déco, extérieurs).'); return; }
     const terrain = parcelleRetenue(conversationId);
     if (!terrain) { if (relanceDe) ouvrirFeuille(type); else setTerrainManquant(true); return; }
     setLancement(true);
@@ -239,7 +247,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
       // conversation rechargée, autre onglet → le rendu porte toujours le projet en vigueur (`fiche.modele_batiment.portee`).
       const dessin = await projetDeLaConversationRelu(conversationId);
       const avecDessin = travailAvecModele(travail.valeur, dessin?.modele ?? null, dessin?.portee ?? null);
-      const r = await creerTravail(avecDessin.travail);
+      // VIS-57 : habillage choisi + aménagement extérieur placé par l'utilisateur (fiche.amenagement_exterieur).
+      const r = await creerTravail({ ...avecDessin.travail, fiche: ficheAvecHabillage(avecDessin.travail.fiche, habillage) });
       if (!r.disponible) { setDisponible(false); setFeuille(null); return; }
       setTravaux(liste => [r.valeur, ...liste.filter(x => x.id !== r.valeur.id)]);
       if (!relanceDe) setFeuille(null);
@@ -346,6 +355,15 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
   };
 
   const actifs = travaux.filter(t => estActif(t.statut));
+  // VIS-57 — horloge de la barre de progression (temps restant estimé) tant qu'un rendu est actif.
+  const [horloge, setHorloge] = useState(() => Date.now());
+  const nbActifs = actifs.length;
+  useEffect(() => {
+    if (!nbActifs) return;
+    setHorloge(Date.now());
+    const h = window.setInterval(() => setHorloge(Date.now()), 10_000);
+    return () => window.clearInterval(h);
+  }, [nbActifs, travaux]);
   const historique = travaux.filter(t => !estActif(t.statut));
   const typeParcours = parcoursRendu?.type ?? null;
   const indispo = disponible === false;
@@ -465,9 +483,10 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
             <ConfirmerParcelle adresseInitiale={draft.localisation} libelleConfirmer="Confirmer ce terrain"
               onConfirmer={confirmerTerrain} onAnnuler={() => setFeuille(null)} />
           </div>}
+          <CarteHabillageProjet messageId={`local-espace3d-habillage-${conversationId}`} type={feuille} integree />
           {message && <p className="mzia-rendu__erreur" role="alert">{message}</p>}
-          <button type="button" className="mzia-rendu__lancer" disabled={lancement || terrainManquant} onClick={() => void lancer()}>
-            {lancement ? <><Loader2 size={16} className="mzia-rendu__tourne" /> Lancement…</> : 'Lancer'}
+          <button type="button" className="mzia-rendu__lancer" disabled={lancement || terrainManquant || !habillageComplet(habillage)} onClick={() => void lancer()}>
+            {lancement ? <><Loader2 size={16} className="mzia-rendu__tourne" /> Lancement…</> : habillageComplet(habillage) ? 'Lancer' : 'Habillez le projet pour lancer'}
           </button>
           <small>Vous serez prévenu ici quand ce sera prêt. Vous pouvez continuer à travailler.</small>
         </div>}
@@ -477,9 +496,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation, comm
 
       {actifs.map(t => <div key={t.id} className="mzia-rendu__suivi">
         <div className="mzia-rendu__suivi-titre"><b>{LIBELLES_TYPE[t.type]}</b><span>{libelleStatut(t.statut)}</span></div>
-        <div className="mzia-rendu__barre" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={t.progression}>
-          <i style={{ width: `${String(t.statut === 'en_attente' ? 3 : Math.max(3, t.progression))}%` }} className={t.statut === 'en_attente' ? 'is-attente' : ''} />
-        </div>
+        <BarreProgressionRendu travail={t} maintenant={horloge} />
         <p>{phraseSuivi(t)}</p>
         <button type="button" onClick={() => void annuler(t.id)}>Annuler</button>
       </div>)}

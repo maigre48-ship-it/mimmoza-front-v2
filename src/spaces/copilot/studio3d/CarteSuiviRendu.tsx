@@ -13,7 +13,9 @@
 // =============================================================================
 import { useEffect, useMemo, useState } from 'react';
 import { Clapperboard, ExternalLink, Image as IconeImage, Loader2, Orbit } from 'lucide-react';
-import { lienVisite, phrasesVuesNonProduites, suivreTravail, urlSigneeRendu, type ResultatImage, type TravailStudio } from '@/lib/studio/travaux';
+import { lienVisite, lireCauseEchec, phrasesVuesNonProduites, suivreTravail, urlSigneeRendu, type ResultatImage, type TravailStudio } from '@/lib/studio/travaux';
+// VIS-57 — vraie barre de progression (étape, %, temps restant estimé).
+import { BarreProgressionRendu } from './BarreProgressionRendu';
 import { fichiersResultat, SONDAGE_SUIVI_CHAT_MS, vueCarteSuivi, type IndiceSuivi } from './suiviRenduChat';
 // LOT P2 (11/11/2026) — image dans sa rue : atelier « Ajuster le placement » puis nouveau travail avec le calage.
 import { AtelierPlacement } from './AtelierPlacement';
@@ -33,7 +35,7 @@ type Liens =
   | { genre: 'visite'; url: string };
 
 /** Rafraîchissement de l'horloge (durées d'attente, signal « machine éteinte »). */
-const HORLOGE_MS = 30_000;
+const HORLOGE_MS = 10_000;
 
 export function CarteSuiviRendu({ indice, onSend }: { indice: IndiceSuivi; onSend?: (texte: string) => void }) {
   const [travail, setTravail] = useState<TravailStudio | null>(null);
@@ -50,7 +52,18 @@ export function CarteSuiviRendu({ indice, onSend }: { indice: IndiceSuivi; onSen
     return suivreTravail(indice.jobId, setTravail, { sondageMs: SONDAGE_SUIVI_CHAT_MS, surAbsent: () => setIntrouvable(true) });
   }, [indice.jobId]);
 
-  const vue = useMemo(() => vueCarteSuivi(travail, indice, maintenant, introuvable), [travail, indice, maintenant, introuvable]);
+  // VIS-57 — échec : cause technique relue (RPC réservée au propriétaire ; migration non appliquée → null, phrase honnête).
+  const [detailEchec, setDetailEchec] = useState<string | null>(null);
+  const enEchec = travail?.statut === 'echec';
+  useEffect(() => {
+    setDetailEchec(null);
+    if (!enEchec) return;
+    let vivant = true;
+    void lireCauseEchec(indice.jobId).then((d) => { if (vivant) setDetailEchec(d); });
+    return () => { vivant = false; };
+  }, [enEchec, indice.jobId]);
+
+  const vue = useMemo(() => vueCarteSuivi(travail, indice, maintenant, introuvable, detailEchec), [travail, indice, maintenant, introuvable, detailEchec]);
 
   useEffect(() => {
     if (!vue.actif) return;
@@ -106,12 +119,7 @@ export function CarteSuiviRendu({ indice, onSend }: { indice: IndiceSuivi; onSen
         <span className="mz-suivi-rendu__pastille">{vue.actif && vue.etat !== 'chargement' && <Loader2 size={12} className="mz-suivi-rendu__tourne" aria-hidden="true" />}{vue.pastille}</span>
       </header>
 
-      {(vue.etat === 'en_attente' || vue.etat === 'en_cours') && (
-        <div className="mz-suivi-rendu__barre" role="progressbar" aria-label="Progression du rendu" aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={vue.progression ?? undefined} aria-valuetext={vue.progression === null ? 'En attente' : `${vue.progression} %`}>
-          <i className={vue.progression === null ? 'is-attente' : ''} style={{ width: `${vue.progression === null ? 3 : Math.max(3, vue.progression)}%` }} />
-        </div>
-      )}
+      {(vue.etat === 'en_attente' || vue.etat === 'en_cours') && <BarreProgressionRendu travail={travail} maintenant={maintenant} />}
 
       <p className="mz-suivi-rendu__phrase" role="status" aria-live="polite">{vue.phrase}</p>
       {vue.alerte && <p className="mz-suivi-rendu__alerte">{vue.alerte}</p>}
