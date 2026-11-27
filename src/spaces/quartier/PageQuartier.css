@@ -1,0 +1,144 @@
+/* VIS-70 — page « Quartier / Plan masse » du bureau de vente.
+   Couleurs en !important + sélecteurs préfixés : lisibles même sous `.jarvis-dossier * { color: inherit !important }`.
+   Boutons actifs : fond #dbeafe, texte #1e3a8a. Un bouton par action. */
+.mz-qr, .jarvis-dossier .mz-qr {
+  --qr-encre: #0f172a; --qr-gris: #475569; --qr-nuit: #0b1324; --qr-or: #c8a96a; --qr-or-clair: #f5e6c4;
+  position: relative; display: grid; grid-template-rows: auto 1fr auto; height: 100vh; min-height: 560px; overflow: hidden;
+  background: var(--qr-nuit); color: var(--qr-encre) !important;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px;
+}
+.mz-qr *, .jarvis-dossier .mz-qr * { box-sizing: border-box; }
+
+/* En-tête */
+.mz-qr__entete { display: flex; align-items: center; gap: 24px; padding: 14px 28px; background: linear-gradient(180deg, #0b1324 0%, #111d36 100%); border-bottom: 1px solid rgba(200,169,106,.35); z-index: 3; }
+.mz-qr__marque { display: flex; flex-direction: column; min-width: 0; }
+.mz-qr__surtitre, .jarvis-dossier .mz-qr__surtitre { color: var(--qr-or) !important; font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; font-weight: 600; }
+.mz-qr__titre, .jarvis-dossier .mz-qr__titre { margin: 2px 0 0; color: #ffffff !important; font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif; font-weight: 500; font-size: 26px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mz-qr__adresse, .jarvis-dossier .mz-qr__adresse { color: #cbd5e1 !important; font-size: 12.5px; }
+.mz-qr__menu { display: flex; gap: 4px; margin-left: auto; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); }
+.mz-qr__onglet, .jarvis-dossier .mz-qr__onglet {
+  appearance: none; border: 0; background: transparent; color: #e2e8f0 !important; font: inherit; font-size: 13px; font-weight: 500; letter-spacing: .02em;
+  padding: 8px 15px; border-radius: 999px; cursor: pointer; text-decoration: none; white-space: nowrap; transition: background .15s, color .15s;
+}
+.mz-qr__onglet:hover, .jarvis-dossier .mz-qr__onglet:hover { background: rgba(255,255,255,.12); color: #ffffff !important; }
+.mz-qr__onglet.is-actif, .jarvis-dossier .mz-qr__onglet.is-actif { background: #dbeafe; color: #1e3a8a !important; font-weight: 700; }
+.mz-qr__onglet.is-avenir, .jarvis-dossier .mz-qr__onglet.is-avenir { color: #94a3b8 !important; }
+.mz-qr__onglet:focus-visible, .mz-qr__bouton:focus-visible, .mz-qr__categorie:focus-visible, .mz-qr__lieu:focus-visible { outline: 2px solid var(--qr-or); outline-offset: 2px; }
+
+/* Boutons */
+.mz-qr__bouton, .jarvis-dossier .mz-qr__bouton {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #bfdbfe; border-radius: 10px; padding: 8px 14px;
+  background: #ffffff; color: #1e3a8a !important; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.mz-qr__bouton:hover, .mz-qr__bouton.is-actif, .jarvis-dossier .mz-qr__bouton:hover, .jarvis-dossier .mz-qr__bouton.is-actif { background: #dbeafe; color: #1e3a8a !important; border-color: #93c5fd; }
+.mz-qr__bouton:disabled, .jarvis-dossier .mz-qr__bouton:disabled { opacity: .5; cursor: not-allowed; background: #f8fafc; }
+.mz-qr__bouton--plein, .jarvis-dossier .mz-qr__bouton--plein { background: #dbeafe; color: #1e3a8a !important; border-color: #dbeafe; }
+.mz-qr__bouton--plein:hover, .jarvis-dossier .mz-qr__bouton--plein:hover { background: #bfdbfe; }
+.mz-qr__bouton--discret, .jarvis-dossier .mz-qr__bouton--discret { border-color: transparent; background: transparent; padding: 6px 8px; color: #1e3a8a !important; }
+
+/* Scène */
+.mz-qr__scene { position: relative; overflow: hidden; }
+.mz-qr-fond { position: absolute; inset: 0; }
+.mz-qr-fond--plan { display: flex; align-items: center; justify-content: center; padding: 12px 24px 12px 428px; background: radial-gradient(circle at 62% 50%, #1b2b4a, #0b1324 70%); }
+.mz-qr-fond--plan .mz-qr-plan { width: 100%; height: 100%; overflow: hidden; }
+.mz-qr-fond--image { background-size: cover; background-position: center; }
+.mz-qr-fond--vide { background: radial-gradient(circle at 60% 50%, #1b2b4a, #0b1324); }
+.mz-qr-fond__note, .jarvis-dossier .mz-qr-fond__note { position: absolute; right: 18px; top: 14px; margin: 0; padding: 6px 10px; border-radius: 8px; background: rgba(15,23,42,.7); color: #e2e8f0 !important; font-size: 12px; }
+
+/* Plan dessiné */
+.mz-qr-plan__anneau { fill: #f5e6c4; fill-opacity: .75; font-size: 14px; letter-spacing: .08em; font-family: Inter, system-ui, sans-serif; }
+.mz-qr-plan__projet { fill: #ffffff; font-size: 19px; font-family: "Cormorant Garamond", Georgia, serif; paint-order: stroke; stroke: #0b1324; stroke-width: 6px; }
+.mz-qr-plan__etiquette { fill: #ffffff; font-size: 16px; font-weight: 600; font-family: Inter, system-ui, sans-serif; paint-order: stroke; stroke: #0b1324; stroke-width: 6px; }
+.mz-qr-plan__nord { fill: #94a3b8; font-size: 12px; font-family: Inter, system-ui, sans-serif; }
+.mz-qr-plan__lieu.is-cliquable { cursor: pointer; }
+.mz-qr-plan__pulse { animation: mz-qr-pulse 2.4s ease-out infinite; transform-origin: center; transform-box: fill-box; }
+@keyframes mz-qr-pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(2.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mz-qr-plan__pulse { animation: none; } }
+
+/* Repères MapLibre */
+.mz-qr-repere { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; display: grid; place-items: center; padding: 0; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.35); transition: transform .12s; }
+.mz-qr-repere:hover, .mz-qr-repere.is-actif { transform: scale(1.25); z-index: 2; }
+.mz-qr-repere-projet { display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+.mz-qr-repere-projet span { width: 18px; height: 18px; border-radius: 50%; background: #f5e6c4; border: 3px solid #0b1324; box-shadow: 0 0 0 6px rgba(200,169,106,.45); }
+.mz-qr-repere-projet b { color: #ffffff !important; font: 500 15px "Cormorant Garamond", Georgia, serif; text-shadow: 0 1px 4px rgba(0,0,0,.8); white-space: nowrap; }
+
+/* Panneau */
+.mz-qr__panneau, .jarvis-dossier .mz-qr__panneau {
+  position: absolute; top: 20px; left: 24px; bottom: 20px; width: 380px; max-width: calc(100% - 48px); overflow-y: auto; z-index: 2;
+  padding: 20px 20px 16px; border-radius: 18px; background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
+  box-shadow: 0 18px 50px rgba(2,6,23,.45); color: var(--qr-encre) !important;
+}
+.mz-qr__panneau--court { bottom: auto; }
+.mz-qr__h2, .jarvis-dossier .mz-qr__h2 { margin: 0 0 12px; color: var(--qr-encre) !important; font-family: "Cormorant Garamond", Georgia, serif; font-weight: 600; font-size: 24px; letter-spacing: .01em; }
+.mz-qr__h2--clair, .jarvis-dossier .mz-qr__h2--clair { color: #ffffff !important; }
+.mz-qr__h3, .jarvis-dossier .mz-qr__h3 { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; font-size: 16px; font-weight: 700; }
+.mz-qr__texte, .jarvis-dossier .mz-qr__texte { margin: 0 0 10px; color: var(--qr-gris) !important; line-height: 1.5; }
+.mz-qr__texte--petit, .jarvis-dossier .mz-qr__texte--petit { font-size: 12px; color: #64748b !important; }
+.mz-qr__texte--clair, .jarvis-dossier .mz-qr__texte--clair { color: #cbd5e1 !important; }
+.mz-qr__alerte, .jarvis-dossier .mz-qr__alerte { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b !important; font-size: 13px; }
+.mz-qr__alerte--clair, .jarvis-dossier .mz-qr__alerte--clair { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.2); color: #e2e8f0 !important; }
+.mz-qr__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+
+.mz-qr__synthese, .jarvis-dossier .mz-qr__synthese { margin: 0 0 14px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(135deg, #0b1324, #1b2b4a); border: 1px solid rgba(200,169,106,.5); }
+.mz-qr__synthese-phrase, .jarvis-dossier .mz-qr__synthese-phrase { margin: 0 0 6px; color: #ffffff !important; font-family: "Cormorant Garamond", Georgia, serif; font-size: 19px; line-height: 1.3; }
+.mz-qr__synthese-transport, .jarvis-dossier .mz-qr__synthese-transport { margin: 0; color: var(--qr-or-clair) !important; font-size: 12.5px; }
+
+.mz-qr__categories { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mz-qr__categorie, .jarvis-dossier .mz-qr__categorie {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 10px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;
+  color: var(--qr-encre) !important; font: inherit; text-align: left; cursor: pointer; transition: background .12s, border-color .12s;
+}
+.mz-qr__categorie:hover, .jarvis-dossier .mz-qr__categorie:hover { background: #dbeafe; border-color: #93c5fd; color: #1e3a8a !important; }
+.mz-qr-pastille { display: inline-grid; place-items: center; flex: none; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+.mz-qr__categorie-texte { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.mz-qr__categorie-texte strong, .jarvis-dossier .mz-qr__categorie-texte strong { color: var(--qr-encre) !important; font-size: 14px; font-weight: 650; }
+.mz-qr__categorie-texte small, .jarvis-dossier .mz-qr__categorie-texte small { color: #64748b !important; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mz-qr__compte, .jarvis-dossier .mz-qr__compte { min-width: 30px; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: var(--qr-encre) !important; font-size: 12px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.mz-qr__compte.is-vide, .jarvis-dossier .mz-qr__compte.is-vide { color: #94a3b8 !important; }
+
+.mz-qr__detail-entete { display: flex; flex-direction: column; align-items: flex-start; }
+.mz-qr__lieux { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mz-qr__lieu, .jarvis-dossier .mz-qr__lieu {
+  width: 100%; display: grid; gap: 2px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;
+  color: var(--qr-encre) !important; font: inherit; text-align: left; cursor: pointer;
+}
+.mz-qr__lieu:hover, .mz-qr__lieu.is-actif, .jarvis-dossier .mz-qr__lieu:hover, .jarvis-dossier .mz-qr__lieu.is-actif { background: #dbeafe; border-color: #93c5fd; }
+.mz-qr__lieu:disabled { cursor: default; }
+.mz-qr__lieu-nom, .jarvis-dossier .mz-qr__lieu-nom { color: var(--qr-encre) !important; font-weight: 650; }
+.mz-qr__lieu-type, .jarvis-dossier .mz-qr__lieu-type { color: #64748b !important; font-size: 12px; }
+.mz-qr__temps, .jarvis-dossier .mz-qr__temps { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3px; color: #1e3a8a !important; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mz-qr__temps span { display: inline-flex; align-items: center; gap: 4px; }
+.mz-qr__temps-distance, .jarvis-dossier .mz-qr__temps-distance { color: var(--qr-encre) !important; }
+
+/* Légende */
+.mz-qr__legende, .jarvis-dossier .mz-qr__legende {
+  position: absolute; right: 24px; bottom: 54px; z-index: 2; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px;
+  background: rgba(11,19,36,.82); color: #e2e8f0 !important; font-size: 12px; backdrop-filter: blur(6px);
+}
+.mz-qr__legende span { display: flex; align-items: center; gap: 8px; color: #e2e8f0 !important; }
+.mz-qr__legende-projet { width: 12px; height: 12px; border-radius: 50%; background: #f5e6c4; box-shadow: 0 0 0 4px rgba(200,169,106,.45); }
+.mz-qr__legende-anneau { width: 14px; height: 14px; border-radius: 50%; border: 1.5px dashed #f5e6c4; }
+.mz-qr__legende-anneau.is-plein { border-style: solid; background: rgba(200,169,106,.3); }
+
+/* Galerie */
+.mz-qr__galerie { position: absolute; inset: 0; overflow-y: auto; padding: 28px 32px; background: radial-gradient(circle at 70% 0%, #1b2b4a, #0b1324 60%); }
+.mz-qr__grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+.mz-qr__vignette { margin: 0; border-radius: 14px; overflow: hidden; background: #111d36; border: 1px solid rgba(255,255,255,.08); }
+.mz-qr__vignette img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+.mz-qr__vignette-attente { display: grid; place-items: center; aspect-ratio: 16 / 10; color: #94a3b8 !important; font-size: 13px; }
+.mz-qr__vignette figcaption, .jarvis-dossier .mz-qr__vignette figcaption { padding: 8px 12px; color: #e2e8f0 !important; font-size: 13px; }
+.mz-qr__film { display: block; width: 100%; max-width: 960px; margin-top: 16px; border-radius: 14px; background: #000; }
+.mz-qr__plans { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.mz-qr__plans li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; background: rgba(255,255,255,.95); color: var(--qr-encre) !important; }
+
+/* Pied */
+.mz-qr__pied, .jarvis-dossier .mz-qr__pied { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 18px; padding: 8px 28px; background: #0b1324; border-top: 1px solid rgba(255,255,255,.08); color: #94a3b8 !important; font-size: 11px; z-index: 3; }
+.mz-qr__pied span { color: #94a3b8 !important; }
+
+@media (max-width: 900px) {
+  .mz-qr__entete { flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
+  .mz-qr__menu { order: 3; width: 100%; overflow-x: auto; margin-left: 0; }
+  .mz-qr__panneau { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 55%; }
+  .mz-qr__legende { display: none; }
+  .mz-qr-fond--plan { padding: 8px; }
+}
