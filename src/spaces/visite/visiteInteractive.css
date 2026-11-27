@@ -1,0 +1,405 @@
+/* src/spaces/visite/visiteInteractive.css — VIS-69, visite interactive « bureau de vente ».
+   Panneaux clairs en verre dépoli, texte sombre (#0f172a) très lisible sur toute image,
+   titres en capitales espacées et en serif, un bouton par action.
+   Boutons actifs : fond #dbeafe, texte #1e3a8a. Toutes les classes sont préfixées vi-. */
+
+.vi-racine {
+  --vi-verre: rgba(255, 255, 255, 0.9);
+  --vi-verre-doux: rgba(255, 255, 255, 0.78);
+  --vi-trait: rgba(15, 23, 42, 0.1);
+  --vi-texte: #0f172a;
+  --vi-doux: #475569;
+  --vi-actif-fond: #dbeafe;
+  --vi-actif-texte: #1e3a8a;
+  --vi-actif-trait: #bfdbfe;
+  --vi-ombre: 0 10px 30px rgba(15, 23, 42, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08);
+  --vi-serif: "Cormorant Garamond", "Playfair Display", Georgia, "Times New Roman", serif;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #0b0d10;
+  color: var(--vi-texte);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 0;
+}
+.vi-racine *, .vi-racine *::before, .vi-racine *::after { box-sizing: border-box; }
+.vi-racine button { font: inherit; }
+.vi-racine svg { flex-shrink: 0; }
+
+.vi-scene { position: absolute; inset: 0; cursor: grab; outline: none; }
+.vi-scene:active { cursor: grabbing; }
+.vi-scene:focus-visible { box-shadow: inset 0 0 0 3px var(--vi-actif-trait); }
+
+/* ── Pastilles au sol et repères ── */
+.vi-hotspots { position: absolute; inset: 0; pointer-events: none; }
+.vi-hotspot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px; /* zone cliquable centrée sur le point projeté */
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  color: #ffffff;
+  will-change: transform;
+}
+.vi-sol { position: absolute; left: 50%; top: 50%; width: 76px; height: 76px; display: block; transform-origin: center; }
+.vi-sol-anneau {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.95);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.28) 0 45%, rgba(255, 255, 255, 0.08) 46% 100%);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.25), 0 0 24px rgba(255, 255, 255, 0.35);
+  animation: vi-respire 2.4s ease-in-out infinite;
+}
+.vi-sol-coeur {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.25);
+}
+.vi-hotspot:hover .vi-sol-anneau, .vi-hotspot:focus-visible .vi-sol-anneau { background: rgba(219, 234, 254, 0.55); border-color: #ffffff; }
+.vi-hotspot:focus-visible { outline: none; }
+.vi-hotspot:focus-visible .vi-sol-anneau, .vi-hotspot:focus-visible .vi-repere { box-shadow: 0 0 0 4px var(--vi-actif-trait); }
+@keyframes vi-respire { 0%, 100% { opacity: 0.92; } 50% { opacity: 0.62; } }
+
+.vi-repere {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vi-verre);
+  color: var(--vi-texte);
+  box-shadow: var(--vi-ombre);
+}
+.vi-hotspot-libelle {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 30px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--vi-verre);
+  color: var(--vi-texte);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: var(--vi-ombre);
+}
+.vi-hotspot-sol .vi-hotspot-libelle { top: calc(50% + 36px); }
+.vi-hotspot:hover .vi-hotspot-libelle, .vi-hotspot:focus-visible .vi-hotspot-libelle { background: var(--vi-actif-fond); color: var(--vi-actif-texte); }
+
+/* ── En-tête ── */
+.vi-entete {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(11, 13, 16, 0.38), rgba(11, 13, 16, 0));
+}
+.vi-titre {
+  pointer-events: auto;
+  max-width: min(520px, 44vw);
+  padding: 14px 18px 12px;
+  border-radius: 14px;
+  background: var(--vi-verre);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: var(--vi-ombre);
+}
+.vi-surtitre { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--vi-doux); }
+.vi-titre h1 { margin: 4px 0 2px; font-family: var(--vi-serif); font-size: 21px; font-weight: 600; line-height: 1.2; color: var(--vi-texte); }
+.vi-piece { margin: 4px 0 0; font-size: 15px; font-weight: 600; color: var(--vi-actif-texte); display: flex; align-items: center; gap: 8px; }
+.vi-niveau { font-size: 12px; font-weight: 500; color: var(--vi-doux); }
+.vi-tourne { animation: vi-tourne 0.9s linear infinite; }
+.vi-mini { width: 14px; height: 14px; color: var(--vi-doux); }
+@keyframes vi-tourne { to { transform: rotate(360deg); } }
+
+.vi-actions { pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 66vw; }
+.vi-bascule { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--vi-verre-doux); box-shadow: var(--vi-ombre); }
+.vi-bascule .vi-bouton { box-shadow: none; }
+.vi-bouton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--vi-trait);
+  border-radius: 10px;
+  background: var(--vi-verre);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--vi-texte);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--vi-ombre);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.vi-bouton svg { width: 17px; height: 17px; }
+.vi-bouton:hover { background: #f1f5f9; }
+.vi-bouton:focus-visible { outline: 3px solid var(--vi-actif-trait); outline-offset: 2px; }
+.vi-bouton.actif, .vi-puce.actif, .vi-piece-bouton.actif, .vi-lien.actif {
+  background: var(--vi-actif-fond);
+  color: var(--vi-actif-texte);
+  border-color: var(--vi-actif-trait);
+}
+
+/* ── Mini-plan ── */
+.vi-plan {
+  position: absolute;
+  right: 20px;
+  bottom: 92px;
+  padding: 12px 14px 10px;
+  border-radius: 14px;
+  background: var(--vi-verre);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--vi-ombre);
+  max-width: calc(100vw - 40px);
+}
+.vi-plan-tete { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.vi-plan-tete h2, .vi-infos h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--vi-doux); }
+.vi-niveaux, .vi-vues { display: flex; gap: 6px; flex-wrap: wrap; }
+.vi-puce {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--vi-trait);
+  background: #ffffff;
+  color: var(--vi-texte);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vi-puce:hover { background: #f1f5f9; }
+.vi-plan-corps { display: flex; justify-content: center; }
+.vi-plan-svg { display: block; max-width: 100%; height: auto; }
+.vi-plan-texte { fill: #1e293b; font-weight: 600; pointer-events: none; font-family: Inter, system-ui, sans-serif; paint-order: stroke; stroke: #ffffff; stroke-width: 3px; stroke-linejoin: round; }
+.vi-plan-point { cursor: pointer; outline: none; }
+.vi-plan-point:hover circle:nth-child(3), .vi-plan-point:focus-visible circle:nth-child(3) { fill: #dbeafe; }
+.vi-plan-legende { margin: 8px 0 0; font-size: 12px; color: var(--vi-doux); display: flex; align-items: center; gap: 6px; }
+.vi-point-ici { width: 10px; height: 10px; border-radius: 50%; background: #1d4ed8; box-shadow: 0 0 0 2px #ffffff, 0 0 0 3px #1d4ed8; }
+
+/* ── Menu des pièces ── */
+.vi-menu {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.vi-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  gap: 4px;
+  border-radius: 14px;
+  background: var(--vi-verre);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--vi-ombre);
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+.vi-menu ul::-webkit-scrollbar { display: none; }
+.vi-piece-bouton {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--vi-texte);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vi-piece-bouton:hover { background: #f1f5f9; }
+.vi-piece-bouton:focus-visible, .vi-puce:focus-visible, .vi-lien:focus-visible { outline: 3px solid var(--vi-actif-trait); outline-offset: 1px; }
+.vi-vues { padding: 4px; border-radius: 999px; background: var(--vi-verre-doux); box-shadow: var(--vi-ombre); }
+
+/* ── Pied, informations, messages ── */
+.vi-pied {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 20px 8px;
+  font-size: 12px;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.vi-lien {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--vi-texte);
+  text-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vi-lien svg { width: 13px; height: 13px; }
+.vi-infos {
+  position: absolute;
+  left: 20px;
+  bottom: 92px;
+  width: min(420px, calc(100vw - 40px));
+  max-height: 55vh;
+  overflow: auto;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--vi-verre);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--vi-ombre);
+  color: var(--vi-texte);
+  font-size: 13px;
+  line-height: 1.5;
+  user-select: text;
+}
+.vi-infos-tete { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.vi-infos h3 { margin: 10px 0 4px; font-size: 13px; color: var(--vi-texte); }
+.vi-infos ul { margin: 0; padding-left: 18px; color: var(--vi-doux); }
+.vi-infos p { margin: 6px 0; color: var(--vi-texte); }
+.vi-fermer {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vi-trait);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--vi-texte);
+  cursor: pointer;
+}
+.vi-fermer svg { width: 15px; height: 15px; }
+.vi-voile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #0b0d10;
+  color: #f8fafc;
+  font-size: 15px;
+}
+.vi-voile svg { width: 30px; height: 30px; }
+.vi-message {
+  position: absolute;
+  left: 50%;
+  top: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 10px 10px 16px;
+  border-radius: 12px;
+  background: var(--vi-verre);
+  box-shadow: var(--vi-ombre);
+  color: var(--vi-texte);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ── Téléphone ── */
+@media (max-width: 760px) {
+  .vi-entete { flex-direction: column; align-items: stretch; padding: 10px; gap: 8px; }
+  .vi-titre { max-width: none; padding: 10px 12px 9px; }
+  .vi-titre h1 { font-size: 16px; }
+  .vi-piece { font-size: 14px; }
+  .vi-actions { max-width: none; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .vi-actions::-webkit-scrollbar { display: none; }
+  .vi-bouton { height: 40px; padding: 0 11px; }
+  .vi-libelle { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .vi-plan { right: 10px; left: 10px; bottom: 88px; padding: 10px; }
+  .vi-menu { bottom: 28px; max-width: calc(100vw - 20px); }
+  .vi-piece-bouton { height: 38px; padding: 0 12px; font-size: 13px; }
+  .vi-infos { left: 10px; bottom: 88px; width: calc(100vw - 20px); }
+  .vi-pied { padding: 4px 10px 6px; font-size: 11px; }
+  .vi-sol { width: 64px; height: 64px; }
+}
+
+/* ── Fiche imprimée (seule visible à l'impression) ── */
+.vi-fiche { position: absolute; left: -10000px; top: 0; width: 190mm; background: #ffffff; color: #0f172a; }
+@media print {
+  @page { size: A4 portrait; margin: 12mm; }
+  body * { visibility: hidden !important; }
+  .vi-racine { position: static !important; background: #ffffff !important; overflow: visible !important; }
+  .vi-fiche, .vi-fiche * { visibility: visible !important; }
+  .vi-fiche { position: absolute; left: 0; top: 0; width: 100%; font-family: Inter, system-ui, sans-serif; }
+  .vi-fiche header h1 { margin: 2px 0 2px; font-family: Georgia, serif; font-size: 20pt; color: #0f172a; }
+  .vi-fiche header p { margin: 0 0 4mm; font-size: 11pt; color: #1e3a8a; font-weight: 600; }
+  .vi-fiche img { width: 100%; height: auto; border-radius: 2mm; display: block; }
+  .vi-fiche-bas { display: flex; gap: 6mm; margin-top: 5mm; align-items: flex-start; }
+  .vi-fiche-plan { flex: 0 0 auto; border: 0.3mm solid #cbd5e1; border-radius: 2mm; padding: 2mm; }
+  .vi-fiche-texte { flex: 1; font-size: 10pt; color: #0f172a; }
+  .vi-fiche-texte h2 { margin: 0 0 2mm; font-size: 10pt; letter-spacing: 0.12em; text-transform: uppercase; color: #475569; }
+  .vi-fiche-texte ul { margin: 0 0 4mm; padding-left: 5mm; }
+  .vi-fiche-lien { word-break: break-all; color: #1e3a8a; }
+  .vi-fiche-mention { color: #475569; font-size: 9pt; }
+}
+
+/* ── Lisibilité garantie dans un conteneur qui force l'héritage des couleurs
+      (règle « .jarvis-dossier * { color: inherit !important } ») : mêmes sélecteurs,
+      spécificité supérieure, chaque texte retrouve sa couleur. ── */
+.jarvis-dossier .vi-racine { color: #0f172a !important; }
+.jarvis-dossier .vi-racine .vi-bouton, .jarvis-dossier .vi-racine .vi-piece-bouton, .jarvis-dossier .vi-racine .vi-puce,
+.jarvis-dossier .vi-racine .vi-lien, .jarvis-dossier .vi-racine .vi-fermer, .jarvis-dossier .vi-racine .vi-hotspot-libelle,
+.jarvis-dossier .vi-racine .vi-titre h1, .jarvis-dossier .vi-racine .vi-infos, .jarvis-dossier .vi-racine .vi-infos p,
+.jarvis-dossier .vi-racine .vi-infos h3, .jarvis-dossier .vi-racine .vi-message, .jarvis-dossier .vi-racine .vi-repere { color: #0f172a !important; }
+.jarvis-dossier .vi-racine .vi-surtitre, .jarvis-dossier .vi-racine .vi-niveau, .jarvis-dossier .vi-racine .vi-plan-tete h2,
+.jarvis-dossier .vi-racine .vi-plan-legende, .jarvis-dossier .vi-racine .vi-infos ul { color: #475569 !important; }
+.jarvis-dossier .vi-racine .vi-piece { color: #1e3a8a !important; }
+.jarvis-dossier .vi-racine .vi-bouton.actif, .jarvis-dossier .vi-racine .vi-puce.actif, .jarvis-dossier .vi-racine .vi-piece-bouton.actif,
+.jarvis-dossier .vi-racine .vi-lien.actif, .jarvis-dossier .vi-racine .vi-hotspot:hover .vi-hotspot-libelle { color: #1e3a8a !important; }
+.jarvis-dossier .vi-racine .vi-pied, .jarvis-dossier .vi-racine .vi-voile, .jarvis-dossier .vi-racine .vi-hotspot { color: #ffffff !important; }

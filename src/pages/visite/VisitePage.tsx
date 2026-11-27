@@ -19,6 +19,7 @@ import {
   messageHttp, positionSurPlan, urlFichier, type LienVisite, type ManifesteVisite, type PanoramaVisite,
 } from "./manifeste";
 import { Visionneuse, estMobile, webglDisponible } from "./visionneuse";
+import ChoixVisionneuse from "../../spaces/visite/ChoixVisionneuse";
 import "./visite.css";
 
 type Etat =
@@ -92,7 +93,11 @@ export default function VisitePage() {
   }, [etat]);
 
   if (refus) return <EcranVisite etat={{ type: "erreur", message: refus, reessayable: false }} />;
-  if (etat.type === "pret") return <VisiteImmersive manifeste={etat.manifeste} dossier={etat.dossier} />;
+  if (etat.type === "pret") {
+    // VIS-69 : visite interactive si visite-interactive.json est publié et cohérent, sinon l'ancienne visionneuse inchangée.
+    const classique = <VisiteImmersive manifeste={etat.manifeste} dossier={etat.dossier} />;
+    return <ChoixVisionneuse manifeste={etat.manifeste} dossier={etat.dossier} visiteId={visiteId ?? ""} repli={classique} />;
+  }
   return (
     <EcranVisite
       etat={etat}
